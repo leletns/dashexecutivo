@@ -2,10 +2,13 @@
 
 import * as React from "react";
 
+export type AccentTheme = "lilas" | "grafite";
+
 export type Profile = {
   name: string;
   role: string;
   avatarDataUrl: string | null;
+  accent: AccentTheme;
 };
 
 const KEY = "portal.profile.v1";
@@ -14,6 +17,7 @@ const DEFAULT: Profile = {
   name: "Ludymilla",
   role: "CEO · Portal executivo",
   avatarDataUrl: null,
+  accent: "lilas",
 };
 
 function read(): Profile {
@@ -39,14 +43,23 @@ export function useProfile() {
   const [hydrated, setHydrated] = React.useState(false);
 
   React.useEffect(() => {
-    setProfile(read());
+    const initial = read();
+    setProfile(initial);
     setHydrated(true);
+    applyAccent(initial.accent);
     const onChange = (e: Event) => {
       const detail = (e as CustomEvent<Profile>).detail;
-      if (detail) setProfile(detail);
+      if (detail) {
+        setProfile(detail);
+        applyAccent(detail.accent);
+      }
     };
     const onStorage = (e: StorageEvent) => {
-      if (e.key === KEY) setProfile(read());
+      if (e.key === KEY) {
+        const next = read();
+        setProfile(next);
+        applyAccent(next.accent);
+      }
     };
     window.addEventListener("portal:profile", onChange);
     window.addEventListener("storage", onStorage);
@@ -60,11 +73,17 @@ export function useProfile() {
     setProfile((prev) => {
       const next = { ...prev, ...patch };
       write(next);
+      if (patch.accent) applyAccent(patch.accent);
       return next;
     });
   }, []);
 
   return { profile, update, hydrated };
+}
+
+function applyAccent(accent: AccentTheme) {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.accent = accent;
 }
 
 export function getInitials(name: string) {

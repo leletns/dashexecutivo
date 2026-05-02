@@ -4,8 +4,17 @@ import { motion } from "framer-motion";
 import { Wallet } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { AutoConciliacaoSheet } from "@/components/dashboard/auto-conciliacao-sheet";
+import { useRegisterPageState } from "@/lib/page-state";
 
 export default function FinanceiroPage() {
+  useRegisterPageState({
+    module: "Financeiro",
+    summary: [
+      { label: "Conciliações pendentes", value: 6 },
+      { label: "Saldo conferido", value: "R$ 254.250" },
+    ],
+  });
+
   return (
     <div className="space-y-4">
       <motion.div

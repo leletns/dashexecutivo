@@ -35,6 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { KpiInline } from "@/components/dashboard/kpi-inline";
+import { useRegisterPageState } from "@/lib/page-state";
 import { formatCurrencyBRL, formatNumberBR } from "@/lib/utils";
 
 type Status = "concluida" | "andamento" | "atrasada";
@@ -92,6 +93,17 @@ export default function AdministrativoPage() {
 
   const totalDespesas = PIE_DESPESAS.reduce((acc, d) => acc + d.valor, 0);
   const totalAtrasadas = ATIVIDADES.filter((a) => a.status === "atrasada").length;
+
+  useRegisterPageState({
+    module: "Administrativo",
+    summary: [
+      { label: "Colaboradores", value: formatNumberBR(colaboradores) },
+      { label: "Satisfação", value: `${satisfacao}%` },
+      { label: "Reuniões", value: formatNumberBR(reunioes) },
+      { label: "Eficiência", value: `${eficiencia}%` },
+      { label: "Despesas operacionais", value: formatCurrencyBRL(totalDespesas) },
+    ],
+  });
 
   return (
     <div className="space-y-5">

@@ -99,10 +99,13 @@ export function CategoryBarChart() {
                 <XAxis
                   dataKey="categoria"
                   stroke="hsl(var(--muted-foreground))"
-                  fontSize={11}
+                  fontSize={10}
                   tickLine={false}
                   axisLine={false}
-                  interval={0}
+                  interval="preserveStartEnd"
+                  tickFormatter={(v) =>
+                    String(v).length > 14 ? `${String(v).slice(0, 12)}…` : String(v)
+                  }
                 />
                 <YAxis
                   stroke="hsl(var(--muted-foreground))"
@@ -130,9 +133,9 @@ export function CategoryBarChart() {
           </div>
         </div>
 
-        <div className="px-5 pb-5">
-          <div className="rounded-xl border border-border/60 overflow-hidden">
-            <table className="w-full text-sm">
+        <div className="px-3 sm:px-5 pb-5">
+          <div className="rounded-xl border border-border/60 overflow-x-auto">
+            <table className="w-full min-w-[480px] text-sm">
               <thead>
                 <tr className="bg-foreground/[0.02] dark:bg-white/[0.02]">
                   <th className="text-left px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">

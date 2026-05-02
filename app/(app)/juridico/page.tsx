@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrencyBRL } from "@/lib/utils";
+import { useRegisterPageState } from "@/lib/page-state";
 
 type Status = "vigente" | "renovacao" | "encerrado";
 
@@ -73,6 +74,25 @@ const TERCEIRO_SETOR: Contrato[] = [
 const SECRET_FAKE = "advogado@juridico.com / portal2026";
 
 export default function JuridicoPage() {
+  const carteira =
+    INSTITUCIONAL.reduce((a, c) => a + c.valor, 0) +
+    EVENTOS.reduce((a, c) => a + c.valor, 0) +
+    TERCEIRO_SETOR.reduce((a, c) => a + c.valor, 0);
+  const total =
+    INSTITUCIONAL.length + EVENTOS.length + TERCEIRO_SETOR.length;
+  const renovacao = [...INSTITUCIONAL, ...EVENTOS, ...TERCEIRO_SETOR].filter(
+    (c) => c.status === "renovacao",
+  ).length;
+
+  useRegisterPageState({
+    module: "Jurídico",
+    summary: [
+      { label: "Contratos", value: total },
+      { label: "Carteira", value: formatCurrencyBRL(carteira) },
+      { label: "Em renovação", value: renovacao },
+    ],
+  });
+
   return (
     <div className="space-y-5">
       <motion.div

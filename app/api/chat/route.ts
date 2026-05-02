@@ -12,6 +12,7 @@ type ChatMessage = { role: "user" | "assistant"; content: string };
 type Body = {
   messages: ChatMessage[];
   context?: {
+    module?: string;
     indicators?: Array<{ key: string; label: string; value: number }>;
     series?: Array<{
       month: string;
@@ -19,6 +20,7 @@ type Body = {
       despesa: number;
       lucro: number;
     }>;
+    summary?: Array<{ label: string; value: string | number }>;
   };
 };
 

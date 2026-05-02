@@ -4,45 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  LayoutDashboard,
-  Building2,
-  Wallet,
-  Scale,
-  Calculator as CalculatorIcon,
-  Megaphone,
-  CalendarRange,
-  ChevronRight,
-} from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
-
-type NavItem = {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children?: { href: string; label: string }[];
-};
-
-const NAV: NavItem[] = [
-  { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
-  { href: "/administrativo", label: "Administrativo", icon: Building2 },
-  { href: "/financeiro", label: "Financeiro", icon: Wallet },
-  { href: "/juridico", label: "Jurídico", icon: Scale },
-  { href: "/contabil", label: "Contábil", icon: CalculatorIcon },
-  { href: "/marketing", label: "Marketing", icon: Megaphone },
-  {
-    href: "/eventos",
-    label: "Produção de eventos",
-    icon: CalendarRange,
-    children: [
-      { href: "/eventos/edicao-1", label: "1ª edição anual" },
-      { href: "/eventos/edicao-2", label: "2ª edição anual" },
-      { href: "/eventos/edicao-3", label: "3ª edição anual" },
-      { href: "/eventos/edicao-4", label: "4ª edição anual" },
-    ],
-  },
-];
+import { NAV } from "@/components/layout/nav";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -71,7 +36,8 @@ export function Sidebar() {
                 pathname === item.href ||
                 (item.href !== "/dashboard" && pathname.startsWith(item.href));
               const hasChildren = !!item.children?.length;
-              const isGroupOpen = openGroup === item.href || pathname.startsWith(item.href);
+              const isGroupOpen =
+                openGroup === item.href || pathname.startsWith(item.href);
 
               return (
                 <li key={item.href}>

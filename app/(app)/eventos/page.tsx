@@ -21,6 +21,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { KpiInline } from "@/components/dashboard/kpi-inline";
+import { useRegisterPageState } from "@/lib/page-state";
 import { formatCurrencyBRL, formatNumberBR } from "@/lib/utils";
 
 type Lote = {
@@ -114,6 +115,16 @@ export default function EventosPage() {
   const totalVendidos = ed.lotes.reduce((acc, l) => acc + l.vendidos, 0);
   const ocupacao = Math.round((totalVendidos / ed.capacidade) * 100);
   const receitaIngressos = ed.lotes.reduce((acc, l) => acc + l.preco * l.vendidos, 0);
+
+  useRegisterPageState({
+    module: `Produção de eventos · ${ed.nome}`,
+    summary: [
+      { label: "Receita de ingressos", value: formatCurrencyBRL(receitaIngressos) },
+      { label: "Patrocínios", value: formatCurrencyBRL(ed.patrocinio) },
+      { label: "Público confirmado", value: formatNumberBR(totalVendidos) },
+      { label: "Ocupação", value: `${ocupacao}%` },
+    ],
+  });
 
   const updateLote = (loteIdx: number, key: "vendidos" | "estoque" | "preco", value: number) => {
     setEdicoes((prev) =>

@@ -21,18 +21,24 @@ export type SeriesPoint = {
 
 export type Attachment = { name: string; size: number; type: string };
 
+export type GlowVariant = "brand" | "emerald";
+
 type Ctx = {
   cards: IndicatorCard[];
   series: SeriesPoint[];
   attachments: Record<IndicatorKey, Attachment[]>;
   glowing: boolean;
   glowToken: number;
-  triggerGlow: () => void;
+  glowVariant: GlowVariant;
+  triggerGlow: (variant?: GlowVariant) => void;
   setCardValue: (key: IndicatorKey, value: number) => void;
-  applyImported: (data: Partial<{
-    cards: Partial<Record<IndicatorKey, number>>;
-    series: SeriesPoint[];
-  }>) => void;
+  applyImported: (
+    data: Partial<{
+      cards: Partial<Record<IndicatorKey, number>>;
+      series: SeriesPoint[];
+    }>,
+    options?: { glow?: GlowVariant },
+  ) => void;
   addAttachments: (key: IndicatorKey, files: File[]) => void;
   removeAttachment: (key: IndicatorKey, name: string) => void;
 };
@@ -68,9 +74,11 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   });
   const [glowing, setGlowing] = React.useState(false);
   const [glowToken, setGlowToken] = React.useState(0);
+  const [glowVariant, setGlowVariant] = React.useState<GlowVariant>("brand");
   const glowTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const triggerGlow = React.useCallback(() => {
+  const triggerGlow = React.useCallback((variant: GlowVariant = "brand") => {
+    setGlowVariant(variant);
     setGlowing(true);
     setGlowToken((t) => t + 1);
     if (glowTimer.current) clearTimeout(glowTimer.current);
@@ -88,30 +96,33 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setSeries((prev) => recalcSeries(prev, key, value));
   }, []);
 
-  const applyImported = React.useCallback<Ctx["applyImported"]>((data) => {
-    if (data.cards) {
-      setCards((prev) =>
-        prev.map((c) =>
-          data.cards && typeof data.cards[c.key] === "number"
-            ? { ...c, value: data.cards[c.key] as number }
-            : c,
-        ),
-      );
-    }
-    if (data.series && Array.isArray(data.series) && data.series.length > 0) {
-      setSeries(data.series);
-    } else if (data.cards) {
-      setSeries((prev) => {
-        let next = prev;
-        for (const k of Object.keys(data.cards!) as IndicatorKey[]) {
-          const v = data.cards![k];
-          if (typeof v === "number") next = recalcSeries(next, k, v);
-        }
-        return next;
-      });
-    }
-    triggerGlow();
-  }, [triggerGlow]);
+  const applyImported = React.useCallback<Ctx["applyImported"]>(
+    (data, options) => {
+      if (data.cards) {
+        setCards((prev) =>
+          prev.map((c) =>
+            data.cards && typeof data.cards[c.key] === "number"
+              ? { ...c, value: data.cards[c.key] as number }
+              : c,
+          ),
+        );
+      }
+      if (data.series && Array.isArray(data.series) && data.series.length > 0) {
+        setSeries(data.series);
+      } else if (data.cards) {
+        setSeries((prev) => {
+          let next = prev;
+          for (const k of Object.keys(data.cards!) as IndicatorKey[]) {
+            const v = data.cards![k];
+            if (typeof v === "number") next = recalcSeries(next, k, v);
+          }
+          return next;
+        });
+      }
+      triggerGlow(options?.glow ?? "brand");
+    },
+    [triggerGlow],
+  );
 
   const addAttachments = React.useCallback((key: IndicatorKey, files: File[]) => {
     setAttachments((prev) => ({
@@ -136,6 +147,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     attachments,
     glowing,
     glowToken,
+    glowVariant,
     triggerGlow,
     setCardValue,
     applyImported,

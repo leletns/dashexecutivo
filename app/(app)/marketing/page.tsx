@@ -29,7 +29,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { KpiInline } from "@/components/dashboard/kpi-inline";
-import { cn } from "@/lib/utils";
+import { useRegisterPageState } from "@/lib/page-state";
+import { cn, formatCurrencyBRL, formatNumberBR } from "@/lib/utils";
 
 type Status = "todo" | "doing" | "done";
 type Task = {
@@ -79,6 +80,16 @@ export default function MarketingPage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor),
   );
+
+  useRegisterPageState({
+    module: "Marketing",
+    summary: [
+      { label: "Alcance", value: formatNumberBR(alcance) },
+      { label: "Conversões", value: formatNumberBR(conversoes) },
+      { label: "Investimento em mídia", value: formatCurrencyBRL(investimento) },
+      { label: "Tarefas em aberto", value: tasks.filter((t) => t.status !== "done").length },
+    ],
+  });
 
   const onDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
   const onDragEnd = (e: DragEndEvent) => {

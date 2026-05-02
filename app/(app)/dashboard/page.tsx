@@ -9,6 +9,8 @@ import { EditionPieChart } from "@/components/dashboard/edition-pie-chart";
 import { AutoConciliacaoSheet } from "@/components/dashboard/auto-conciliacao-sheet";
 import { ExportButton } from "@/components/dashboard/export-button";
 import { useDashboardContext } from "@/components/dashboard/dashboard-context";
+import { useRegisterPageState } from "@/lib/page-state";
+import { formatCurrencyBRL } from "@/lib/utils";
 
 const fade = {
   hidden: { opacity: 0, y: 8 },
@@ -21,6 +23,14 @@ const fade = {
 
 export default function VisaoGeralPage() {
   const { cards } = useDashboardContext();
+
+  useRegisterPageState({
+    module: "Visão geral",
+    summary: cards.map((c) => ({
+      label: c.label,
+      value: formatCurrencyBRL(c.value),
+    })),
+  });
 
   return (
     <div className="space-y-4">

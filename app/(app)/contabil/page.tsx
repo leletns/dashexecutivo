@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/table";
 import { KpiInline } from "@/components/dashboard/kpi-inline";
 import { ImpostosFolhaChart } from "@/components/dashboard/impostos-folha-chart";
+import { useRegisterPageState } from "@/lib/page-state";
+import { formatCurrencyBRL } from "@/lib/utils";
 
 type SituacaoCertidao = "regular" | "pendente";
 
@@ -52,6 +54,17 @@ export default function ContabilPage() {
   const [tributario, setTributario] = React.useState(11.4);
 
   const regulares = CERTIDOES.filter((c) => c.situacao === "regular").length;
+
+  useRegisterPageState({
+    module: "Contábil",
+    summary: [
+      { label: "Impostos", value: formatCurrencyBRL(impostos) },
+      { label: "Folha", value: formatCurrencyBRL(folha) },
+      { label: "Provisões", value: formatCurrencyBRL(provisoes) },
+      { label: "Carga tributária", value: `${tributario}%` },
+      { label: "Certidões regulares", value: `${regulares}/${CERTIDOES.length}` },
+    ],
+  });
 
   return (
     <div className="space-y-5">

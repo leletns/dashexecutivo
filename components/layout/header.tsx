@@ -2,13 +2,20 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Camera, Check, LogOut, Pencil } from "lucide-react";
+import {
+  Camera,
+  Check,
+  LogOut,
+  Pencil,
+  Palette,
+} from "lucide-react";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { CalculatorPopover } from "@/components/layout/calculator-popover";
+import { MobileSidebar } from "@/components/layout/mobile-sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useProfile, getInitials } from "@/lib/profile";
+import { useProfile, getInitials, type AccentTheme } from "@/lib/profile";
 import { cn } from "@/lib/utils";
 
 export function Header() {
@@ -44,16 +51,20 @@ export function Header() {
     reader.readAsDataURL(file);
   };
 
+  const setAccent = (accent: AccentTheme) => update({ accent });
+
   const logout = () => router.push("/");
 
   return (
-    <header className="sticky top-0 z-30 px-4 pt-4">
-      <div className="glass rounded-2xl px-3 sm:px-5 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-3 min-w-0">
+    <header className="sticky top-0 z-30 px-3 sm:px-4 pt-3 sm:pt-4">
+      <div className="glass rounded-2xl pl-2 pr-2 sm:pl-3 sm:pr-3 h-14 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <MobileSidebar />
+
           <Popover>
             <PopoverTrigger asChild>
               <button
-                aria-label="Trocar foto"
+                aria-label="Trocar foto e preferências"
                 className="relative h-9 w-9 rounded-full overflow-hidden shrink-0 group"
               >
                 {profile.avatarDataUrl ? (
@@ -73,7 +84,7 @@ export function Header() {
                 </span>
               </button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-60 p-1.5">
+            <PopoverContent align="start" className="w-72 p-1.5">
               <button
                 onClick={() => fileRef.current?.click()}
                 className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-foreground/[0.05] dark:hover:bg-white/[0.05]"
@@ -89,7 +100,34 @@ export function Header() {
                   Remover foto atual
                 </button>
               )}
-              <div className="h-px bg-border my-1" />
+
+              <div className="h-px bg-border my-1.5" />
+
+              <div className="px-2 pt-1 pb-1.5">
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <Palette className="h-3 w-3" />
+                  Personalizar cores
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <AccentChoice
+                    label="Lilás executivo"
+                    accent="lilas"
+                    active={profile.accent === "lilas"}
+                    onClick={() => setAccent("lilas")}
+                    swatch="linear-gradient(135deg,#c4b5fd 0%,#a78bfa 50%,#8b5cf6 100%)"
+                  />
+                  <AccentChoice
+                    label="Modo grafite"
+                    accent="grafite"
+                    active={profile.accent === "grafite"}
+                    onClick={() => setAccent("grafite")}
+                    swatch="linear-gradient(135deg,#cbd5e1 0%,#64748b 60%,#334155 100%)"
+                  />
+                </div>
+              </div>
+
+              <div className="h-px bg-border my-1.5" />
+
               <button
                 onClick={logout}
                 className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-rose-500 hover:bg-rose-500/[0.08]"
@@ -121,7 +159,7 @@ export function Header() {
                       if (e.key === "Enter") commit();
                       if (e.key === "Escape") setEditing(false);
                     }}
-                    className="h-7 px-2 py-0 text-sm font-semibold w-44"
+                    className="h-7 px-2 py-0 text-sm font-semibold w-36 sm:w-44"
                   />
                   <button
                     onClick={commit}
@@ -134,7 +172,7 @@ export function Header() {
               ) : (
                 <button
                   onClick={beginEdit}
-                  className="group/name inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
+                  className="group/name inline-flex items-center gap-1.5 hover:text-foreground transition-colors max-w-[55vw] sm:max-w-none"
                   aria-label="Editar nome"
                 >
                   <span className={cn("truncate", !hydrated && "opacity-0")}>
@@ -150,7 +188,7 @@ export function Header() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <CalculatorPopover />
           <ThemeToggle />
           <Button
@@ -168,3 +206,42 @@ export function Header() {
   );
 }
 
+function AccentChoice({
+  label,
+  accent,
+  active,
+  onClick,
+  swatch,
+}: {
+  label: string;
+  accent: AccentTheme;
+  active: boolean;
+  onClick: () => void;
+  swatch: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      aria-label={label}
+      data-accent-choice={accent}
+      onClick={onClick}
+      className={cn(
+        "rounded-lg p-2 text-left text-[11px] flex flex-col gap-1.5 border transition-colors",
+        active
+          ? "border-foreground/30 bg-foreground/[0.04]"
+          : "border-border hover:border-foreground/20",
+      )}
+    >
+      <span
+        className="h-5 w-full rounded-md"
+        style={{ backgroundImage: swatch }}
+      />
+      <span className="flex items-center justify-between">
+        {label}
+        {active && <Check className="h-3 w-3" />}
+      </span>
+    </button>
+  );
+}

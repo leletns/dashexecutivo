@@ -2,67 +2,241 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, Send, X } from "lucide-react";
+import {
+  MessageCircle,
+  Send,
+  X,
+  Paperclip,
+  ExternalLink,
+  Loader2,
+  Check,
+  ArrowRight,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrencyBRL } from "@/lib/utils";
 import { useDashboardContext } from "@/components/dashboard/dashboard-context";
+import { usePageState } from "@/lib/page-state";
 import { Logo } from "@/components/brand/logo";
 
-type Msg = { role: "user" | "assistant"; content: string };
+const WHATSAPP_NUMBER = "5521987587947";
+
+const FRUSTRATION_KEYWORDS = [
+  "não funciona",
+  "nao funciona",
+  "nao consigo",
+  "não consigo",
+  "ruim",
+  "péssimo",
+  "pessimo",
+  "horrível",
+  "horrivel",
+  "está quebrado",
+  "esta quebrado",
+  "não está funcionando",
+  "nao esta funcionando",
+  "frustrante",
+  "irritante",
+  "cansei",
+  "ajuda urgente",
+  "urgente",
+  "bug",
+  "erro",
+  "travou",
+  "trava",
+];
+
+type ChatItem =
+  | {
+      kind: "msg";
+      role: "user" | "assistant";
+      content: string;
+      escalate?: boolean;
+    }
+  | {
+      kind: "import-confirm";
+      filename: string;
+      module: string;
+      payload: any;
+      decided?: "accepted" | "rejected";
+    };
+
+type Status = "idle" | "thinking" | "uploading";
 
 export function SupportFab() {
   const [open, setOpen] = React.useState(false);
   const [input, setInput] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [messages, setMessages] = React.useState<Msg[]>([
+  const [status, setStatus] = React.useState<Status>("idle");
+  const ctx = useDashboardContext();
+  const page = usePageState();
+  const fileRef = React.useRef<HTMLInputElement>(null);
+  const endRef = React.useRef<HTMLDivElement>(null);
+
+  const [items, setItems] = React.useState<ChatItem[]>([
     {
+      kind: "msg",
       role: "assistant",
       content:
-        "Olá, Ludymilla. Estou acompanhando seus números em tempo real. Pode me perguntar sobre receitas, margens, eventos ou cenários.",
+        "Olá. Estou acompanhando o painel em tempo real. Pergunte sobre receita, margem, eventos ou anexe um documento que eu interpreto e atualizo os números pra você.",
     },
   ]);
-  const ctx = useDashboardContext();
-  const endRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, open]);
+  }, [items, open, status]);
 
-  const send = async () => {
-    const text = input.trim();
-    if (!text || loading) return;
-    const next: Msg[] = [...messages, { role: "user", content: text }];
-    setMessages(next);
-    setInput("");
-    setLoading(true);
+  const moduleSummary = React.useMemo(() => {
+    const baseSummary =
+      page.summary && page.summary.length > 0
+        ? page.summary.map((s) => `${s.label}: ${s.value}`).join(" · ")
+        : ctx.cards
+            .map((c) => `${c.label}: ${formatCurrencyBRL(c.value)}`)
+            .join(" · ");
+    return baseSummary;
+  }, [page.summary, ctx.cards]);
+
+  const send = async (override?: string) => {
+    const text = (override ?? input).trim();
+    if (!text || status !== "idle") return;
+    const next: ChatItem[] = [
+      ...items,
+      { kind: "msg", role: "user", content: text },
+    ];
+    setItems(next);
+    if (!override) setInput("");
+    setStatus("thinking");
+
+    const isFrustrated = detectFrustration(text);
+
     try {
+      const messagesForApi = next
+        .filter((it): it is Extract<ChatItem, { kind: "msg" }> => it.kind === "msg")
+        .map(({ role, content }) => ({ role, content }));
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: next,
+          messages: messagesForApi,
           context: {
+            module: page.module,
             indicators: ctx.cards,
             series: ctx.series,
+            summary: page.summary,
           },
         }),
       });
       const data = await res.json();
-      setMessages((m) => [
+      const reply: string = data.reply ?? "Não consegui responder agora.";
+      setItems((m) => [
         ...m,
-        { role: "assistant", content: data.reply ?? "Não consegui responder agora." },
+        { kind: "msg", role: "assistant", content: reply, escalate: isFrustrated },
       ]);
     } catch {
-      setMessages((m) => [
+      setItems((m) => [
         ...m,
-        { role: "assistant", content: "Falha temporária na sincronização. Tente novamente." },
+        {
+          kind: "msg",
+          role: "assistant",
+          content:
+            "Falha temporária na sincronização. Posso te conectar com o suporte humano?",
+          escalate: true,
+        },
       ]);
     } finally {
-      setLoading(false);
+      setStatus("idle");
     }
   };
+
+  const onPickFile = () => fileRef.current?.click();
+
+  const onFileSelected = async (file?: File) => {
+    if (!file || status !== "idle") return;
+    setItems((m) => [
+      ...m,
+      {
+        kind: "msg",
+        role: "user",
+        content: `Anexei o documento: ${file.name}`,
+      },
+    ]);
+    setStatus("uploading");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/process", { method: "POST", body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const moduleGuess = page.module || "Visão geral";
+      setItems((m) => [
+        ...m,
+        {
+          kind: "msg",
+          role: "assistant",
+          content: `Identifiquei dados de ${moduleGuess}. Posso atualizar o painel?`,
+        },
+        { kind: "import-confirm", filename: file.name, module: moduleGuess, payload: data },
+      ]);
+    } catch {
+      setItems((m) => [
+        ...m,
+        {
+          kind: "msg",
+          role: "assistant",
+          content: "Não consegui ler esse arquivo. Tente novamente em outro formato.",
+        },
+      ]);
+    } finally {
+      setStatus("idle");
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const decide = (idx: number, decision: "accepted" | "rejected") => {
+    // 1) Resolvemos o item ANTES de qualquer setState, lendo do snapshot
+    //    do render que originou o botão. Validamos kind e decided para
+    //    tornar a operação idempotente (cliques duplicados).
+    const target = items[idx];
+    if (!target || target.kind !== "import-confirm" || target.decided) return;
+
+    // 2) Marcamos o card como decidido (oculta os botões de ação).
+    setItems((prev) =>
+      prev.map((it, i) =>
+        i === idx && it.kind === "import-confirm"
+          ? { ...it, decided: decision }
+          : it,
+      ),
+    );
+
+    // 3) Aplicamos os efeitos colaterais com o payload já capturado.
+    if (decision === "accepted") {
+      ctx.applyImported(target.payload, { glow: "emerald" });
+      setItems((m) => [
+        ...m,
+        {
+          kind: "msg",
+          role: "assistant",
+          content:
+            "Painel atualizado em tempo real. Os cards correspondentes acabaram de pulsar em verde.",
+        },
+      ]);
+    } else {
+      setItems((m) => [
+        ...m,
+        {
+          kind: "msg",
+          role: "assistant",
+          content: "Tudo bem, mantive os números como estavam.",
+        },
+      ]);
+    }
+  };
+
+  const escalateUrl = React.useMemo(
+    () => buildWhatsappUrl(page.module || "Visão geral", moduleSummary),
+    [page.module, moduleSummary],
+  );
 
   return (
     <>
@@ -71,7 +245,7 @@ export function SupportFab() {
         onClick={() => setOpen(true)}
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.96 }}
-        className="fixed bottom-6 right-6 z-40 h-12 w-12 rounded-full bg-foreground text-background shadow-2xl grid place-items-center"
+        className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-40 h-12 w-12 rounded-full bg-foreground text-background shadow-2xl grid place-items-center"
       >
         <MessageCircle className="h-5 w-5" />
         <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />
@@ -92,15 +266,17 @@ export function SupportFab() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 40, opacity: 0 }}
               transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              className="fixed bottom-6 right-6 z-50 w-[min(92vw,400px)] h-[min(80vh,640px)] glass-strong rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+              className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[400px] max-w-[420px] h-[min(80vh,640px)] glass-strong rounded-2xl shadow-2xl flex flex-col overflow-hidden"
             >
               <div className="px-4 py-3 flex items-center justify-between border-b border-border/60">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <Logo size={32} />
-                  <div className="leading-tight">
-                    <div className="text-sm font-semibold">Suporte executivo</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      Conselheiro de negócios
+                  <div className="leading-tight min-w-0">
+                    <div className="text-sm font-semibold truncate">
+                      Suporte executivo
+                    </div>
+                    <div className="text-[11px] text-muted-foreground truncate">
+                      Lendo módulo: {page.module}
                     </div>
                   </div>
                 </div>
@@ -111,53 +287,192 @@ export function SupportFab() {
 
               <ScrollArea className="flex-1 px-4 py-4">
                 <div className="space-y-3">
-                  {messages.map((m, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={cn(
-                        "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
-                        m.role === "user"
-                          ? "ml-auto bg-foreground text-background rounded-br-md"
-                          : "mr-auto bg-foreground/[0.05] dark:bg-white/[0.06] rounded-bl-md",
-                      )}
-                    >
-                      {m.content}
-                    </motion.div>
-                  ))}
-                  {loading && (
-                    <div className="mr-auto bg-foreground/[0.05] dark:bg-white/[0.06] rounded-2xl rounded-bl-md px-3.5 py-2.5 text-sm">
-                      <span className="inline-flex gap-1 items-center text-muted-foreground">
-                        <Dot />
-                        <Dot delay={0.15} />
-                        <Dot delay={0.3} />
-                      </span>
-                    </div>
+                  {items.map((it, i) =>
+                    it.kind === "msg" ? (
+                      <ChatBubble key={i} item={it} escalateUrl={escalateUrl} />
+                    ) : (
+                      <ImportConfirmCard
+                        key={i}
+                        item={it}
+                        onDecide={(d) => decide(i, d)}
+                      />
+                    ),
                   )}
+                  {status !== "idle" && <TypingIndicator status={status} />}
                   <div ref={endRef} />
                 </div>
               </ScrollArea>
 
-              <div className="border-t border-border/60 p-3">
+              <div className="border-t border-border/60 p-3 space-y-2">
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={onPickFile}
+                    disabled={status !== "idle"}
+                    aria-label="Anexar arquivo"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
                   <Input
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && send()}
                     placeholder="Pergunte sobre seus números…"
-                    disabled={loading}
+                    disabled={status !== "idle"}
                   />
-                  <Button onClick={send} disabled={loading || !input.trim()} size="icon">
+                  <Button
+                    onClick={() => send()}
+                    disabled={status !== "idle" || !input.trim()}
+                    size="icon"
+                  >
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
+
+                <a
+                  href={escalateUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl glass px-3 h-9 text-[12px] text-foreground hover:bg-white/80 dark:hover:bg-white/[0.08] transition-colors"
+                >
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  Suporte especializado · WhatsApp
+                  <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                </a>
+
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.webp,application/pdf,image/*,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  className="hidden"
+                  onChange={(e) => onFileSelected(e.target.files?.[0] ?? undefined)}
+                />
               </div>
             </motion.aside>
           </>
         )}
       </AnimatePresence>
     </>
+  );
+}
+
+function ChatBubble({
+  item,
+  escalateUrl,
+}: {
+  item: Extract<ChatItem, { kind: "msg" }>;
+  escalateUrl: string;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={cn("flex flex-col gap-1.5 max-w-[85%]", item.role === "user" ? "ml-auto items-end" : "mr-auto items-start")}
+    >
+      <div
+        className={cn(
+          "rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+          item.role === "user"
+            ? "bg-foreground text-background rounded-br-md"
+            : "bg-foreground/[0.05] dark:bg-white/[0.06] rounded-bl-md",
+        )}
+      >
+        {item.content}
+      </div>
+      {item.escalate && item.role === "assistant" && (
+        <a
+          href={escalateUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[11px] px-2.5 py-1 transition-colors"
+        >
+          Falar com suporte humano
+          <ArrowRight className="h-3 w-3" />
+        </a>
+      )}
+    </motion.div>
+  );
+}
+
+function ImportConfirmCard({
+  item,
+  onDecide,
+}: {
+  item: Extract<ChatItem, { kind: "import-confirm" }>;
+  onDecide: (d: "accepted" | "rejected") => void;
+}) {
+  const cardSummary = React.useMemo(() => {
+    const cards = item.payload?.cards ?? {};
+    const entries = Object.entries(cards) as Array<[string, number]>;
+    return entries.slice(0, 4);
+  }, [item.payload]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mr-auto max-w-[90%] rounded-2xl rounded-bl-md border border-emerald-500/25 bg-emerald-500/[0.06] px-3.5 py-3 text-sm space-y-2.5"
+    >
+      <div className="flex items-center gap-2 text-[11px] text-emerald-700 dark:text-emerald-300">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        Pré-visualização do arquivo · {item.filename}
+      </div>
+      {cardSummary.length > 0 && (
+        <ul className="space-y-1 text-[12px]">
+          {cardSummary.map(([k, v]) => (
+            <li key={k} className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground capitalize">{k}</span>
+              <span className="font-medium tabular-nums">
+                {typeof v === "number" ? formatCurrencyBRL(v) : String(v)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex items-center gap-2 pt-1">
+        {item.decided === "accepted" ? (
+          <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-[12px]">
+            <Check className="h-3.5 w-3.5" /> Aplicado ao painel
+          </span>
+        ) : item.decided === "rejected" ? (
+          <span className="text-muted-foreground text-[12px]">Mantido o painel atual</span>
+        ) : (
+          <>
+            <Button size="sm" className="h-8" onClick={() => onDecide("accepted")}>
+              Atualizar painel
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={() => onDecide("rejected")}
+            >
+              Não, obrigado
+            </Button>
+          </>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+function TypingIndicator({ status }: { status: Status }) {
+  return (
+    <div className="mr-auto bg-foreground/[0.05] dark:bg-white/[0.06] rounded-2xl rounded-bl-md px-3.5 py-2.5 text-xs text-muted-foreground inline-flex items-center gap-2">
+      {status === "uploading" ? (
+        <>
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Lendo o documento…
+        </>
+      ) : (
+        <>
+          <Dot />
+          <Dot delay={0.15} />
+          <Dot delay={0.3} />
+        </>
+      )}
+    </div>
   );
 }
 
@@ -169,4 +484,14 @@ function Dot({ delay = 0 }: { delay?: number }) {
       className="inline-block h-1.5 w-1.5 rounded-full bg-foreground/60"
     />
   );
+}
+
+function detectFrustration(text: string) {
+  const t = text.toLowerCase();
+  return FRUSTRATION_KEYWORDS.some((k) => t.includes(k));
+}
+
+function buildWhatsappUrl(module: string, summary: string) {
+  const message = `Olá, Letícia. O sistema identificou uma dúvida complexa no módulo ${module}. Dados atuais: ${summary || "sem indicadores carregados"}. Preciso de suporte humano.`;
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 }

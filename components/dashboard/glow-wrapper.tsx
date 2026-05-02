@@ -6,8 +6,12 @@ import { useDashboardContext } from "@/components/dashboard/dashboard-context";
 import { cn } from "@/lib/utils";
 
 /**
- * Envolve um conteúdo e dispara um pulso de "glow" lilás
- * sempre que o contexto sinaliza atualização (ex: importação concluída).
+ * Envolve um conteúdo e dispara um pulso de "glow" sempre
+ * que o contexto sinaliza atualização (ex: importação concluída).
+ *
+ * Suporta variantes de cor:
+ *  - "brand": pulso lilás (atualizações automáticas / inline edit)
+ *  - "emerald": pulso verde-esmeralda (atualizações confirmadas pela CEO via chat)
  */
 export function GlowWrapper({
   children,
@@ -20,7 +24,17 @@ export function GlowWrapper({
   delay?: number;
   intensity?: number;
 }) {
-  const { glowing, glowToken } = useDashboardContext();
+  const { glowing, glowToken, glowVariant } = useDashboardContext();
+
+  // Cores base (sem alpha) — `withAlpha` aplica a opacidade dinâmica.
+  const palette =
+    glowVariant === "emerald"
+      ? { space: "rgb" as const, ring: "16 185 129", spread: "16 185 129" }
+      : {
+          space: "hsl" as const,
+          ring: "var(--brand-1)",
+          spread: "var(--brand-2)",
+        };
 
   return (
     <div className={cn("relative", className)}>
@@ -35,10 +49,10 @@ export function GlowWrapper({
               opacity: [0, 0.9 * intensity, 0.4 * intensity, 0],
               scale: [0.97, 1.005, 1.012, 1],
               boxShadow: [
-                "0 0 0 0 hsl(var(--brand-1) / 0)",
-                `0 0 0 6px hsl(var(--brand-1) / ${0.18 * intensity})`,
-                `0 0 36px 8px hsl(var(--brand-2) / ${0.28 * intensity})`,
-                "0 0 0 0 hsl(var(--brand-1) / 0)",
+                "0 0 0 0 rgba(0,0,0,0)",
+                `0 0 0 6px ${withAlpha(palette.space, palette.ring, 0.18 * intensity)}`,
+                `0 0 36px 8px ${withAlpha(palette.space, palette.spread, 0.42 * intensity)}`,
+                "0 0 0 0 rgba(0,0,0,0)",
               ],
             }}
             exit={{ opacity: 0 }}
@@ -50,4 +64,15 @@ export function GlowWrapper({
       </AnimatePresence>
     </div>
   );
+}
+
+/**
+ * Compõe uma cor CSS no formato moderno `rgb(R G B / a)` ou `hsl(H S% L% / a)`,
+ * aceitando tanto componentes literais ("16 185 129", "268 90% 70%") quanto
+ * variáveis CSS ("var(--brand-1)" cujo valor é "268 90% 70%"). A opacidade
+ * é clamada em [0, 1] para evitar valores inválidos durante a animação.
+ */
+function withAlpha(space: "rgb" | "hsl", components: string, alpha: number) {
+  const a = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 0));
+  return `${space}(${components} / ${a})`;
 }
