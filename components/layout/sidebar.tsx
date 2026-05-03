@@ -7,10 +7,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
-import { NAV } from "@/components/layout/nav";
+import { useNav } from "@/components/layout/nav";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const NAV = useNav();
   const [openGroup, setOpenGroup] = React.useState<string | null>("/eventos");
 
   return (

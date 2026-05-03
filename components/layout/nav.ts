@@ -8,30 +8,40 @@ import {
   CalendarRange,
   type LucideIcon,
 } from "lucide-react";
+import { useAppState } from "@/lib/app-state";
+
+export type NavChild = { href: string; label: string };
 
 export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
-  children?: { href: string; label: string }[];
+  children?: NavChild[];
 };
 
-export const NAV: NavItem[] = [
+export const STATIC_NAV: NavItem[] = [
   { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
   { href: "/administrativo", label: "Administrativo", icon: Building2 },
   { href: "/financeiro", label: "Financeiro", icon: Wallet },
   { href: "/juridico", label: "Jurídico", icon: Scale },
   { href: "/contabil", label: "Contábil", icon: CalculatorIcon },
   { href: "/marketing", label: "Marketing", icon: Megaphone },
-  {
-    href: "/eventos",
-    label: "Produção de eventos",
-    icon: CalendarRange,
-    children: [
-      { href: "/eventos/edicao-1", label: "1ª edição anual" },
-      { href: "/eventos/edicao-2", label: "2ª edição anual" },
-      { href: "/eventos/edicao-3", label: "3ª edição anual" },
-      { href: "/eventos/edicao-4", label: "4ª edição anual" },
-    ],
-  },
 ];
+
+export const EVENTOS_NAV: Omit<NavItem, "children"> = {
+  href: "/eventos",
+  label: "Produção de eventos",
+  icon: CalendarRange,
+};
+
+export function useNav(): NavItem[] {
+  const { state } = useAppState();
+  const eventosChildren: NavChild[] = state.edicoes.map((e) => ({
+    href: `/eventos/${e.slug}`,
+    label: e.nome,
+  }));
+  return [
+    ...STATIC_NAV,
+    { ...EVENTOS_NAV, children: eventosChildren },
+  ];
+}

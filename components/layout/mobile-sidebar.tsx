@@ -15,11 +15,12 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/brand/logo";
-import { NAV } from "@/components/layout/nav";
+import { useNav } from "@/components/layout/nav";
 import { cn } from "@/lib/utils";
 
 export function MobileSidebar() {
   const pathname = usePathname();
+  const NAV = useNav();
   const [open, setOpen] = React.useState(false);
   const [openGroup, setOpenGroup] = React.useState<string | null>("/eventos");
 

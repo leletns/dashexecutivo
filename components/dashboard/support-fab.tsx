@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   MessageCircle,
@@ -11,13 +12,16 @@ import {
   Loader2,
   Check,
   ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn, formatCurrencyBRL } from "@/lib/utils";
-import { useDashboardContext } from "@/components/dashboard/dashboard-context";
+import { useDashboardContext, type IndicatorKey } from "@/components/dashboard/dashboard-context";
 import { usePageState } from "@/lib/page-state";
+import { useAppState, type FinanceCategoria, type FinanceLancamento } from "@/lib/app-state";
+import { useProfile } from "@/lib/profile";
 import { Logo } from "@/components/brand/logo";
 
 const WHATSAPP_NUMBER = "5521987587947";
@@ -47,12 +51,46 @@ const FRUSTRATION_KEYWORDS = [
   "trava",
 ];
 
+type AssistantAction =
+  | { type: "update_card"; key: IndicatorKey; value: number }
+  | {
+      type: "patch_edicao";
+      slug: string;
+      patch: Partial<{
+        nome: string;
+        cidade: string;
+        data: string;
+        capacidade: number;
+        patrocinio: number;
+        custoProducao: number;
+      }>;
+    }
+  | {
+      type: "patch_lote";
+      slug: string;
+      loteIndex: number;
+      patch: Partial<{ nome: string; preco: number; vendidos: number; estoque: number }>;
+    }
+  | {
+      type: "add_lancamento";
+      tipo: "receita" | "despesa";
+      descricao: string;
+      categoria: FinanceCategoria;
+      valor: number;
+      vencimento: string;
+      pagamento?: string | null;
+      edicaoSlug?: string | null;
+    }
+  | { type: "toggle_pago"; id: string; pago: boolean }
+  | { type: "remove_lancamento"; id: string };
+
 type ChatItem =
   | {
       kind: "msg";
       role: "user" | "assistant";
       content: string;
       escalate?: boolean;
+      actionsApplied?: string[];
     }
   | {
       kind: "import-confirm";
@@ -70,6 +108,9 @@ export function SupportFab() {
   const [status, setStatus] = React.useState<Status>("idle");
   const ctx = useDashboardContext();
   const page = usePageState();
+  const appState = useAppState();
+  const { profile } = useProfile();
+  const pathname = usePathname();
   const fileRef = React.useRef<HTMLInputElement>(null);
   const endRef = React.useRef<HTMLDivElement>(null);
 
@@ -78,7 +119,7 @@ export function SupportFab() {
       kind: "msg",
       role: "assistant",
       content:
-        "Olá. Estou acompanhando o painel em tempo real. Pergunte sobre receita, margem, eventos ou anexe um documento que eu interpreto e atualizo os números pra você.",
+        "Olá. Estou conectado ao painel inteiro: edições, financeiro, indicadores. Pergunte o que quiser — receita, margem por evento, registrar um pagamento, ajustar uma edição, ou até que dia é hoje.",
     },
   ]);
 
@@ -95,6 +136,22 @@ export function SupportFab() {
             .join(" · ");
     return baseSummary;
   }, [page.summary, ctx.cards]);
+
+  const buildContext = React.useCallback(
+    () => ({
+      module: page.module,
+      page: pathname ?? undefined,
+      indicators: ctx.cards,
+      series: ctx.series,
+      summary: page.summary,
+      profile: { name: profile.name, role: profile.role },
+      appState: {
+        edicoes: appState.state.edicoes,
+        financeiro: appState.state.financeiro,
+      },
+    }),
+    [appState.state, ctx.cards, ctx.series, page.module, page.summary, pathname, profile.name, profile.role],
+  );
 
   const send = async (override?: string) => {
     const text = (override ?? input).trim();
@@ -119,19 +176,23 @@ export function SupportFab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: messagesForApi,
-          context: {
-            module: page.module,
-            indicators: ctx.cards,
-            series: ctx.series,
-            summary: page.summary,
-          },
+          context: buildContext(),
         }),
       });
       const data = await res.json();
-      const reply: string = data.reply ?? "Não consegui responder agora.";
+      const rawReply: string = data.reply ?? "Não consegui responder agora.";
+      const { display, actions } = extractActions(rawReply);
+      const applied = actions.length > 0 ? applyActions(actions, ctx, appState) : [];
+
       setItems((m) => [
         ...m,
-        { kind: "msg", role: "assistant", content: reply, escalate: isFrustrated },
+        {
+          kind: "msg",
+          role: "assistant",
+          content: display.trim() || rawReply,
+          escalate: isFrustrated,
+          actionsApplied: applied,
+        },
       ]);
     } catch {
       setItems((m) => [
@@ -194,13 +255,9 @@ export function SupportFab() {
   };
 
   const decide = (idx: number, decision: "accepted" | "rejected") => {
-    // 1) Resolvemos o item ANTES de qualquer setState, lendo do snapshot
-    //    do render que originou o botão. Validamos kind e decided para
-    //    tornar a operação idempotente (cliques duplicados).
     const target = items[idx];
     if (!target || target.kind !== "import-confirm" || target.decided) return;
 
-    // 2) Marcamos o card como decidido (oculta os botões de ação).
     setItems((prev) =>
       prev.map((it, i) =>
         i === idx && it.kind === "import-confirm"
@@ -209,7 +266,6 @@ export function SupportFab() {
       ),
     );
 
-    // 3) Aplicamos os efeitos colaterais com o payload já capturado.
     if (decision === "accepted") {
       ctx.applyImported(target.payload, { glow: "emerald" });
       setItems((m) => [
@@ -318,7 +374,7 @@ export function SupportFab() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && send()}
-                    placeholder="Pergunte sobre seus números…"
+                    placeholder="Pergunte qualquer coisa…"
                     disabled={status !== "idle"}
                   />
                   <Button
@@ -372,7 +428,7 @@ function ChatBubble({
     >
       <div
         className={cn(
-          "rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+          "rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
           item.role === "user"
             ? "bg-foreground text-background rounded-br-md"
             : "bg-foreground/[0.05] dark:bg-white/[0.06] rounded-bl-md",
@@ -380,6 +436,19 @@ function ChatBubble({
       >
         {item.content}
       </div>
+      {item.actionsApplied && item.actionsApplied.length > 0 && (
+        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-300 max-w-full">
+          <div className="flex items-center gap-1.5 mb-1 font-medium">
+            <Sparkles className="h-3 w-3" />
+            Aplicado no painel
+          </div>
+          <ul className="space-y-0.5 list-disc pl-4">
+            {item.actionsApplied.map((a, i) => (
+              <li key={i}>{a}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {item.escalate && item.role === "assistant" && (
         <a
           href={escalateUrl}
@@ -494,4 +563,126 @@ function detectFrustration(text: string) {
 function buildWhatsappUrl(module: string, summary: string) {
   const message = `Olá, Letícia. O sistema identificou uma dúvida complexa no módulo ${module}. Dados atuais: ${summary || "sem indicadores carregados"}. Preciso de suporte humano.`;
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Ações estruturadas
+// ---------------------------------------------------------------------------
+
+function extractActions(reply: string): { display: string; actions: AssistantAction[] } {
+  const fenceRegex = /```actions\s*([\s\S]*?)```/i;
+  const match = reply.match(fenceRegex);
+  if (!match) return { display: reply, actions: [] };
+  const display = reply.replace(fenceRegex, "").trim();
+  try {
+    const parsed = JSON.parse(match[1]);
+    const actions: unknown[] = Array.isArray(parsed?.actions) ? parsed.actions : [];
+    const safe = actions.filter((a): a is AssistantAction => isValidAction(a));
+    return { display, actions: safe };
+  } catch {
+    return { display, actions: [] };
+  }
+}
+
+function isValidAction(a: any): a is AssistantAction {
+  if (!a || typeof a !== "object" || typeof a.type !== "string") return false;
+  switch (a.type) {
+    case "update_card":
+      return ["receita", "despesa", "lucro", "ticket"].includes(a.key) && Number.isFinite(Number(a.value));
+    case "patch_edicao":
+      return typeof a.slug === "string" && a.patch && typeof a.patch === "object";
+    case "patch_lote":
+      return typeof a.slug === "string" && Number.isInteger(Number(a.loteIndex)) && a.patch && typeof a.patch === "object";
+    case "add_lancamento":
+      return (
+        ["receita", "despesa"].includes(a.tipo) &&
+        typeof a.descricao === "string" &&
+        typeof a.categoria === "string" &&
+        Number.isFinite(Number(a.valor)) &&
+        typeof a.vencimento === "string"
+      );
+    case "toggle_pago":
+      return typeof a.id === "string" && typeof a.pago === "boolean";
+    case "remove_lancamento":
+      return typeof a.id === "string";
+    default:
+      return false;
+  }
+}
+
+function applyActions(
+  actions: AssistantAction[],
+  dashboard: ReturnType<typeof useDashboardContext>,
+  appState: ReturnType<typeof useAppState>,
+): string[] {
+  const summary: string[] = [];
+  for (const a of actions) {
+    try {
+      switch (a.type) {
+        case "update_card": {
+          dashboard.setCardValue(a.key, Number(a.value));
+          dashboard.triggerGlow("emerald");
+          summary.push(`Indicador "${a.key}" atualizado para ${formatCurrencyBRL(Number(a.value))}`);
+          break;
+        }
+        case "patch_edicao": {
+          appState.patchEdicao(a.slug, sanitizeEdicaoPatch(a.patch));
+          summary.push(`Edição "${a.slug}" atualizada`);
+          break;
+        }
+        case "patch_lote": {
+          appState.patchLote(a.slug, a.loteIndex, sanitizeLotePatch(a.patch));
+          summary.push(`Lote ${a.loteIndex + 1} de "${a.slug}" atualizado`);
+          break;
+        }
+        case "add_lancamento": {
+          const lanc: Omit<FinanceLancamento, "id"> = {
+            tipo: a.tipo,
+            descricao: a.descricao,
+            categoria: (a.categoria as FinanceCategoria) ?? "Outros",
+            valor: Math.max(0, Math.round(Number(a.valor))),
+            vencimento: a.vencimento,
+            pagamento: a.pagamento ?? null,
+            edicaoSlug: a.edicaoSlug ?? null,
+          };
+          appState.addLancamento(lanc);
+          summary.push(`${a.tipo === "receita" ? "Recebimento" : "Pagamento"} "${a.descricao}" lançado (${formatCurrencyBRL(lanc.valor)})`);
+          break;
+        }
+        case "toggle_pago": {
+          appState.togglePago(a.id, a.pago);
+          summary.push(`Lançamento ${a.pago ? "marcado como liquidado" : "reaberto"}`);
+          break;
+        }
+        case "remove_lancamento": {
+          appState.removeLancamento(a.id);
+          summary.push("Lançamento removido");
+          break;
+        }
+      }
+    } catch {
+      summary.push("Uma ação não pôde ser aplicada e foi ignorada.");
+    }
+  }
+  return summary;
+}
+
+function sanitizeEdicaoPatch(patch: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  if (typeof patch.nome === "string") out.nome = patch.nome;
+  if (typeof patch.cidade === "string") out.cidade = patch.cidade;
+  if (typeof patch.data === "string") out.data = patch.data;
+  if (Number.isFinite(Number(patch.capacidade))) out.capacidade = Math.round(Number(patch.capacidade));
+  if (Number.isFinite(Number(patch.patrocinio))) out.patrocinio = Math.round(Number(patch.patrocinio));
+  if (Number.isFinite(Number(patch.custoProducao))) out.custoProducao = Math.round(Number(patch.custoProducao));
+  return out;
+}
+
+function sanitizeLotePatch(patch: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  if (typeof patch.nome === "string") out.nome = patch.nome;
+  if (Number.isFinite(Number(patch.preco))) out.preco = Number(patch.preco);
+  if (Number.isFinite(Number(patch.vendidos))) out.vendidos = Math.max(0, Math.round(Number(patch.vendidos)));
+  if (Number.isFinite(Number(patch.estoque))) out.estoque = Math.max(0, Math.round(Number(patch.estoque)));
+  return out;
 }
