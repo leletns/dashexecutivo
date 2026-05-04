@@ -131,7 +131,7 @@ export function LancamentoFormDialog({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Descrição" wide>
-            <Input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Ex.: Patrocínio Aurora" />
+            <Input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Descrição do lançamento" />
           </Field>
           <Field label="Valor (R$)">
             <Input value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" placeholder="0" />

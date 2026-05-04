@@ -39,19 +39,13 @@ type Certidao = {
   situacao: SituacaoCertidao;
 };
 
-const CERTIDOES: Certidao[] = [
-  { esfera: "Federal", orgao: "Receita federal · PGFN", numero: "CND-FED-2026-00482", emissao: "12/01/2026", validade: "11/07/2026", situacao: "regular" },
-  { esfera: "Estadual", orgao: "Sefaz", numero: "CND-EST-2026-00211", emissao: "08/01/2026", validade: "07/07/2026", situacao: "regular" },
-  { esfera: "Municipal", orgao: "Prefeitura", numero: "CND-MUN-2026-00117", emissao: "10/01/2026", validade: "10/07/2026", situacao: "regular" },
-  { esfera: "Trabalhista", orgao: "TST · CNDT", numero: "CNDT-2026-00388", emissao: "15/01/2026", validade: "15/07/2026", situacao: "regular" },
-  { esfera: "FGTS", orgao: "Caixa econômica federal", numero: "CRF-2026-00566", emissao: "05/02/2026", validade: "05/04/2026", situacao: "pendente" },
-];
+const CERTIDOES: Certidao[] = [];
 
 export default function ContabilPage() {
-  const [impostos, setImpostos] = React.useState(82_300);
-  const [folha, setFolha] = React.useState(64_500);
-  const [provisoes, setProvisoes] = React.useState(28_900);
-  const [tributario, setTributario] = React.useState(11.4);
+  const [impostos, setImpostos] = React.useState(0);
+  const [folha, setFolha] = React.useState(0);
+  const [provisoes, setProvisoes] = React.useState(0);
+  const [tributario, setTributario] = React.useState(0);
 
   const regulares = CERTIDOES.filter((c) => c.situacao === "regular").length;
 
@@ -80,9 +74,14 @@ export default function ContabilPage() {
             Apurações, encargos e obrigações fiscais consolidadas
           </p>
         </div>
-        <Badge variant="success" className="gap-1.5">
+        <Badge
+          variant={CERTIDOES.length === 0 ? "outline" : "success"}
+          className="gap-1.5"
+        >
           <ShieldCheck className="h-3 w-3" />
-          {regulares} de {CERTIDOES.length} certidões regulares
+          {CERTIDOES.length === 0
+            ? "Nenhuma certidão cadastrada"
+            : `${regulares} de ${CERTIDOES.length} certidões regulares`}
         </Badge>
       </motion.div>
 
@@ -94,7 +93,6 @@ export default function ContabilPage() {
           icon={Receipt}
           format="currency"
           hint="DAS, ISS, INSS retido"
-          trend={{ delta: 4, label: "vs anterior" }}
         />
         <KpiInline
           label="Folha de pagamento"
@@ -103,7 +101,6 @@ export default function ContabilPage() {
           icon={Users}
           format="currency"
           hint="Equipe fixa + encargos"
-          trend={{ delta: 2, label: "vs anterior" }}
         />
         <KpiInline
           label="Provisões contábeis"
@@ -119,8 +116,7 @@ export default function ContabilPage() {
           onChange={setTributario}
           icon={Calculator}
           format="percent"
-          hint="Regime: lucro presumido"
-          trend={{ delta: -1, label: "vs benchmark" }}
+          hint="Percentual sobre a base apurada"
         />
       </div>
 
@@ -136,7 +132,7 @@ export default function ContabilPage() {
           </div>
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <CalendarClock className="h-3.5 w-3.5" />
-            Última verificação: hoje, 09:12
+            Preencha após integração com certidões online
           </div>
         </div>
         <Table>
@@ -152,39 +148,47 @@ export default function ContabilPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {CERTIDOES.map((c) => (
-              <TableRow key={c.numero}>
-                <TableCell>
-                  <Badge variant="outline">{c.esfera}</Badge>
-                </TableCell>
-                <TableCell className="font-medium">{c.orgao}</TableCell>
-                <TableCell className="text-muted-foreground tabular-nums">
-                  {c.numero}
-                </TableCell>
-                <TableCell className="text-muted-foreground tabular-nums">
-                  {c.emissao}
-                </TableCell>
-                <TableCell className="text-muted-foreground tabular-nums">
-                  {c.validade}
-                </TableCell>
-                <TableCell>
-                  {c.situacao === "regular" ? (
-                    <Badge variant="success" className="gap-1">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Regular
-                    </Badge>
-                  ) : (
-                    <Badge variant="warning">Renovar</Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-right pr-5">
-                  <Button size="sm" variant="ghost" className="h-7 px-2">
-                    <Download className="h-3.5 w-3.5 mr-1.5" />
-                    PDF
-                  </Button>
+            {CERTIDOES.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-10">
+                  Nenhuma certidão listada. Importe ou conecte o serviço de consulta da contabilidade.
                 </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              CERTIDOES.map((c) => (
+                <TableRow key={c.numero}>
+                  <TableCell>
+                    <Badge variant="outline">{c.esfera}</Badge>
+                  </TableCell>
+                  <TableCell className="font-medium">{c.orgao}</TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {c.numero}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {c.emissao}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {c.validade}
+                  </TableCell>
+                  <TableCell>
+                    {c.situacao === "regular" ? (
+                      <Badge variant="success" className="gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Regular
+                      </Badge>
+                    ) : (
+                      <Badge variant="warning">Renovar</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right pr-5">
+                    <Button size="sm" variant="ghost" className="h-7 px-2">
+                      <Download className="h-3.5 w-3.5 mr-1.5" />
+                      PDF
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </Card>

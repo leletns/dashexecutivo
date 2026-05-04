@@ -48,18 +48,6 @@ const COLUMNS: { id: Status; label: string; tone: string; pill: string }[] = [
   { id: "done", label: "Concluído", tone: "bg-emerald-500/[0.08]", pill: "bg-emerald-500/[0.15]" },
 ];
 
-const SEED: Task[] = [
-  { id: "t1", title: "Lançar campanha de patrocínios — 1ª edição", owner: "Marina", channel: "LinkedIn", status: "doing", priority: "alta" },
-  { id: "t2", title: "Revisão de identidade visual do hotsite", owner: "Diego", channel: "Site", status: "todo", priority: "média" },
-  { id: "t3", title: "Pacote de mídia paga — lote 2", owner: "Marina", channel: "Tráfego pago", status: "doing", priority: "alta" },
-  { id: "t4", title: "Press release para mídia regional", owner: "Camila", channel: "Imprensa", status: "todo", priority: "baixa" },
-  { id: "t5", title: "Reels de bastidores — equipe de produção", owner: "Pedro", channel: "Instagram", status: "done", priority: "média" },
-  { id: "t6", title: "Briefing dos influenciadores convidados", owner: "Camila", channel: "Instagram", status: "doing", priority: "alta" },
-  { id: "t7", title: "Atualizar biografia institucional", owner: "Diego", channel: "Site", status: "done", priority: "baixa" },
-  { id: "t8", title: "Plano de mídia — 2ª edição", owner: "Marina", channel: "Tráfego pago", status: "todo", priority: "média" },
-  { id: "t9", title: "Reativação da base de leads VIP", owner: "Camila", channel: "LinkedIn", status: "todo", priority: "alta" },
-];
-
 const PRIORITY_VARIANT: Record<Task["priority"], "destructive" | "warning" | "muted"> = {
   alta: "destructive",
   média: "warning",
@@ -67,14 +55,14 @@ const PRIORITY_VARIANT: Record<Task["priority"], "destructive" | "warning" | "mu
 };
 
 export default function MarketingPage() {
-  const [tasks, setTasks] = React.useState<Task[]>(SEED);
+  const [tasks, setTasks] = React.useState<Task[]>([]);
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState("");
 
-  const [alcance, setAlcance] = React.useState(284_000);
-  const [conversoes, setConversoes] = React.useState(1_220);
-  const [investimento, setInvestimento] = React.useState(48_500);
+  const [alcance, setAlcance] = React.useState(0);
+  const [conversoes, setConversoes] = React.useState(0);
+  const [investimento, setInvestimento] = React.useState(0);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),

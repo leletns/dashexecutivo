@@ -11,10 +11,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Pencil, Check, BarChart3 } from "lucide-react";
+import { Pencil, Check, BarChart3, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { GlowWrapper } from "@/components/dashboard/glow-wrapper";
 import { formatCurrencyBRL, parseLooseNumber } from "@/lib/utils";
 
@@ -25,23 +26,69 @@ type Row = {
   cor: string;
 };
 
-const SEED: Row[] = [
-  { categoria: "Patrocínios", receita: 980000, custo: 120000, cor: "hsl(var(--brand-2))" },
-  { categoria: "Ingressos", receita: 720000, custo: 240000, cor: "hsl(var(--brand-1))" },
-  { categoria: "Ativações de marca", receita: 360000, custo: 95000, cor: "hsl(var(--brand-3))" },
-  { categoria: "Catering & bar", receita: 240000, custo: 180000, cor: "rgb(16,185,129)" },
-  { categoria: "Pacotes corporativos", receita: 410000, custo: 90000, cor: "rgb(245,158,11)" },
+const CORES = [
+  "hsl(var(--brand-2))",
+  "hsl(var(--brand-1))",
+  "hsl(var(--brand-3))",
+  "rgb(16,185,129)",
+  "rgb(245,158,11)",
 ];
 
+const CAT_KEY = "portal.category-chart.v1";
+
+function loadRows(): Row[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(CAT_KEY);
+    if (!raw) return [];
+    const p = JSON.parse(raw) as Row[];
+    return Array.isArray(p) ? p : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRows(rows: Row[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CAT_KEY, JSON.stringify(rows));
+  } catch {
+    // ignore
+  }
+}
+
 export function CategoryBarChart() {
-  const [rows, setRows] = React.useState<Row[]>(SEED);
+  const [rows, setRows] = React.useState<Row[]>([]);
   const [editing, setEditing] = React.useState<{ idx: number; field: "receita" | "custo" } | null>(
     null,
   );
   const [draft, setDraft] = React.useState("");
 
+  React.useEffect(() => {
+    setRows(loadRows());
+  }, []);
+
+  React.useEffect(() => {
+    saveRows(rows);
+  }, [rows]);
+
   const totalReceita = rows.reduce((acc, r) => acc + r.receita, 0);
   const totalCusto = rows.reduce((acc, r) => acc + r.custo, 0);
+
+  const addCategoria = () => {
+    if (typeof window === "undefined") return;
+    const nome = window.prompt("Nome da categoria (ex.: Patrocínios, Ingressos)");
+    if (!nome?.trim()) return;
+    setRows((p) => [
+      ...p,
+      {
+        categoria: nome.trim(),
+        receita: 0,
+        custo: 0,
+        cor: CORES[p.length % CORES.length],
+      },
+    ]);
+  };
 
   const beginEdit = (idx: number, field: "receita" | "custo") => {
     setEditing({ idx, field });
@@ -74,13 +121,33 @@ export function CategoryBarChart() {
           <div className="hidden sm:flex items-center gap-1.5">
             <Badge variant="brand">{formatCurrencyBRL(totalReceita)} receita</Badge>
             <Badge variant="muted">{formatCurrencyBRL(totalCusto)} custo</Badge>
+            <Button type="button" size="sm" variant="outline" className="h-8 gap-1" onClick={addCategoria}>
+              <Plus className="h-3.5 w-3.5" /> Categoria
+            </Button>
           </div>
+        </div>
+
+        <div className="px-2 pr-4 sm:hidden pb-2">
+          <Button type="button" size="sm" variant="outline" className="w-full gap-1" onClick={addCategoria}>
+            <Plus className="h-3.5 w-3.5" /> Adicionar categoria
+          </Button>
         </div>
 
         <div className="px-2 pr-4">
           <div className="h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rows} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
+            {rows.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center px-6 gap-3 rounded-xl border border-dashed border-border/70 bg-foreground/[0.02] dark:bg-white/[0.02]">
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Nenhuma categoria cadastrada. Use o botão <span className="font-medium text-foreground">Categoria</span> para
+                  criar linhas (ex.: patrocínios, ingressos). Os valores ficam salvos neste navegador até integrar com seu ERP.
+                </p>
+                <Button type="button" size="sm" className="gap-1.5" onClick={addCategoria}>
+                  <Plus className="h-4 w-4" /> Primeira categoria
+                </Button>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rows} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="bar-receita" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="hsl(var(--brand-2))" stopOpacity={0.95} />
@@ -130,6 +197,7 @@ export function CategoryBarChart() {
                 />
               </BarChart>
             </ResponsiveContainer>
+            )}
           </div>
         </div>
 

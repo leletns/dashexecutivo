@@ -260,30 +260,7 @@ function sanitize(input: any): Imported {
   return out;
 }
 
-function simulatedFallback(filename: string): Imported {
-  const seed = filename.length;
-  const r = (n: number) => Math.round(280000 + ((seed * n * 9301 + 49297) % 220000));
-  const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago"];
-  const series = months.map((m, i) => {
-    const receita = r(i + 1);
-    const despesa = Math.round(receita * (0.55 + ((i * 7) % 13) / 100));
-    return { month: m, receita, despesa, lucro: receita - despesa };
-  });
-  const totals = series.reduce(
-    (acc, p) => ({
-      receita: acc.receita + p.receita,
-      despesa: acc.despesa + p.despesa,
-      lucro: acc.lucro + p.lucro,
-    }),
-    { receita: 0, despesa: 0, lucro: 0 },
-  );
-  return {
-    cards: {
-      receita: totals.receita,
-      despesa: totals.despesa,
-      lucro: totals.lucro,
-      ticket: Math.round(totals.receita / 4),
-    },
-    series,
-  };
+/** Sem API key ou leitura vazia: não inventa números — retorna estrutura vazia para o usuário decidir. */
+function simulatedFallback(_filename: string): Imported {
+  return {};
 }

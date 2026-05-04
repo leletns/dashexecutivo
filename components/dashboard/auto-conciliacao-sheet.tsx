@@ -23,23 +23,9 @@ type Row = {
 
 type Pair = { extrato: Row; sistema: Row };
 
-const EXTRATO: Row[] = [
-  { id: "e1", date: "02/08", description: "Recebimento — Patrocínio Aurora", amount: 145000 },
-  { id: "e2", date: "05/08", description: "Pagamento — Locação espaço", amount: -38000 },
-  { id: "e3", date: "08/08", description: "Recebimento — Lote ingressos VIP", amount: 86200 },
-  { id: "e4", date: "12/08", description: "Pagamento — Equipe técnica", amount: -22400 },
-  { id: "e5", date: "18/08", description: "Recebimento — Patrocínio Vega", amount: 98000 },
-  { id: "e6", date: "22/08", description: "Pagamento — Marketing digital", amount: -14750 },
-];
-
-const SISTEMA: Row[] = [
-  { id: "s2", date: "05/08", description: "Locação · contrato #882", amount: -38000 },
-  { id: "s1", date: "02/08", description: "Patrocínio Aurora · NF 2034", amount: 145000 },
-  { id: "s5", date: "18/08", description: "Patrocínio Vega · NF 2041", amount: 98000 },
-  { id: "s3", date: "08/08", description: "Ingressos VIP · lote 1", amount: 86200 },
-  { id: "s6", date: "22/08", description: "Mídia paga · agosto", amount: -14750 },
-  { id: "s4", date: "12/08", description: "Folha técnica · evento", amount: -22400 },
-];
+/** Sem dados fictícios: o fluxo real virá da integração banco + ERP. */
+const EXTRATO: Row[] = [];
+const SISTEMA: Row[] = [];
 
 export function AutoConciliacaoSheet() {
   const [open, setOpen] = React.useState(false);
@@ -53,11 +39,14 @@ export function AutoConciliacaoSheet() {
 
   const start = async () => {
     setMatches([]);
+    if (EXTRATO.length === 0 || SISTEMA.length === 0) {
+      return;
+    }
     setRunning(true);
     const pairs: Pair[] = EXTRATO.map((e) => {
       const s = SISTEMA.find((x) => x.amount === e.amount && x.date === e.date)!;
       return { extrato: e, sistema: s };
-    });
+    }).filter(Boolean);
     for (const p of pairs) {
       await new Promise((r) => setTimeout(r, 420));
       setMatches((prev) => [...prev, p]);
@@ -73,6 +62,7 @@ export function AutoConciliacaoSheet() {
   const matchedSistema = new Set(matches.map((m) => m.sistema.id));
 
   const total = matches.reduce((acc, m) => acc + m.extrato.amount, 0);
+  const hasData = EXTRATO.length > 0 && SISTEMA.length > 0;
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -91,7 +81,8 @@ export function AutoConciliacaoSheet() {
                 Auto-conciliação bancária
               </SheetTitle>
               <SheetDescription>
-                Cruzamento automático entre extrato bancário e lançamentos do sistema.
+                Cruzamento automático entre extrato bancário e lançamentos do sistema. Os lançamentos
+                aparecem aqui quando a integração com o banco e o ERP estiver ativa.
               </SheetDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -99,25 +90,35 @@ export function AutoConciliacaoSheet() {
                 <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                 Reiniciar
               </Button>
-              <Button onClick={start} disabled={running} size="sm">
+              <Button onClick={start} disabled={running || !hasData} size="sm">
                 {running ? "Conciliando…" : "Iniciar"}
               </Button>
             </div>
           </div>
         </SheetHeader>
 
-        <div className="grid grid-cols-2 gap-4 px-6 py-4 flex-1 overflow-hidden">
-          <Column title="Extrato bancário" hint="Origem: banco">
-            {EXTRATO.map((row) => (
-              <RowItem key={row.id} row={row} matched={matchedExtrato.has(row.id)} />
-            ))}
-          </Column>
-          <Column title="Lançamentos do sistema" hint="Origem: ERP interno">
-            {SISTEMA.map((row) => (
-              <RowItem key={row.id} row={row} matched={matchedSistema.has(row.id)} mirrored />
-            ))}
-          </Column>
-        </div>
+        {!hasData ? (
+          <div className="flex-1 px-6 py-10 text-center text-sm text-muted-foreground space-y-2">
+            <p>
+              Não há lançamentos de extrato nem do sistema carregados neste ambiente. Quando o backend
+              enviar os dados (API ou importação agendada), eles aparecerão nas duas colunas e o botão
+              <span className="font-medium text-foreground"> Iniciar</span> fará o pareamento automático.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 px-6 py-4 flex-1 overflow-hidden">
+            <Column title="Extrato bancário" hint="Origem: banco">
+              {EXTRATO.map((row) => (
+                <RowItem key={row.id} row={row} matched={matchedExtrato.has(row.id)} />
+              ))}
+            </Column>
+            <Column title="Lançamentos do sistema" hint="Origem: ERP interno">
+              {SISTEMA.map((row) => (
+                <RowItem key={row.id} row={row} matched={matchedSistema.has(row.id)} mirrored />
+              ))}
+            </Column>
+          </div>
+        )}
 
         <div className="border-t border-border/60 px-6 py-4 flex items-center justify-between">
           <div className="text-xs text-muted-foreground">

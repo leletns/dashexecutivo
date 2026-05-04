@@ -45,27 +45,48 @@ type Ctx = {
 
 const DashboardContext = React.createContext<Ctx | null>(null);
 
-const SEED_SERIES: SeriesPoint[] = [
-  { month: "Jan", receita: 320000, despesa: 210000, lucro: 110000 },
-  { month: "Fev", receita: 295000, despesa: 205000, lucro: 90000 },
-  { month: "Mar", receita: 360000, despesa: 220000, lucro: 140000 },
-  { month: "Abr", receita: 410000, despesa: 245000, lucro: 165000 },
-  { month: "Mai", receita: 388000, despesa: 240000, lucro: 148000 },
-  { month: "Jun", receita: 432000, despesa: 255000, lucro: 177000 },
-  { month: "Jul", receita: 470000, despesa: 268000, lucro: 202000 },
-  { month: "Ago", receita: 455000, despesa: 262000, lucro: 193000 },
+const DASH_STORAGE_KEY = "portal.dashboard.v1";
+
+const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+/** Série mensal em zero — estrutura para preenchimento real (importação ou edição). */
+export function emptySeries(): SeriesPoint[] {
+  return MONTH_LABELS.map((month) => ({ month, receita: 0, despesa: 0, lucro: 0 }));
+}
+
+const INITIAL_CARDS: IndicatorCard[] = [
+  { key: "receita", label: "Receita acumulada", value: 0, format: "currency", hint: "Consolidado do período" },
+  { key: "despesa", label: "Despesas operacionais", value: 0, format: "currency", hint: "Custos consolidados" },
+  { key: "lucro", label: "Lucro líquido", value: 0, format: "currency", hint: "Receita − despesas" },
+  { key: "ticket", label: "Ticket médio por evento", value: 0, format: "currency", hint: "Média por evento" },
 ];
 
-const SEED_CARDS: IndicatorCard[] = [
-  { key: "receita", label: "Receita acumulada", value: 3130000, format: "currency", hint: "Últimos 8 meses" },
-  { key: "despesa", label: "Despesas operacionais", value: 1905000, format: "currency", hint: "Custos consolidados" },
-  { key: "lucro", label: "Lucro líquido", value: 1225000, format: "currency", hint: "Margem em evolução" },
-  { key: "ticket", label: "Ticket médio por evento", value: 78500, format: "currency", hint: "4 eventos anuais" },
-];
+function readDashboardStorage(): { cards: IndicatorCard[]; series: SeriesPoint[] } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(DASH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { cards?: IndicatorCard[]; series?: SeriesPoint[] };
+    if (!parsed?.cards || !Array.isArray(parsed.cards) || !Array.isArray(parsed.series)) return null;
+    return { cards: parsed.cards, series: parsed.series.length ? parsed.series : emptySeries() };
+  } catch {
+    return null;
+  }
+}
+
+function writeDashboardStorage(cards: IndicatorCard[], series: SeriesPoint[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DASH_STORAGE_KEY, JSON.stringify({ cards, series }));
+  } catch {
+    // quota
+  }
+}
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
-  const [cards, setCards] = React.useState<IndicatorCard[]>(SEED_CARDS);
-  const [series, setSeries] = React.useState<SeriesPoint[]>(SEED_SERIES);
+  const [cards, setCards] = React.useState<IndicatorCard[]>(INITIAL_CARDS);
+  const [series, setSeries] = React.useState<SeriesPoint[]>(emptySeries);
+  const [hydrated, setHydrated] = React.useState(false);
   const [attachments, setAttachments] = React.useState<Record<IndicatorKey, Attachment[]>>({
     receita: [],
     despesa: [],
@@ -76,6 +97,20 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [glowToken, setGlowToken] = React.useState(0);
   const [glowVariant, setGlowVariant] = React.useState<GlowVariant>("brand");
   const glowTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    const saved = readDashboardStorage();
+    if (saved) {
+      setCards(saved.cards);
+      setSeries(saved.series);
+    }
+    setHydrated(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (!hydrated) return;
+    writeDashboardStorage(cards, series);
+  }, [cards, series, hydrated]);
 
   const triggerGlow = React.useCallback((variant: GlowVariant = "brand") => {
     setGlowVariant(variant);
@@ -93,7 +128,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
   const setCardValue = React.useCallback((key: IndicatorKey, value: number) => {
     setCards((prev) => prev.map((c) => (c.key === key ? { ...c, value } : c)));
-    setSeries((prev) => recalcSeries(prev, key, value));
+    setSeries((prev) => recalcSeries(prev.length ? prev : emptySeries(), key, value));
   }, []);
 
   const applyImported = React.useCallback<Ctx["applyImported"]>(
@@ -111,7 +146,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         setSeries(data.series);
       } else if (data.cards) {
         setSeries((prev) => {
-          let next = prev;
+          const base = prev.length ? prev : emptySeries();
+          let next = base;
           for (const k of Object.keys(data.cards!) as IndicatorKey[]) {
             const v = data.cards![k];
             if (typeof v === "number") next = recalcSeries(next, k, v);
@@ -164,9 +200,9 @@ export function useDashboardContext() {
   return ctx;
 }
 
-// Reescala a série mantendo a forma original quando o usuário edita um card
 function recalcSeries(series: SeriesPoint[], key: IndicatorKey, value: number): SeriesPoint[] {
   if (key === "ticket") return series;
+  if (!series.length) return emptySeries();
   const total = series.reduce((acc, p) => acc + (p[key as "receita" | "despesa" | "lucro"] ?? 0), 0);
   if (total <= 0) {
     const flat = value / series.length;
@@ -180,7 +216,6 @@ function recalcSeries(series: SeriesPoint[], key: IndicatorKey, value: number): 
     if (key === "lucro") updated.lucro = Math.round(p.lucro * factor);
     return updated;
   });
-  // Mantém coerência: lucro = receita - despesa quando receita ou despesa muda
   if (key === "receita" || key === "despesa") {
     return next.map((p) => ({ ...p, lucro: p.receita - p.despesa }));
   }

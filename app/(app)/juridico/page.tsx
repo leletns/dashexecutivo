@@ -1,19 +1,14 @@
 "use client";
 
-import * as React from "react";
 import { motion } from "framer-motion";
 import {
   Scale,
-  Lock,
-  KeyRound,
-  LogOut,
   ShieldCheck,
   FileSignature,
   CircleAlert,
+  Info,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -51,27 +46,11 @@ const STATUS_LABEL: Record<Status, string> = {
   encerrado: "Encerrado",
 };
 
-const INSTITUCIONAL: Contrato[] = [
-  { numero: "INS-0241", parte: "BRX Consultoria empresarial", objeto: "Assessoria estratégica anual", inicio: "01/02/2026", termino: "31/01/2027", valor: 180000, status: "vigente" },
-  { numero: "INS-0238", parte: "Vértice contabilidade", objeto: "Serviços contábeis recorrentes", inicio: "01/01/2025", termino: "31/12/2026", valor: 96000, status: "vigente" },
-  { numero: "INS-0226", parte: "Magellan TI", objeto: "Licenciamento ERP corporativo", inicio: "10/03/2024", termino: "10/03/2026", valor: 64000, status: "renovacao" },
-  { numero: "INS-0210", parte: "Aliança seguros", objeto: "Apólice empresarial integrada", inicio: "01/06/2024", termino: "31/05/2026", valor: 28500, status: "vigente" },
-];
+const INSTITUCIONAL: Contrato[] = [];
 
-const EVENTOS: Contrato[] = [
-  { numero: "EVT-1102", parte: "Centro de convenções Aurora", objeto: "Locação de espaço — 1ª edição", inicio: "12/03/2026", termino: "16/03/2026", valor: 145000, status: "vigente" },
-  { numero: "EVT-1108", parte: "Patrocínio Vega Telecom", objeto: "Master sponsor — 2ª edição", inicio: "01/06/2026", termino: "30/06/2026", valor: 320000, status: "vigente" },
-  { numero: "EVT-1115", parte: "Atlas produtora audiovisual", objeto: "Cobertura completa de evento", inicio: "10/03/2026", termino: "20/03/2026", valor: 48000, status: "renovacao" },
-  { numero: "EVT-1098", parte: "Cia. de catering Solène", objeto: "Operação gastronômica", inicio: "12/03/2026", termino: "16/03/2026", valor: 76200, status: "encerrado" },
-];
+const EVENTOS: Contrato[] = [];
 
-const TERCEIRO_SETOR: Contrato[] = [
-  { numero: "TS-0073", parte: "Instituto Caminhos", objeto: "Convênio de fomento cultural", inicio: "01/03/2026", termino: "31/12/2026", valor: 60000, status: "vigente" },
-  { numero: "TS-0068", parte: "Fundação Horizonte", objeto: "Parceria educacional", inicio: "15/02/2026", termino: "15/02/2027", valor: 42000, status: "vigente" },
-  { numero: "TS-0061", parte: "ONG Gerar", objeto: "Incentivo via Lei Rouanet", inicio: "01/01/2025", termino: "31/12/2025", valor: 90000, status: "encerrado" },
-];
-
-const SECRET_FAKE = "advogado@juridico.com / portal2026";
+const TERCEIRO_SETOR: Contrato[] = [];
 
 export default function JuridicoPage() {
   const carteira =
@@ -115,7 +94,7 @@ export default function JuridicoPage() {
         </div>
       </motion.div>
 
-      <LoginAdvogadoMock />
+      <AcessoJuridicoPanel />
 
       <Tabs defaultValue="institucional">
         <TabsList>
@@ -170,55 +149,43 @@ function ContratosTable({ rows, titulo }: { rows: Contrato[]; titulo: string }) 
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((c) => (
-            <TableRow key={c.numero}>
-              <TableCell className="font-medium tabular-nums text-muted-foreground">
-                {c.numero}
-              </TableCell>
-              <TableCell className="font-medium">{c.parte}</TableCell>
-              <TableCell className="text-muted-foreground">{c.objeto}</TableCell>
-              <TableCell className="text-muted-foreground tabular-nums whitespace-nowrap">
-                {c.inicio} → {c.termino}
-              </TableCell>
-              <TableCell className="text-right tabular-nums font-medium">
-                {formatCurrencyBRL(c.valor)}
-              </TableCell>
-              <TableCell className="text-right pr-5">
-                <Badge variant={STATUS_VARIANT[c.status]}>{STATUS_LABEL[c.status]}</Badge>
+          {rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-10">
+                Nenhum contrato cadastrado. Preencha esta lista a partir do seu sistema jurídico ou planilha
+                de controle.
               </TableCell>
             </TableRow>
-          ))}
+          ) : (
+            rows.map((c) => (
+              <TableRow key={c.numero}>
+                <TableCell className="font-medium tabular-nums text-muted-foreground">
+                  {c.numero}
+                </TableCell>
+                <TableCell className="font-medium">{c.parte}</TableCell>
+                <TableCell className="text-muted-foreground">{c.objeto}</TableCell>
+                <TableCell className="text-muted-foreground tabular-nums whitespace-nowrap">
+                  {c.inicio} → {c.termino}
+                </TableCell>
+                <TableCell className="text-right tabular-nums font-medium">
+                  {formatCurrencyBRL(c.valor)}
+                </TableCell>
+                <TableCell className="text-right pr-5">
+                  <Badge variant={STATUS_VARIANT[c.status]}>{STATUS_LABEL[c.status]}</Badge>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
     </Card>
   );
 }
 
-function LoginAdvogadoMock() {
-  const [email, setEmail] = React.useState("");
-  const [pwd, setPwd] = React.useState("");
-  const [hint, setHint] = React.useState<string | null>(null);
-  const [forgotOpen, setForgotOpen] = React.useState(false);
-  const [signedIn, setSignedIn] = React.useState(false);
-
-  const onLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSignedIn(true);
-    setHint(
-      "Acesso liberado em modo demonstração. Em produção, o formulário valida via SSO corporativo e MFA antes de habilitar edição de contratos.",
-    );
-  };
-
-  const onLogout = () => {
-    setSignedIn(false);
-    setEmail("");
-    setPwd("");
-    setHint("Sessão encerrada com sucesso.");
-  };
-
+function AcessoJuridicoPanel() {
   return (
     <Card className="p-5 overflow-hidden">
-      <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-6 items-center">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-6 items-start">
         <div className="flex items-start gap-3">
           <div className="h-10 w-10 rounded-xl bg-[hsl(var(--brand-1)/0.15)] grid place-items-center text-[hsl(var(--brand-2))] dark:text-[hsl(var(--brand-3))]">
             <Scale className="h-4 w-4" />
@@ -230,8 +197,7 @@ function LoginAdvogadoMock() {
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
               Edição de contratos, parecer jurídico e descarga de documentos sensíveis
               ficam restritos a usuários com perfil <span className="font-medium text-foreground">jurídico</span>.
-              Esta área demonstra o ponto de entrada — a CEO mantém visão consolidada
-              somente em modo leitura.
+              A CEO pode manter visão consolidada em modo leitura após a integração com seu provedor de identidade.
             </p>
             <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
               <ShieldCheck className="h-3.5 w-3.5" />
@@ -240,84 +206,26 @@ function LoginAdvogadoMock() {
           </div>
         </div>
 
-        <form onSubmit={onLogin} className="glass rounded-xl p-4 space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-[11px] text-muted-foreground">E-mail corporativo</label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="advogado@juridico.com"
-              autoComplete="off"
-            />
+        <div className="glass rounded-xl p-4 space-y-3 text-xs text-muted-foreground leading-relaxed">
+          <div className="flex items-center gap-2 text-foreground font-medium text-sm">
+            <Info className="h-4 w-4 shrink-0 text-[hsl(var(--brand-2))]" />
+            Como funciona o acesso
           </div>
-          <div className="space-y-1.5">
-            <label className="text-[11px] text-muted-foreground">Senha</label>
-            <div className="relative">
-              <Input
-                type="password"
-                value={pwd}
-                onChange={(e) => setPwd(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="off"
-                className="pr-9"
-              />
-              <Lock className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setForgotOpen((v) => !v)}
-              className="gap-1.5 text-muted-foreground hover:text-foreground"
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-              Esqueci a senha
-            </Button>
-            <div className="flex items-center gap-2">
-              {signedIn && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={onLogout}
-                  className="gap-1.5"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  Sair
-                </Button>
-              )}
-              <Button type="submit" size="sm" className="gap-1.5">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Acesso do advogado
-              </Button>
-            </div>
-          </div>
-
-          {forgotOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-[11px] text-muted-foreground rounded-lg bg-foreground/[0.03] dark:bg-white/[0.03] p-2.5"
-            >
-              Recuperação enviada para o e-mail informado em até 5 minutos. Em produção,
-              o link expira em 15 min e exige validação por MFA.
-            </motion.div>
-          )}
-
-          {hint && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-[11px] text-muted-foreground rounded-lg bg-[hsl(var(--brand-1)/0.10)] p-2.5"
-            >
-              {hint} <span className="opacity-60">({SECRET_FAKE})</span>
-            </motion.div>
-          )}
-        </form>
+          <ul className="list-disc pl-4 space-y-2">
+            <li>
+              Este painel não autentica usuários: o login real fica no provedor de identidade da empresa (por
+              exemplo Microsoft Entra ou Google Workspace).
+            </li>
+            <li>
+              Quem pode editar ou baixar documentos sensíveis deve ser definido pela TI com SSO e MFA; aqui você
+              apenas consulta e organiza a visão da carteira.
+            </li>
+            <li>
+              Preencha as tabelas abaixo com dados vindos do seu controle jurídico ou ERP, ou integre via API quando
+              estiver disponível.
+            </li>
+          </ul>
+        </div>
       </div>
     </Card>
   );

@@ -2,6 +2,8 @@
 
 MVP de SaaS de Dashboard Executivo construído em Next.js 14 (App Router), Tailwind, Shadcn UI, Recharts, framer-motion e processamento de documentos via @anthropic-ai/sdk.
 
+**Dados:** o painel inicia **sem dados de demonstração** (zeros e listas vazias). O preenchimento é manual, por importação ou por integração futura com API/ERP. Guia completo para usuários não técnicos: [`MANUAL-DO-PORTAL.md`](./MANUAL-DO-PORTAL.md).
+
 ## Setup
 
 ```bash
