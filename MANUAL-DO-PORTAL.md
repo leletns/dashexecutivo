@@ -13,10 +13,31 @@ Este documento explica, em linguagem simples, como usar o painel do zero até a 
 ## 2. Como entrar
 
 1. Abra o endereço do site (por exemplo, o que a equipe de TI configurou).
-2. Na tela inicial, informe **e-mail** e **senha** que forem definidos para você.
+2. Na tela inicial, informe **somente** um dos e-mails autorizados e a **senha da implantação** (veja a lista abaixo).
 3. Após o login, você verá o menu lateral (no computador) ou o menu “hambúrguer” (no celular).
+4. Para **sair**, use o menu do seu nome (canto superior) e a opção de encerrar sessão — isso apaga o acesso até você entrar de novo.
 
-**Dica:** se esquecer a senha, use o fluxo de recuperação que a TI configurar. O painel em si não substitui o e-mail corporativo de recuperação.
+### 2.1 E-mails e senha (nesta versão)
+
+O sistema **não aceita** combinações fora da lista: qualquer outro e-mail ou senha errada mostra “E-mail ou senha incorretos” e não abre o painel.
+
+| Perfil / área        | E-mail                      |
+| -------------------- | --------------------------- |
+| CEO / visão geral    | `ludymilla@portal.com`      |
+| Jurídico             | `juridico@portal.com`       |
+| Contábil             | `contabil@portal.com`       |
+| Marketing            | `marketing@portal.com`      |
+| Administrativo       | `administrativo@portal.com` |
+| Financeiro           | `financeiro@portal.com`     |
+| Produção de eventos  | `eventos@portal.com`        |
+
+**Senha (a mesma para todos os e-mails acima):** `Usuario@2026`
+
+Na tela de login também existe o bloco **“E-mails autorizados (equipe)”** — é a mesma lista, para consulta rápida.
+
+**Esqueceu a senha?** Nesta versão não há “esqueci minha senha” por e-mail automático. Peça à administradora do portal para alterar a senha no sistema (arquivo de configuração / implantação) e informar a nova senha à equipe.
+
+**Observação de segurança:** em ambiente corporativo sério, a senha deveria ficar só em variáveis de ambiente no servidor e ser trocada periodicamente; o que importa para o dia a dia é: **só quem tem um desses e-mails e a senha correta entra.**
 
 ---
 

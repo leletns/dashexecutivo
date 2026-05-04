@@ -53,7 +53,14 @@ export function Header() {
 
   const setAccent = (accent: AccentTheme) => update({ accent });
 
-  const logout = () => router.push("/");
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      router.push("/");
+      router.refresh();
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 px-3 sm:px-4 pt-3 sm:pt-4">

@@ -1,5 +1,10 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import {
+  PORTAL_SESSION_COOKIE,
+  verifyPortalSessionCookie,
+} from "@/lib/portal-auth-server";
 import * as XLSX from "xlsx";
 
 export const runtime = "nodejs";
@@ -50,6 +55,10 @@ Regras:
 
 export async function POST(req: Request) {
   try {
+    if (!verifyPortalSessionCookie(cookies().get(PORTAL_SESSION_COOKIE)?.value)) {
+      return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+    }
+
     const form = await req.formData();
     const file = form.get("file") as File | null;
     if (!file) {

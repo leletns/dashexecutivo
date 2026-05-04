@@ -1,5 +1,10 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import {
+  PORTAL_SESSION_COOKIE,
+  verifyPortalSessionCookie,
+} from "@/lib/portal-auth-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,6 +123,10 @@ FORMATAÇÃO
 
 export async function POST(req: Request) {
   try {
+    if (!verifyPortalSessionCookie(cookies().get(PORTAL_SESSION_COOKIE)?.value)) {
+      return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+    }
+
     const body = (await req.json()) as Body;
     const apiKey = process.env.ANTHROPIC_API_KEY;
 

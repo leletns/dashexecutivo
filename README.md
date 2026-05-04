@@ -9,11 +9,11 @@ MVP de SaaS de Dashboard Executivo construído em Next.js 14 (App Router), Tailw
 ```bash
 pnpm install   # ou: npm install / yarn install
 cp .env.local.example .env.local
-# edite .env.local e informe ANTHROPIC_API_KEY
+# edite .env.local: defina PORTAL_AUTH_SECRET (string longa e aleatória) e, se usar IA, ANTHROPIC_API_KEY
 pnpm dev
 ```
 
-A aplicação estará em `http://localhost:3000` e redireciona para `/dashboard`.
+A aplicação estará em `http://localhost:3000`. A **home** é a tela de login: só entram e-mails cadastrados em `lib/portal-accounts.ts` com a senha configurada em `lib/portal-auth-server.ts`. Com sessão válida, `/` redireciona para `/dashboard`. Rotas internas e APIs `/api/chat` e `/api/process` exigem cookie de sessão.
 
 ## Estrutura
 
