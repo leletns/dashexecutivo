@@ -33,6 +33,25 @@ O sistema **não aceita** combinações fora da lista: qualquer outro e-mail ou 
 
 **Senha (a mesma para todos os e-mails acima):** `Usuario@2026`
 
+### 2.2 Deploy na Vercel (senha e ambiente)
+
+Na Vercel, em **Project → Settings → Environment Variables**, defina **exatamente** os mesmos nomes que no desenvolvimento:
+
+| Variável | Obrigatório | Observação |
+|----------|-------------|------------|
+| `NEXTAUTH_SECRET` | Sim | Mesmo valor em todos os ambientes em que o site roda; string longa e aleatória em produção. |
+| `NEXTAUTH_URL` | Sim | URL pública do site, ex.: `https://seu-projeto.vercel.app` (sem barra no final). |
+| `PORTAL_PASSWORD_HASHES_B64` | Sim | Base64 do JSON `email → hash bcrypt`. Para a senha **`Usuario@2026`** e a lista atual de e-mails, use o valor documentado em `.env.local.example` no repositório (copie e cole na Vercel). |
+| `NEXT_PUBLIC_SUPABASE_URL` | Sim* | *Se usar Supabase para dados ao vivo. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sim* | Chave anon do projeto Supabase. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Sim* | Só no servidor; necessária para gravar via **Entrada de dados** e APIs `/api/baps/mutate`. |
+
+**Senha:** em qualquer ambiente (local ou Vercel), a combinação válida é sempre um **e-mail da tabela acima** + **`Usuario@2026`**, desde que `PORTAL_PASSWORD_HASHES_B64` corresponda a esse mapa (como no exemplo do repositório).
+
+Após alterar variáveis na Vercel, faça um **redeploy**. Se a sessão antiga falhar, limpe cookies do domínio ou use aba anônima.
+
+**Novo:** disponibilidade do **5º Congresso** fica na tabela `baps_congresso_disponibilidade` no Supabase. Se o projeto já existia antes dessa funcionalidade, execute no SQL Editor o trecho `create table ... baps_congresso_disponibilidade` e o `insert` inicial do ficheiro `supabase/schema.sql` (ou rode o schema completo num projeto novo).
+
 Na tela de login também existe o bloco **“E-mails autorizados (equipe)”** — é a mesma lista, para consulta rápida.
 
 **Esqueceu a senha?** Nesta versão não há “esqueci minha senha” por e-mail automático. Peça à administradora do portal para alterar a senha no sistema (arquivo de configuração / implantação) e informar a nova senha à equipe.
@@ -72,6 +91,11 @@ Na tela de login também existe o bloco **“E-mails autorizados (equipe)”** �
 
 - Indicadores e série mensal: **navegador** (`portal.dashboard.v1`).
 - Trocar de computador ou limpar dados do site zera esses valores, até você exportar ou integrar com backend.
+
+### 3.6 5º Congresso · disponibilidade e vendas (CEO)
+
+- No **Dash executivo**, depois da tabela de núcleos (Face, Mama, …), aparece o painel **disponibilidade e vendas**: ocupação prevista, gestão de congressistas, palestrantes isentos/pagantes por núcleo e a **tabela de vendas por evento** (valores em R$, vindos do mesmo cadastro financeiro).
+- Para **editar com calma**, use **Entrada de dados** (botão no topo do dashboard, acesso da CEO): aba **5º Congresso** altera todos os contadores; aba **Financeiro** altera receitas e despesas **por nome de evento** — se o nome for igual ao já cadastrado, o sistema **atualiza** a linha (não duplica).
 
 ---
 

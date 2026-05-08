@@ -136,6 +136,39 @@ create table if not exists public.baps_nps_metricas (
 );
 
 -- ---------------------------------------------------------------------------
+-- 5º Congresso · disponibilidade / ocupação (linha única id = 1, editável no portal)
+-- ---------------------------------------------------------------------------
+create table if not exists public.baps_congresso_disponibilidade (
+  id int primary key default 1 check (id = 1),
+  referencia text not null default 'mai/2026',
+  congressistas_cp int not null default 0,
+  residentes int not null default 0,
+  gestores int not null default 0,
+  pre_pos int not null default 0,
+  videomakers int not null default 0,
+  staffs int not null default 0,
+  staffs_patrocinio int not null default 0,
+  visitantes int not null default 0,
+  lab_face int not null default 0,
+  lab_corporal int not null default 0,
+  baps_in_the_house int not null default 0,
+  inscritos_total int not null default 0,
+  congressistas_pagantes int not null default 0,
+  congressistas_isentos int not null default 0,
+  pal_face_isentos int not null default 0,
+  pal_face_pagantes int not null default 0,
+  pal_mama_isentos int not null default 0,
+  pal_mama_pagantes int not null default 0,
+  pal_corporal_isentos int not null default 0,
+  pal_corporal_pagantes int not null default 0,
+  pal_gestao_isentos int not null default 0,
+  pal_gestao_pagantes int not null default 0,
+  pal_prepos_isentos int not null default 0,
+  pal_prepos_pagantes int not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
 -- RLS (leitura pública anon opcional — ajuste à sua política; MVP aberto leitura)
 -- ---------------------------------------------------------------------------
 alter table public.baps_contratos enable row level security;
@@ -147,6 +180,7 @@ alter table public.baps_associados_resumo enable row level security;
 alter table public.baps_institucional enable row level security;
 alter table public.baps_evento_trilhas enable row level security;
 alter table public.baps_nps_metricas enable row level security;
+alter table public.baps_congresso_disponibilidade enable row level security;
 
 -- Políticas permissivas (ajuste em produção para JWT / papéis específicos).
 drop policy if exists "baps_contratos_service_all" on public.baps_contratos;
@@ -158,6 +192,7 @@ drop policy if exists "baps_assoc_service_all" on public.baps_associados_resumo;
 drop policy if exists "baps_inst_service_all" on public.baps_institucional;
 drop policy if exists "baps_trilhas_service_all" on public.baps_evento_trilhas;
 drop policy if exists "baps_nps_service_all" on public.baps_nps_metricas;
+drop policy if exists "baps_congresso_disp_service_all" on public.baps_congresso_disponibilidade;
 
 create policy "baps_contratos_service_all" on public.baps_contratos for all using (true) with check (true);
 create policy "baps_processos_service_all" on public.baps_processos for all using (true) with check (true);
@@ -168,6 +203,7 @@ create policy "baps_assoc_service_all" on public.baps_associados_resumo for all 
 create policy "baps_inst_service_all" on public.baps_institucional for all using (true) with check (true);
 create policy "baps_trilhas_service_all" on public.baps_evento_trilhas for all using (true) with check (true);
 create policy "baps_nps_service_all" on public.baps_nps_metricas for all using (true) with check (true);
+create policy "baps_congresso_disp_service_all" on public.baps_congresso_disponibilidade for all using (true) with check (true);
 
 comment on table public.baps_contratos is 'Contratos; status ativo remove da aba Demandas na UI.';
 comment on table public.baps_processos is 'Processos judicial/extrajudicial com risco e atualização semanal.';
@@ -216,6 +252,18 @@ insert into public.baps_evento_trilhas (slug, nome, status, detalhe, palestrante
 ('pre-pos', 'Pré e Pós', 'warning', 'Estrutura pronta; pendências administrativas em fechamento.', 'Coordenação acadêmica · secretaria', 4),
 ('gestao', 'Gestão', 'critical', 'Sem entregas iniciais.', 'PMO · operações', 5)
 on conflict (slug) do nothing;
+
+insert into public.baps_congresso_disponibilidade (
+  id, referencia, congressistas_cp, residentes, gestores, pre_pos, videomakers,
+  staffs, staffs_patrocinio, visitantes, lab_face, lab_corporal, baps_in_the_house,
+  inscritos_total, congressistas_pagantes, congressistas_isentos
+)
+values (
+  1, 'mai/2026', 400, 30, 150, 120, 30,
+  0, 0, 0, 10, 12, 40,
+  0, 100, 0
+)
+on conflict (id) do nothing;
 
 insert into public.baps_nps_metricas (categoria, ano, valor) values
 ('Doctors', 2024, 34),

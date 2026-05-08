@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { parseLooseNumber } from "@/lib/utils";
+import { FormCongressoDisponibilidade } from "@/components/baps/form-congresso-disponibilidade";
 
 async function postMutate(kind: string, data: Record<string, unknown>) {
   const res = await fetch("/api/baps/mutate", {
@@ -36,7 +37,8 @@ export function EntradaDadosClient() {
           </Link>
           <h1 className="text-xl font-semibold tracking-tight">Entrada de dados</h1>
           <p className="text-xs text-muted-foreground mt-1 max-w-lg leading-relaxed">
-            Formulários para Jurídico e Financeiro atualizarem o Dash executivo. Os dados gravam automaticamente quando o servidor está configurado.
+            Formulários para atualizar o Dash executivo. Os dados gravam no Supabase quando as variáveis de ambiente estão configuradas.
+            <span className="block mt-1">Use a aba <strong className="font-medium text-foreground">5º Congresso</strong> para disponibilidade; em <strong className="font-medium text-foreground">Financeiro</strong>, o mesmo nome de evento <strong className="font-medium text-foreground">atualiza</strong> a linha (vendas).</span>
           </p>
         </div>
       </div>
@@ -47,6 +49,7 @@ export function EntradaDadosClient() {
           <TabsTrigger value="processos">Processos</TabsTrigger>
           <TabsTrigger value="certidoes">Certidões</TabsTrigger>
           <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
+          <TabsTrigger value="congresso">5º Congresso</TabsTrigger>
           <TabsTrigger value="associados">Associados</TabsTrigger>
           <TabsTrigger value="institucional">Institucional</TabsTrigger>
         </TabsList>
@@ -65,6 +68,9 @@ export function EntradaDadosClient() {
             <FormFinanceiroResumo />
             <FormFinanceiroEvento />
           </div>
+        </TabsContent>
+        <TabsContent value="congresso" className="mt-4">
+          <FormCongressoDisponibilidade />
         </TabsContent>
         <TabsContent value="associados" className="mt-4">
           <FormAssociados />
@@ -425,14 +431,14 @@ function FormFinanceiroEvento() {
     }
     setBusy(true);
     try {
-      await postMutate("financeiro_evento", {
+      await postMutate("financeiro_evento_save", {
         nome_evento: nome.trim(),
         cidade,
         receitas: parseLooseNumber(rec),
         despesas_pagas: parseLooseNumber(desp),
         referencia: ref,
       });
-      toast.success("Evento financeiro registrado.");
+      toast.success("Evento gravado (novo ou atualizado pelo nome).");
       setNome("");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Erro");
@@ -444,6 +450,9 @@ function FormFinanceiroEvento() {
   return (
     <Card className="p-5 sm:p-6 rounded-2xl border-border/60">
       <h2 className="text-sm font-semibold mb-4">Receitas / despesas por evento</h2>
+      <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+        Se já existir um evento com o mesmo nome, os valores são <strong className="text-foreground font-medium">substituídos</strong> (ideal para atualizar vendas).
+      </p>
       <form onSubmit={submit} className="space-y-4">
         <Field label="Nome do evento">
           <Input value={nome} onChange={(e) => setNome(e.target.value)} required />
@@ -463,7 +472,7 @@ function FormFinanceiroEvento() {
           <Input value={ref} onChange={(e) => setRef(e.target.value)} />
         </Field>
         <Button type="submit" disabled={busy} className="rounded-xl">
-          {busy ? "Gravando…" : "Inserir evento"}
+          {busy ? "Gravando…" : "Salvar evento"}
         </Button>
       </form>
     </Card>

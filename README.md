@@ -9,11 +9,18 @@ MVP de SaaS de Dashboard Executivo construído em Next.js 14 (App Router), Tailw
 ```bash
 pnpm install   # ou: npm install / yarn install
 cp .env.local.example .env.local
-# edite .env.local: defina PORTAL_AUTH_SECRET (string longa e aleatória) e, se usar IA, ANTHROPIC_API_KEY
+# edite .env.local: NEXTAUTH_SECRET, NEXTAUTH_URL, PORTAL_PASSWORD_HASHES_B64 (senha padrão documentada: Usuario@2026)
+# opcional: Supabase e ANTHROPIC_API_KEY — ver MANUAL-DO-PORTAL.md §2.2 para Vercel
 pnpm dev
 ```
 
-A aplicação estará em `http://localhost:3000`. A **home** é a tela de login: só entram e-mails cadastrados em `lib/portal-accounts.ts` com a senha configurada em `lib/portal-auth-server.ts`. Com sessão válida, `/` redireciona para `/dashboard`. Rotas internas e APIs `/api/chat` e `/api/process` exigem cookie de sessão.
+A aplicação estará em `http://localhost:3000`. A **home** é a tela de login: entram apenas os e-mails de `lib/portal-accounts.ts`, com a senha definida pelos hashes em **`PORTAL_PASSWORD_HASHES_B64`** (ver `.env.local.example`). Com sessão válida, `/` redireciona para `/dashboard`.
+
+### Deploy na Vercel
+
+Configure as mesmas variáveis do `.env.local.example` no painel da Vercel (**Settings → Environment Variables**), em especial `NEXTAUTH_URL` com a URL de produção (ex.: `https://seu-app.vercel.app`), `NEXTAUTH_SECRET` e **`PORTAL_PASSWORD_HASHES_B64`** igual ao repositório para manter a senha **`Usuario@2026`**. Detalhes em [`MANUAL-DO-PORTAL.md`](./MANUAL-DO-PORTAL.md) §2.2.
+
+Rotas internas e APIs `/api/chat` e `/api/process` exigem cookie de sessão.
 
 ## Estrutura
 

@@ -24,6 +24,7 @@ export async function loadBapsSnapshot(): Promise<BapsSnapshot> {
       inst,
       trilhas,
       nps,
+      congressoDisp,
     ] = await Promise.all([
       admin.from("baps_contratos").select("*"),
       admin.from("baps_processos").select("*"),
@@ -34,6 +35,7 @@ export async function loadBapsSnapshot(): Promise<BapsSnapshot> {
       admin.from("baps_institucional").select("*").eq("id", 1).maybeSingle(),
       admin.from("baps_evento_trilhas").select("*").order("ordem"),
       admin.from("baps_nps_metricas").select("*"),
+      admin.from("baps_congresso_disponibilidade").select("*").eq("id", 1).maybeSingle(),
     ]);
 
     const out: BapsSnapshot = base;
@@ -153,6 +155,39 @@ export async function loadBapsSnapshot(): Promise<BapsSnapshot> {
         ano: num(r.ano, new Date().getFullYear()),
         valor: num(r.valor, 0),
       }));
+    }
+
+    const cd = congressoDisp.data as Record<string, unknown> | null;
+    const cdBase = base.congresso_disponibilidade;
+    if (cd) {
+      out.congresso_disponibilidade = {
+        id: 1,
+        referencia: String(cd.referencia ?? cdBase.referencia),
+        congressistas_cp: num(cd.congressistas_cp, cdBase.congressistas_cp),
+        residentes: num(cd.residentes, cdBase.residentes),
+        gestores: num(cd.gestores, cdBase.gestores),
+        pre_pos: num(cd.pre_pos, cdBase.pre_pos),
+        videomakers: num(cd.videomakers, cdBase.videomakers),
+        staffs: num(cd.staffs, cdBase.staffs),
+        staffs_patrocinio: num(cd.staffs_patrocinio, cdBase.staffs_patrocinio),
+        visitantes: num(cd.visitantes, cdBase.visitantes),
+        lab_face: num(cd.lab_face, cdBase.lab_face),
+        lab_corporal: num(cd.lab_corporal, cdBase.lab_corporal),
+        baps_in_the_house: num(cd.baps_in_the_house, cdBase.baps_in_the_house),
+        inscritos_total: num(cd.inscritos_total, cdBase.inscritos_total),
+        congressistas_pagantes: num(cd.congressistas_pagantes, cdBase.congressistas_pagantes),
+        congressistas_isentos: num(cd.congressistas_isentos, cdBase.congressistas_isentos),
+        pal_face_isentos: num(cd.pal_face_isentos, cdBase.pal_face_isentos),
+        pal_face_pagantes: num(cd.pal_face_pagantes, cdBase.pal_face_pagantes),
+        pal_mama_isentos: num(cd.pal_mama_isentos, cdBase.pal_mama_isentos),
+        pal_mama_pagantes: num(cd.pal_mama_pagantes, cdBase.pal_mama_pagantes),
+        pal_corporal_isentos: num(cd.pal_corporal_isentos, cdBase.pal_corporal_isentos),
+        pal_corporal_pagantes: num(cd.pal_corporal_pagantes, cdBase.pal_corporal_pagantes),
+        pal_gestao_isentos: num(cd.pal_gestao_isentos, cdBase.pal_gestao_isentos),
+        pal_gestao_pagantes: num(cd.pal_gestao_pagantes, cdBase.pal_gestao_pagantes),
+        pal_prepos_isentos: num(cd.pal_prepos_isentos, cdBase.pal_prepos_isentos),
+        pal_prepos_pagantes: num(cd.pal_prepos_pagantes, cdBase.pal_prepos_pagantes),
+      };
     }
 
     return out;

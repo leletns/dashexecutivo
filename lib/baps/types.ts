@@ -103,6 +103,35 @@ export interface BapsNpsMetricaRow {
   valor: number;
 }
 
+export interface BapsCongressoDisponibilidadeRow {
+  id: number;
+  referencia: string;
+  congressistas_cp: number;
+  residentes: number;
+  gestores: number;
+  pre_pos: number;
+  videomakers: number;
+  staffs: number;
+  staffs_patrocinio: number;
+  visitantes: number;
+  lab_face: number;
+  lab_corporal: number;
+  baps_in_the_house: number;
+  inscritos_total: number;
+  congressistas_pagantes: number;
+  congressistas_isentos: number;
+  pal_face_isentos: number;
+  pal_face_pagantes: number;
+  pal_mama_isentos: number;
+  pal_mama_pagantes: number;
+  pal_corporal_isentos: number;
+  pal_corporal_pagantes: number;
+  pal_gestao_isentos: number;
+  pal_gestao_pagantes: number;
+  pal_prepos_isentos: number;
+  pal_prepos_pagantes: number;
+}
+
 export interface BapsSnapshot {
   contratos: BapsContratoRow[];
   processos: BapsProcessoRow[];
@@ -113,4 +142,5 @@ export interface BapsSnapshot {
   institucional: BapsInstitucionalRow;
   evento_trilhas: BapsEventoTrilhaRow[];
   nps_metricas: BapsNpsMetricaRow[];
+  congresso_disponibilidade: BapsCongressoDisponibilidadeRow;
 }

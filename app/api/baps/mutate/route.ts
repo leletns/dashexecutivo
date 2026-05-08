@@ -13,7 +13,8 @@ type Body =
   /** Atualiza linha existente pelo nome do evento ou insere nova. */
   | { kind: "financeiro_evento_save"; data: Record<string, unknown> }
   | { kind: "associados_resumo"; data: Record<string, unknown> }
-  | { kind: "institucional"; data: Record<string, unknown> };
+  | { kind: "institucional"; data: Record<string, unknown> }
+  | { kind: "congresso_disponibilidade"; data: Record<string, unknown> };
 
 export async function POST(req: Request) {
   const session = await getPortalSession();
@@ -106,6 +107,14 @@ export async function POST(req: Request) {
         const row = { ...stripId(body.data), id: 1 };
         const { error } = await admin
           .from("baps_institucional")
+          .upsert(row, { onConflict: "id" });
+        if (error) throw error;
+        break;
+      }
+      case "congresso_disponibilidade": {
+        const row = { ...stripId(body.data), id: 1 };
+        const { error } = await admin
+          .from("baps_congresso_disponibilidade")
           .upsert(row, { onConflict: "id" });
         if (error) throw error;
         break;

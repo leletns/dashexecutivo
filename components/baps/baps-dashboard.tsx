@@ -21,6 +21,7 @@ import { ExecutiveHero } from "@/components/baps/executive-hero";
 import { NpsComposedChart } from "@/components/baps/nps-composed-chart";
 import { InstitutionalRiskPanel } from "@/components/baps/institutional-risk-panel";
 import { CongressNucleiTable } from "@/components/baps/congress-nuclei-table";
+import { CongressOperacaoPanel } from "@/components/baps/congress-operacao-panel";
 import type { BapsSnapshot } from "@/lib/baps/types";
 import type { PortalSector } from "@/lib/portal-sector";
 import { sectorShortLabel, showZone } from "@/lib/portal-sector";
@@ -717,9 +718,14 @@ export function BapsDashboard({
       )}
 
       {showZone(sector, "bloco_congresso") && (
-        <motion.section initial="hidden" animate="show" custom={7} variants={fade}>
-          <CongressNucleiTable trilhas={data.evento_trilhas} />
-        </motion.section>
+        <>
+          <motion.section initial="hidden" animate="show" custom={7} variants={fade}>
+            <CongressNucleiTable trilhas={data.evento_trilhas} />
+          </motion.section>
+          <motion.section initial="hidden" animate="show" custom={7} variants={fade}>
+            <CongressOperacaoPanel data={data} />
+          </motion.section>
+        </>
       )}
 
       {showZone(sector, "bloco_nps") && sector !== "executivo" && (
