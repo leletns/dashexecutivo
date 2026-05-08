@@ -7,27 +7,39 @@ import { DashboardProvider } from "@/components/dashboard/dashboard-context";
 import { PageStateProvider } from "@/lib/page-state";
 import { AppStateProvider } from "@/lib/app-state";
 import { SupportFab } from "@/components/dashboard/support-fab";
+import {
+  PortalSectorProvider,
+  type PortalSessionBrief,
+} from "@/components/layout/portal-sector-context";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  portal,
+}: {
+  children: React.ReactNode;
+  portal: PortalSessionBrief;
+}) {
   return (
-    <PageStateProvider>
-      <AppStateProvider>
-        <DashboardProvider>
-          <div className="flex min-h-svh">
-            <Sidebar />
-            <div className="flex-1 min-w-0 flex flex-col">
-              <Header />
-              <main
-                data-export-root
-                className="flex-1 px-3 sm:px-4 py-3 sm:py-4 min-w-0"
-              >
-                {children}
-              </main>
+    <PortalSectorProvider value={portal}>
+      <PageStateProvider>
+        <AppStateProvider>
+          <DashboardProvider>
+            <div className="flex min-h-svh">
+              <Sidebar />
+              <div className="flex-1 min-w-0 flex flex-col">
+                <Header />
+                <main
+                  data-export-root
+                  className="flex-1 px-3 sm:px-4 py-3 sm:py-4 min-w-0 print:px-0 print:py-0 print:max-w-none"
+                >
+                  {children}
+                </main>
+              </div>
+              <SupportFab />
             </div>
-            <SupportFab />
-          </div>
-        </DashboardProvider>
-      </AppStateProvider>
-    </PageStateProvider>
+          </DashboardProvider>
+        </AppStateProvider>
+      </PageStateProvider>
+    </PortalSectorProvider>
   );
 }

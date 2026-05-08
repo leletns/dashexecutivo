@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { signIn } from "next-auth/react";
 import {
   ArrowRight,
   Lock,
@@ -17,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Logo } from "@/components/brand/logo";
 import { useProfile } from "@/lib/profile";
-import { PORTAL_LOGIN_EMAILS } from "@/lib/portal-accounts";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -30,18 +30,36 @@ const fade = {
   }),
 };
 
-export function LoginPageClient() {
+type LoginPageClientProps = {
+  callbackUrl: string;
+  authError?: string;
+};
+
+export function LoginPageClient({ callbackUrl, authError }: LoginPageClientProps) {
   const router = useRouter();
   const { profile, update, hydrated } = useProfile();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(authError ?? null);
 
   React.useEffect(() => {
     if (hydrated && profile.name) setEmail((e) => e || guessEmail(profile.name));
   }, [hydrated, profile.name]);
+
+  React.useEffect(() => {
+    if (authError === "AccessDenied") {
+      setError("Este e-mail não está autorizado a usar o portal.");
+    } else if (authError === "Configuration") {
+      setError("Não foi possível abrir a sessão agora. Atualize a página e tente de novo.");
+    } else if (authError) {
+      setError("Algo saiu do esperado. Tente entrar novamente.");
+    }
+  }, [authError]);
+
+  const safeCallback =
+    callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/dashboard";
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,26 +70,23 @@ export function LoginPageClient() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          password,
-        }),
+      const result = await signIn("credentials", {
+        email: email.trim(),
+        password,
+        redirect: false,
+        callbackUrl: safeCallback,
       });
-      const data = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? "E-mail ou senha incorretos.");
+      if (result?.error) {
+        setError("E-mail ou senha incorretos. Verifique e tente outra vez.");
         setLoading(false);
         return;
       }
       const inferred = inferName(email.trim());
       if (inferred) update({ name: inferred });
-      router.push("/dashboard");
+      router.push(safeCallback);
       router.refresh();
     } catch {
-      setError("Não foi possível conectar. Tente novamente.");
+      setError("Conexão instável. Espere um momento e tente outra vez.");
       setLoading(false);
     }
   };
@@ -90,7 +105,7 @@ export function LoginPageClient() {
           <Logo size={30} withGlow />
           <div className="leading-tight">
             <div className="text-sm font-semibold tracking-tight">
-              Portal executivo
+              Dash executivo
             </div>
             <div className="text-[10px] text-muted-foreground -mt-0.5">
               Visão consolidada da operação
@@ -99,7 +114,7 @@ export function LoginPageClient() {
         </div>
         <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] text-muted-foreground rounded-full glass px-2.5 py-1">
           <ShieldCheck className="h-3 w-3" />
-          Apenas e-mails cadastrados
+          Acesso por e-mail autorizado
         </span>
       </motion.header>
 
@@ -124,93 +139,70 @@ export function LoginPageClient() {
 
             <motion.div variants={fade} custom={2} className="text-center space-y-1.5">
               <h1 className="text-2xl font-semibold tracking-tight">Entrar</h1>
-              <p className="text-xs text-muted-foreground">
-                Acesso restrito ao time executivo
+              <p className="text-xs text-muted-foreground leading-relaxed px-1">
+                Use o e-mail e a senha que recebeu para acessar o painel.
               </p>
             </motion.div>
 
-            <motion.form
-              variants={fade}
-              custom={3}
-              onSubmit={submit}
-              className="mt-7 space-y-4"
-            >
-              <div className="space-y-1.5">
-                <label className="text-[11px] text-muted-foreground">E-mail</label>
-                <div className="relative">
-                  <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="ludymilla@portal.com"
-                    className="pl-8 h-10"
-                    autoComplete="email"
-                    autoFocus
-                  />
+            <motion.div variants={fade} custom={3} className="mt-7 space-y-5">
+              <form onSubmit={submit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-muted-foreground">E-mail</label>
+                  <div className="relative">
+                    <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="nome@portal.com"
+                      className="pl-8 h-10"
+                      autoComplete="email"
+                      autoFocus
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[11px] text-muted-foreground">Senha</label>
-                <div className="relative">
-                  <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="pl-8 h-10"
-                    autoComplete="current-password"
-                  />
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-muted-foreground">Senha</label>
+                  <div className="relative">
+                    <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••••••"
+                      className="pl-8 h-10"
+                      autoComplete="current-password"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-[11px] text-rose-500"
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    role="alert"
+                    className="rounded-xl border border-rose-500/20 bg-rose-500/[0.07] px-3 py-2.5 text-[12px] text-rose-800 dark:text-rose-200 leading-snug"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+
+                <Button
+                  type="submit"
+                  className="w-full gap-2 mt-1 h-10"
+                  disabled={loading}
+                  size="lg"
                 >
-                  {error}
-                </motion.div>
-              )}
+                  {loading ? "Entrando…" : "Entrar"}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
 
-              <Button
-                type="submit"
-                className="w-full gap-2 mt-1 h-10"
-                disabled={loading}
-                size="lg"
-              >
-                {loading ? "Verificando…" : "Entrar"}
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-
-              <div className="space-y-2 pt-1 text-[11px] text-muted-foreground">
-                <p>
-                  Esqueceu a senha?{" "}
-                  <span className="text-foreground">
-                    Solicite à administradora do portal — não há recuperação automática por e-mail nesta versão.
-                  </span>
+                <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+                  Esqueceu a senha? Peça uma nova ao responsável pelo portal.
                 </p>
-                <details className="text-left rounded-lg bg-foreground/[0.03] dark:bg-white/[0.03] px-3 py-2">
-                  <summary className="cursor-pointer select-none text-foreground font-medium">
-                    E-mails autorizados (equipe)
-                  </summary>
-                  <ul className="mt-2 space-y-0.5 list-disc pl-4">
-                    {PORTAL_LOGIN_EMAILS.map((em) => (
-                      <li key={em} className="tabular-nums">
-                        {em}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-2 leading-relaxed">
-                    A senha é a mesma para todos os logins acima (definida na implantação). Qualquer outro e-mail ou
-                    senha é recusado.
-                  </p>
-                </details>
-              </div>
-            </motion.form>
+              </form>
+            </motion.div>
           </Card>
         </motion.div>
       </section>
@@ -255,7 +247,7 @@ export function LoginPageClient() {
             className="flex flex-wrap items-center justify-center gap-2 pt-1"
           >
             <Pill icon={<ArrowLeftRight className="h-3 w-3" />} label="Auto-conciliação bancária" />
-            <Pill icon={<ShieldCheck className="h-3 w-3" />} label="Acesso por perfil" />
+            <Pill icon={<ShieldCheck className="h-3 w-3" />} label="Acesso provisionado" />
             <Pill icon={<MessageCircle className="h-3 w-3" />} label="Suporte executivo" />
             <Pill icon={<Sparkles className="h-3 w-3" />} label="Ingestão multimodal" />
           </motion.div>
@@ -272,7 +264,7 @@ export function LoginPageClient() {
           <div className="flex items-center gap-2">
             <Logo size={16} />
             <span>
-              © {year} Portal executivo. Todos os direitos reservados.
+              © {year} Dash executivo. Todos os direitos reservados.
             </span>
           </div>
           <div className="flex items-center gap-4">
@@ -345,6 +337,6 @@ function inferName(email: string): string | null {
   return cleaned
     .split(" ")
     .filter(Boolean)
-    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
 }

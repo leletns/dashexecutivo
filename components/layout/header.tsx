@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import {
   Camera,
   Check,
@@ -9,6 +9,7 @@ import {
   Pencil,
   Palette,
 } from "lucide-react";
+import { ExportReportButton } from "@/components/baps/export-report-button";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { CalculatorPopover } from "@/components/layout/calculator-popover";
 import { MobileSidebar } from "@/components/layout/mobile-sidebar";
@@ -20,7 +21,6 @@ import { cn } from "@/lib/utils";
 
 export function Header() {
   const { profile, update, hydrated } = useProfile();
-  const router = useRouter();
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(profile.name);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -53,17 +53,12 @@ export function Header() {
 
   const setAccent = (accent: AccentTheme) => update({ accent });
 
-  const logout = async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } finally {
-      router.push("/");
-      router.refresh();
-    }
+  const logout = () => {
+    void signOut({ callbackUrl: "/" });
   };
 
   return (
-    <header className="sticky top-0 z-30 px-3 sm:px-4 pt-3 sm:pt-4">
+    <header className="sticky top-0 z-30 px-3 sm:px-4 pt-3 sm:pt-4 print:hidden">
       <div className="glass rounded-2xl pl-2 pr-2 sm:pl-3 sm:pr-3 h-14 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <MobileSidebar />
@@ -196,6 +191,7 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <ExportReportButton />
           <CalculatorPopover />
           <ThemeToggle />
           <Button

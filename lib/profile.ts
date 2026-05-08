@@ -15,7 +15,7 @@ const KEY = "portal.profile.v1";
 
 const DEFAULT: Profile = {
   name: "Ludymilla",
-  role: "CEO · Portal executivo",
+  role: "CEO · Dash executivo",
   avatarDataUrl: null,
   accent: "lilas",
 };

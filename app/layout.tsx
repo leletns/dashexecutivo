@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SessionProviderWrapper } from "@/components/auth/session-provider-wrapper";
 import "./globals.css";
 
 const inter = Inter({
@@ -13,20 +14,20 @@ const inter = Inter({
 
 const siteUrl = "https://portalexecutivo.app";
 const description =
-  "Portal executivo Ludymilla: inteligência estratégica, gestão jurídica, contábil e de marketing em tempo real com integração neural de dados.";
+  "Dash executivo: inteligência estratégica, gestão jurídica, contábil e de marketing em tempo real.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Portal executivo · Ludymilla",
-    template: "%s · Portal executivo",
+    default: "Dash executivo",
+    template: "%s · Dash executivo",
   },
   description,
-  applicationName: "Portal executivo",
-  authors: [{ name: "Portal executivo" }],
+  applicationName: "Dash executivo",
+  authors: [{ name: "Dash executivo" }],
   generator: "Next.js",
   keywords: [
-    "Portal executivo",
+    "Dash executivo",
     "Dashboard executivo",
     "Inteligência estratégica",
     "Gestão financeira",
@@ -41,14 +42,14 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "pt_BR",
-    siteName: "Portal executivo",
-    title: "Portal executivo · Ludymilla",
+    siteName: "Dash executivo",
+    title: "Dash executivo",
     description,
     url: siteUrl,
   },
   twitter: {
     card: "summary_large_image",
-    title: "Portal executivo · Ludymilla",
+    title: "Dash executivo",
     description,
   },
   robots: { index: false, follow: false },
@@ -69,19 +70,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR" suppressHydrationWarning className={inter.variable}>
       <body className="min-h-svh app-bg font-sans overflow-x-hidden">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-          <TooltipProvider delayDuration={120}>
-            {children}
-            <Toaster
-              position="top-center"
-              toastOptions={{
-                classNames: {
-                  toast:
-                    "glass-strong !rounded-xl !border !border-border/60 !text-foreground",
-                  description: "!text-muted-foreground",
-                },
-              }}
-            />
-          </TooltipProvider>
+          <SessionProviderWrapper>
+            <TooltipProvider delayDuration={120}>
+              {children}
+              <Toaster
+                position="top-center"
+                toastOptions={{
+                  classNames: {
+                    toast:
+                      "glass-strong !rounded-xl !border !border-border/60 !text-foreground",
+                    description: "!text-muted-foreground",
+                  },
+                }}
+              />
+            </TooltipProvider>
+          </SessionProviderWrapper>
         </ThemeProvider>
       </body>
     </html>

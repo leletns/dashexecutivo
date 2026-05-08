@@ -295,7 +295,7 @@ export function SupportFab() {
   );
 
   return (
-    <>
+    <div className="print:hidden">
       <motion.button
         aria-label="Abrir suporte executivo"
         onClick={() => setOpen(true)}
@@ -409,7 +409,7 @@ export function SupportFab() {
           </>
         )}
       </AnimatePresence>
-    </>
+    </div>
   );
 }
 

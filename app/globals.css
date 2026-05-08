@@ -205,3 +205,71 @@
     radial-gradient(800px 500px at 110% 10%, hsl(var(--brand-1) / 0.06), transparent 55%),
     hsl(var(--background));
 }
+
+/* ---------------------------------------------------------------------------
+ * Impressão · relatório executivo A4 (Quiet luxury em papel)
+ * --------------------------------------------------------------------------- */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+
+  html {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    background: #fff !important;
+    color: #0c0c0c !important;
+  }
+
+  .app-bg {
+    background: #fff !important;
+  }
+
+  /* Cartões e vidro → superfície plana em papel */
+  .glass,
+  .glass-strong {
+    background: #fff !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    border-color: #e8e8ea !important;
+  }
+
+  [data-export-root] {
+    max-width: 100% !important;
+  }
+
+  /* Hero executivo + gráfico composto */
+  .executive-hero-print {
+    page-break-inside: avoid;
+  }
+
+  .recharts-responsive-container,
+  .baps-chart-print {
+    min-height: 200px !important;
+    max-height: 260px !important;
+    page-break-inside: avoid;
+  }
+
+  .baps-chart-print-composed {
+    min-height: 260px !important;
+    max-height: 340px !important;
+    page-break-inside: avoid;
+  }
+
+  .recharts-surface {
+    overflow: visible !important;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+}

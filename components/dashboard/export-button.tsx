@@ -148,7 +148,7 @@ function saveCsv(cards: Cards, series: Series) {
   const blob = new Blob([header + cardLines + seriesHeader + seriesLines], {
     type: "text/csv;charset=utf-8",
   });
-  const filename = `portal-executivo-${stamp}.csv`;
+  const filename = `dash-executivo-${stamp}.csv`;
   triggerDownload(blob, filename);
   return filename;
 }
@@ -253,7 +253,7 @@ async function savePdfFromDom(
   drawFooter(pdf, pageWidth, pageHeight, pageIndex + 1);
 
   const stamp = new Date().toISOString().slice(0, 10);
-  const filename = `portal-executivo-${stamp}.pdf`;
+  const filename = `dash-executivo-${stamp}.pdf`;
   pdf.save(filename);
   return filename;
 }
@@ -264,7 +264,7 @@ function drawCover(pdf: any, pageWidth: number, cards: Cards) {
   pdf.setTextColor(255, 255, 255);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(16);
-  pdf.text("Portal executivo", 24, 30);
+  pdf.text("Dash executivo", 24, 30);
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
   pdf.text("Visão consolidada da operação", 24, 48);
@@ -292,7 +292,7 @@ function drawFooter(pdf: any, pageWidth: number, pageHeight: number, n: number) 
   pdf.setFontSize(8);
   pdf.setFont("helvetica", "normal");
   pdf.text(
-    `Documento confidencial · Portal executivo · página ${n}`,
+    `Documento confidencial · Dash executivo · página ${n}`,
     pageWidth / 2,
     pageHeight - 14,
     { align: "center" },

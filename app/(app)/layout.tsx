@@ -1,15 +1,16 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import {
-  PORTAL_SESSION_COOKIE,
-  verifyPortalSessionCookie,
-} from "@/lib/portal-auth-server";
+import { getPortalSession } from "@/lib/auth-server";
+import { getPortalSectorFromEmail } from "@/lib/portal-sector";
 import { AppShell } from "./app-shell";
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const token = cookies().get(PORTAL_SESSION_COOKIE)?.value;
-  if (!verifyPortalSessionCookie(token)) {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const session = await getPortalSession();
+  const email = session?.user?.email;
+  if (!email) {
     redirect("/");
   }
-  return <AppShell>{children}</AppShell>;
+  const sector = getPortalSectorFromEmail(email);
+  return (
+    <AppShell portal={{ sector, email }}>{children}</AppShell>
+  );
 }

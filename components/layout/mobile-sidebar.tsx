@@ -34,7 +34,7 @@ export function MobileSidebar() {
         <Button
           variant="glass"
           size="icon"
-          className="md:hidden"
+          className="md:hidden print:hidden"
           aria-label="Abrir menu"
         >
           <Menu className="h-4 w-4" />
@@ -49,7 +49,7 @@ export function MobileSidebar() {
             <div className="flex items-center gap-2.5">
               <Logo size={32} withGlow />
               <div className="leading-tight">
-                <SheetTitle className="text-sm">Portal executivo</SheetTitle>
+                <SheetTitle className="text-sm">Dash executivo</SheetTitle>
                 <div className="text-[10px] text-muted-foreground -mt-0.5">
                   Visão consolidada
                 </div>
@@ -141,7 +141,7 @@ export function MobileSidebar() {
         </nav>
 
         <div className="px-4 py-3 border-t border-border/60 text-[11px] text-muted-foreground">
-          © {new Date().getFullYear()} Portal executivo
+          © {new Date().getFullYear()} Dash executivo
         </div>
       </SheetContent>
     </Sheet>

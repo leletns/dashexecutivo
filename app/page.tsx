@@ -1,14 +1,24 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import {
-  PORTAL_SESSION_COOKIE,
-  verifyPortalSessionCookie,
-} from "@/lib/portal-auth-server";
+import { getPortalSession } from "@/lib/auth-server";
 import { LoginPageClient } from "@/components/auth/login-page-client";
 
-export default function HomePage() {
-  if (verifyPortalSessionCookie(cookies().get(PORTAL_SESSION_COOKIE)?.value)) {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: { callbackUrl?: string; error?: string };
+}) {
+  const session = await getPortalSession();
+  if (session?.user?.email) {
     redirect("/dashboard");
   }
-  return <LoginPageClient />;
+
+  const callbackUrl =
+    typeof searchParams.callbackUrl === "string" && searchParams.callbackUrl.startsWith("/")
+      ? searchParams.callbackUrl
+      : "/dashboard";
+  const authError = typeof searchParams.error === "string" ? searchParams.error : undefined;
+
+  return (
+    <LoginPageClient callbackUrl={callbackUrl} authError={authError} />
+  );
 }

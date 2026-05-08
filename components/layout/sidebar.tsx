@@ -8,23 +8,37 @@ import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
 import { useNav } from "@/components/layout/nav";
+import { usePortalSession } from "@/components/layout/portal-sector-context";
+import { sectorShortLabel } from "@/lib/portal-sector";
+
+function footerFromEmail(email: string): { initials: string; title: string } {
+  const local = email.split("@")[0]?.trim() || "—";
+  const initials = local.slice(0, 2).toUpperCase();
+  const title =
+    local === "ludymilla"
+      ? "Ludymilla"
+      : local.charAt(0).toUpperCase() + local.slice(1);
+  return { initials, title };
+}
 
 export function Sidebar() {
   const pathname = usePathname();
   const NAV = useNav();
+  const { sector, email } = usePortalSession();
+  const footer = footerFromEmail(email);
   const [openGroup, setOpenGroup] = React.useState<string | null>("/eventos");
 
   return (
-    <aside className="hidden md:flex md:w-64 lg:w-72 flex-col shrink-0 h-svh sticky top-0 px-4 py-5">
+    <aside className="hidden md:flex md:w-64 lg:w-72 flex-col shrink-0 h-svh sticky top-0 px-4 py-5 print:hidden">
       <div className="glass rounded-2xl flex flex-col h-full overflow-hidden">
         <div className="px-5 pt-5 pb-4 flex items-center gap-2.5">
           <Logo size={34} withGlow />
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-semibold tracking-tight">
-              Portal executivo
+              Dash executivo
             </span>
             <span className="text-[11px] text-muted-foreground">
-              Visão consolidada
+              {sector === "executivo" ? "Visão integral" : "Acesso do seu setor"}
             </span>
           </div>
         </div>
@@ -112,11 +126,13 @@ export function Sidebar() {
         <div className="px-4 py-3 border-t border-border/60">
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-full bg-gradient-to-br from-foreground/80 to-foreground/40 grid place-items-center text-background text-[11px] font-semibold">
-              LD
+              {footer.initials}
             </div>
-            <div className="flex flex-col leading-tight">
-              <span className="text-xs font-medium">Ludymilla</span>
-              <span className="text-[11px] text-muted-foreground">CEO</span>
+            <div className="flex flex-col leading-tight min-w-0">
+              <span className="text-xs font-medium truncate">{footer.title}</span>
+              <span className="text-[11px] text-muted-foreground truncate">
+                {sector === "executivo" ? "CEO · visão integral" : sectorShortLabel(sector)}
+              </span>
             </div>
           </div>
         </div>
