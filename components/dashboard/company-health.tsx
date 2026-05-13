@@ -85,10 +85,10 @@ function computeBullets(data: BapsSnapshot): string[] {
   if (nps25 > 0) {
     bullets.push(
       npsGrowth > 0
-        ? `NPS ${nps25.toFixed(0)} — crescimento de +${npsGrowth}% sobre o ano anterior`
+        ? `Satisfação ${nps25.toFixed(0)} — crescimento de +${npsGrowth}% sobre o ano passado`
         : npsGrowth < 0
-          ? `NPS ${nps25.toFixed(0)} — retração de ${npsGrowth}% sobre o ano anterior`
-          : `NPS ${nps25.toFixed(0)} — estável em relação ao ano anterior`,
+          ? `Satisfação ${nps25.toFixed(0)} — queda de ${Math.abs(npsGrowth)}% sobre o ano passado`
+          : `Satisfação ${nps25.toFixed(0)} — estável em relação ao ano passado`,
     );
   }
 
@@ -139,7 +139,7 @@ function computeDepts(data: BapsSnapshot): DeptData[] {
       href: "/administrativo",
       status:
         certVencidas > 0 ? "critico" : !institucionalOk || certAlertas > 0 ? "atencao" : "ok",
-      metric: institucionalOk ? "Compliance em dia" : "Pendências",
+      metric: institucionalOk ? "Tudo em dia" : "Itens pendentes",
     },
     {
       key: "fin",
@@ -160,7 +160,7 @@ function computeDepts(data: BapsSnapshot): DeptData[] {
           : processosAlto >= 1 || contratoRisco >= 1
             ? "atencao"
             : "ok",
-      metric: `${conform}% conformidade`,
+      metric: `${conform}% em dia`,
     },
     {
       key: "conta",
@@ -176,7 +176,7 @@ function computeDepts(data: BapsSnapshot): DeptData[] {
       icon: Users,
       href: "/marketing",
       status: npsGrowth < -5 || churnHigh ? "critico" : npsGrowth < 0 ? "atencao" : "ok",
-      metric: npsGrowth >= 0 ? `NPS +${npsGrowth}%` : `NPS ${npsGrowth}%`,
+      metric: npsGrowth >= 0 ? `Satisfação +${npsGrowth}%` : `Satisfação ${npsGrowth}%`,
     },
     {
       key: "eventos",
@@ -379,12 +379,12 @@ export function CompanyHealth({ data }: { data: BapsSnapshot }) {
           <Minus className="h-3 w-3" />
         )}
         <span>
-          NPS ponderado{" "}
+          Satisfação dos membros{" "}
           {npsGrowth > 0
-            ? `+${npsGrowth}% vs. ano anterior`
+            ? `+${npsGrowth}% vs. ano passado`
             : npsGrowth < 0
-              ? `${npsGrowth}% vs. ano anterior`
-              : "estável vs. ano anterior"}
+              ? `${npsGrowth}% vs. ano passado`
+              : "estável vs. ano passado"}
         </span>
       </motion.div>
     </section>
