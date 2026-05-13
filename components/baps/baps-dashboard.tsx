@@ -245,18 +245,6 @@ export function BapsDashboard({
         </motion.div>
       )}
 
-      {sector === "executivo" && (
-        <motion.section
-          initial="hidden"
-          animate="show"
-          custom={2}
-          variants={fade}
-          className="grid gap-6 lg:grid-cols-[1fr_minmax(260px,300px)] items-start print:grid-cols-1 print:gap-4"
-        >
-          <NpsComposedChart data={data} />
-          <InstitutionalRiskPanel data={data} />
-        </motion.section>
-      )}
 
       {showZone(sector, "macro_juridico") && (
         <motion.section
