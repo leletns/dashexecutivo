@@ -38,11 +38,11 @@ export const authOptions = {
         const password = credentials?.password;
         if (!emailRaw || typeof password !== "string" || !password) return null;
 
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-        console.log("[auth] url:", supabaseUrl ? supabaseUrl.slice(0, 30) + "…" : "AUSENTE");
-        console.log("[auth] anon key:", supabaseAnonKey ? "OK" : "AUSENTE");
-        if (!supabaseUrl || !supabaseAnonKey) return null;
+        const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY;
+        if (!rawUrl || !supabaseAnonKey) return null;
+        // garante que a URL não tem /rest/v1 ou outros sufixos
+        const supabaseUrl = rawUrl.replace(/\/(rest|auth)(\/.*)?$/, "").replace(/\/$/, "");
 
         const supabase = createClient(supabaseUrl, supabaseAnonKey);
         const { data, error } = await supabase.auth.signInWithPassword({
