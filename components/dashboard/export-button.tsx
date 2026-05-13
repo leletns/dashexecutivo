@@ -168,89 +168,60 @@ async function savePdfFromDom(
   const html2canvas: typeof import("html2canvas").default =
     (html2canvasMod as any).default ?? (html2canvasMod as any);
 
-  onStage("Renderizando o painel em alta definição…");
-
   const isDark = document.documentElement.classList.contains("dark");
   const backgroundColor = isDark ? "#0a0a0c" : "#fdfcff";
 
+  const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4", compress: true });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+
+  // ── Página 1: capa completa (sem captura DOM) ─────────────────────────────
+  drawCover(pdf, pageWidth, pageHeight, cards);
+  drawFooter(pdf, pageWidth, pageHeight, 1, true);
+
+  // ── Páginas de conteúdo ───────────────────────────────────────────────────
+  onStage("Renderizando o painel em alta definição…");
+
   const canvas = await html2canvas(root, {
     backgroundColor,
-    scale: Math.min(window.devicePixelRatio || 1, 2) * 1.25,
+    scale: Math.min(window.devicePixelRatio || 1, 2) * 1.2,
     useCORS: true,
     logging: false,
     windowWidth: root.scrollWidth,
     windowHeight: root.scrollHeight,
   });
 
-  onStage("Aplicando assinatura digital…");
+  onStage("Montando páginas do relatório…");
 
-  const pdf = new jsPDF({
-    orientation: canvas.width >= canvas.height ? "landscape" : "portrait",
-    unit: "pt",
-    format: "a4",
-    compress: true,
-  });
-
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-
-  const ratio = canvas.width / pageWidth;
-  const sliceHeightPx = pageHeight * ratio;
-
-  // Capa minimalista no topo da primeira página
-  drawCover(pdf, pageWidth, cards);
+  const contentWidth = pageWidth;
+  const contentHeight = pageHeight - 40; // margin for footer
+  const ratio = canvas.width / contentWidth;
+  const sliceHeightPx = contentHeight * ratio;
 
   let yPx = 0;
-  let pageIndex = 0;
+  let pageIndex = 1;
   while (yPx < canvas.height) {
-    const sliceCanvas = document.createElement("canvas");
+    pdf.addPage();
     const h = Math.min(sliceHeightPx, canvas.height - yPx);
+    const sliceCanvas = document.createElement("canvas");
     sliceCanvas.width = canvas.width;
     sliceCanvas.height = h;
     const sCtx = sliceCanvas.getContext("2d");
     if (!sCtx) throw new Error("Contexto 2D indisponível");
     sCtx.fillStyle = backgroundColor;
     sCtx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-    sCtx.drawImage(
-      canvas,
-      0,
-      yPx,
-      canvas.width,
-      h,
-      0,
-      0,
-      canvas.width,
-      h,
-    );
-    const imgData = sliceCanvas.toDataURL("image/jpeg", 0.92);
-
-    if (pageIndex > 0) pdf.addPage();
-    if (pageIndex === 0) {
-      // primeira página já tem capa; coloca o conteúdo abaixo
-      const top = 96; // espaço da capa
-      const usable = pageHeight - top;
-      const imgHeightPt = (h / ratio) * (usable / (h / ratio));
-      pdf.addImage(
-        imgData,
-        "JPEG",
-        0,
-        top,
-        pageWidth,
-        Math.min(usable, h / ratio),
-      );
-    } else {
-      pdf.addImage(imgData, "JPEG", 0, 0, pageWidth, h / ratio);
-    }
-    drawFooter(pdf, pageWidth, pageHeight, pageIndex + 1);
-
+    sCtx.drawImage(canvas, 0, yPx, canvas.width, h, 0, 0, canvas.width, h);
+    pdf.addImage(sliceCanvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, contentWidth, h / ratio);
+    drawFooter(pdf, pageWidth, pageHeight, pageIndex + 1, false);
     yPx += sliceHeightPx;
     pageIndex += 1;
   }
 
-  // Página final com tabela de indicadores e série mensal (texto puro p/ buscas no PDF)
+  // ── Última página: tabela de dados ────────────────────────────────────────
+  onStage("Aplicando assinatura digital…");
   pdf.addPage();
   drawDataAppendix(pdf, pageWidth, pageHeight, cards, series);
-  drawFooter(pdf, pageWidth, pageHeight, pageIndex + 1);
+  drawFooter(pdf, pageWidth, pageHeight, pageIndex + 1, false);
 
   const stamp = new Date().toISOString().slice(0, 10);
   const filename = `dash-executivo-${stamp}.pdf`;
@@ -258,45 +229,89 @@ async function savePdfFromDom(
   return filename;
 }
 
-function drawCover(pdf: any, pageWidth: number, cards: Cards) {
+function drawCover(pdf: any, pageWidth: number, pageHeight: number, cards: Cards) {
+  // Fundo branco limpo
+  pdf.setFillColor(255, 255, 255);
+  pdf.rect(0, 0, pageWidth, pageHeight, "F");
+
+  // Faixa roxa no topo
   pdf.setFillColor(124, 58, 237);
-  pdf.rect(0, 0, pageWidth, 64, "F");
-  pdf.setTextColor(255, 255, 255);
+  pdf.rect(0, 0, pageWidth, 8, "F");
+
+  // Área central
+  const centerY = pageHeight * 0.38;
+
+  // Título
+  pdf.setTextColor(20, 17, 30);
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(16);
-  pdf.text("Dash executivo", 24, 30);
+  pdf.setFontSize(32);
+  pdf.text("Relatório Executivo", pageWidth / 2, centerY, { align: "center" });
+
+  // Subtítulo
   pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(10);
-  pdf.text("Visão consolidada da operação", 24, 48);
+  pdf.setFontSize(13);
+  pdf.setTextColor(107, 97, 130);
+  pdf.text("Portal de Gestão · Visão Consolidada da Operação", pageWidth / 2, centerY + 28, { align: "center" });
 
-  const totalReceita = cards.find((c) => c.key === "receita")?.value ?? 0;
-  const totalLucro = cards.find((c) => c.key === "lucro")?.value ?? 0;
-  pdf.setFontSize(10);
-  const right = pageWidth - 24;
-  pdf.text(
-    `Gerado em ${new Date().toLocaleString("pt-BR")}`,
-    right,
-    30,
-    { align: "right" },
-  );
-  pdf.text(
-    `Receita ${formatBRL(totalReceita)}  ·  Lucro ${formatBRL(totalLucro)}`,
-    right,
-    48,
-    { align: "right" },
-  );
-}
+  // Linha separadora
+  pdf.setDrawColor(218, 210, 240);
+  pdf.setLineWidth(0.5);
+  pdf.line(pageWidth * 0.25, centerY + 48, pageWidth * 0.75, centerY + 48);
 
-function drawFooter(pdf: any, pageWidth: number, pageHeight: number, n: number) {
-  pdf.setTextColor(120, 120, 120);
+  // Data de geração
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  pdf.setFontSize(10);
+  pdf.setTextColor(107, 97, 130);
+  pdf.text(`Gerado em ${dateStr}`, pageWidth / 2, centerY + 68, { align: "center" });
+
+  // KPIs em mini-cards
+  const kpiY = centerY + 110;
+  const kpiKeys = ["receita", "despesa", "lucro", "ticket"];
+  const kpiColors: Record<string, [number, number, number]> = {
+    receita: [124, 58, 237],
+    despesa: [229, 56, 59],
+    lucro: [16, 185, 129],
+    ticket: [245, 158, 11],
+  };
+  const cardW = (pageWidth - 80) / 4;
+  kpiKeys.forEach((key, i) => {
+    const card = cards.find((c) => c.key === key);
+    if (!card) return;
+    const x = 40 + i * (cardW + 8);
+    const [r, g, b] = kpiColors[key] ?? [100, 100, 100];
+    pdf.setFillColor(r, g, b);
+    pdf.roundedRect(x, kpiY, cardW, 60, 6, 6, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(8);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(card.label.toUpperCase(), x + cardW / 2, kpiY + 18, { align: "center" });
+    pdf.setFontSize(14);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(formatBRL(card.value), x + cardW / 2, kpiY + 42, { align: "center" });
+  });
+
+  // Faixa roxa na base
+  pdf.setFillColor(124, 58, 237);
+  pdf.rect(0, pageHeight - 40, pageWidth, 40, "F");
+  pdf.setTextColor(255, 255, 255);
   pdf.setFontSize(8);
   pdf.setFont("helvetica", "normal");
+  pdf.text("Documento confidencial · Uso interno restrito", pageWidth / 2, pageHeight - 16, { align: "center" });
+}
+
+function drawFooter(pdf: any, pageWidth: number, pageHeight: number, n: number, isCover: boolean) {
+  if (isCover) return;
+  pdf.setTextColor(150, 140, 170);
+  pdf.setFontSize(7.5);
+  pdf.setFont("helvetica", "normal");
+  const stamp = new Date().toLocaleDateString("pt-BR");
   pdf.text(
-    `Documento confidencial · Dash executivo · página ${n}`,
-    pageWidth / 2,
+    `Confidencial · Portal Executivo · ${stamp}`,
+    24,
     pageHeight - 14,
-    { align: "center" },
   );
+  pdf.text(`Página ${n}`, pageWidth - 24, pageHeight - 14, { align: "right" });
 }
 
 function drawDataAppendix(

@@ -12,7 +12,6 @@ import {
   Loader2,
   Check,
   ArrowRight,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -439,7 +438,7 @@ function ChatBubble({
       {item.actionsApplied && item.actionsApplied.length > 0 && (
         <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-300 max-w-full">
           <div className="flex items-center gap-1.5 mb-1 font-medium">
-            <Sparkles className="h-3 w-3" />
+            <Check className="h-3 w-3" />
             Aplicado no painel
           </div>
           <ul className="space-y-0.5 list-disc pl-4">

@@ -52,7 +52,7 @@ export function isRouteAllowedForSector(pathname: string, sector: PortalSector):
 
   const rules: [string, PortalSector[]][] = [
     ["/juridico", ["juridico"]],
-    ["/financeiro", ["financeiro"]],
+    ["/financeiro", ["financeiro", "administrativo"]],
     ["/contabil", ["contabil"]],
     ["/marketing", ["marketing"]],
     ["/administrativo", ["administrativo"]],
@@ -125,11 +125,13 @@ const BY_SECTOR: Record<PortalSector, DashboardZone[]> = {
     "macro_financeiro",
     "bloco_financeiro_narrativa",
     "bloco_financeiro_eventos",
+    "bloco_institucional",
   ],
   contabil: [
     "macro_financeiro",
     "bloco_financeiro_narrativa",
     "bloco_financeiro_eventos",
+    "bloco_institucional",
   ],
   marketing: [
     "macro_marketing",
@@ -137,7 +139,13 @@ const BY_SECTOR: Record<PortalSector, DashboardZone[]> = {
     "bloco_nps",
     "bloco_congresso",
   ],
-  administrativo: ["macro_admin", "bloco_institucional", "bloco_certidoes"],
+  administrativo: [
+    "macro_admin",
+    "bloco_institucional",
+    "bloco_certidoes",
+    "bloco_financeiro_narrativa",
+    "bloco_risco_contratos",
+  ],
   eventos: ["macro_eventos", "bloco_congresso", "bloco_financeiro_eventos"],
 };
 

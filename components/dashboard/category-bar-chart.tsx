@@ -148,16 +148,6 @@ export function CategoryBarChart() {
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={rows} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="bar-receita" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--brand-2))" stopOpacity={0.95} />
-                    <stop offset="100%" stopColor="hsl(var(--brand-1))" stopOpacity={0.6} />
-                  </linearGradient>
-                  <linearGradient id="bar-custo" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--foreground))" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="hsl(var(--foreground))" stopOpacity={0.12} />
-                  </linearGradient>
-                </defs>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   vertical={false}
@@ -185,14 +175,14 @@ export function CategoryBarChart() {
                 <Tooltip content={<BarTip />} cursor={{ fill: "hsl(var(--muted) / 0.4)" }} />
                 <Bar
                   dataKey="receita"
-                  fill="url(#bar-receita)"
-                  radius={[8, 8, 4, 4]}
+                  fill="#7C3AED"
+                  radius={[4, 4, 0, 0]}
                   isAnimationActive
                 />
                 <Bar
                   dataKey="custo"
-                  fill="url(#bar-custo)"
-                  radius={[8, 8, 4, 4]}
+                  fill="#E5383B"
+                  radius={[4, 4, 0, 0]}
                   isAnimationActive
                 />
               </BarChart>

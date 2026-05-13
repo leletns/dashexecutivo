@@ -209,150 +209,100 @@ comment on table public.baps_contratos is 'Contratos; status ativo remove da aba
 comment on table public.baps_processos is 'Processos judicial/extrajudicial com risco e atualização semanal.';
 
 -- ---------------------------------------------------------------------------
--- Seed inicial (primeira apresentação · até mar/2026)
+-- Módulo Financeiro Estruturado (portal_*)
+-- Tabelas para preenchimento mensal pelo setor financeiro.
+-- Sem seed data — partem de zero, preenchidas pelo usuário.
 -- ---------------------------------------------------------------------------
-insert into public.baps_financeiro_resumo (id, saldo_global, deficit_q1, contas_bancarias, pendencias, inadimplencia_patrocinadores, referencia_mes)
-values (
-  1,
-  1190000,
-  -25900,
-  'Contas operacionais consolidadas sob revisão da diretoria.',
-  'Conciliações de cartão e notas de terceiros em fechamento mensal.',
-  'Acompanhamento amigável com cartas de cobrança padronizadas.',
-  'mar/2026'
-)
-on conflict (id) do nothing;
 
-insert into public.baps_financeiro_eventos (nome_evento, cidade, receitas, despesas_pagas, referencia)
-select 'Summit Turismo Saúde', 'Goiânia', 82590, 106102, 'Mar/2026 · resultado controlado na diretoria'
-where not exists (
-  select 1 from public.baps_financeiro_eventos e where e.nome_evento = 'Summit Turismo Saúde'
+create table if not exists public.portal_contas_bancarias (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  tipo text not null check (tipo in ('corrente', 'poupanca', 'investimento', 'outros')),
+  banco text not null default '',
+  saldo numeric not null default 0,
+  data_saldo date not null,
+  updated_at timestamptz not null default now()
 );
 
-insert into public.baps_associados_resumo (id, total_ativos, vencimentos_mes, saidas_mes, saidas_semana, saidas_ytd, notas_comercial)
-values (
-  1,
-  428,
-  36,
-  5,
-  2,
-  18,
-  'Patrocinadores: consolidar clareza com cenografia e SLAs de entrega de leads pós-evento.'
-)
-on conflict (id) do nothing;
-
-insert into public.baps_institucional (id, atas_procuracoes_ok, status_estatutario, proxima_assembleia, regimento_interno_ok)
-values (1, true, 'Regular · sem pendências cadastrais na Junta.', '2026-06-18', true)
-on conflict (id) do nothing;
-
-insert into public.baps_evento_trilhas (slug, nome, status, detalhe, palestrantes, ordem) values
-('face', 'Face', 'success', 'Palestrantes Bravo/Kassir confirmados.', 'Francisco Bravo · Ramtin Kassir', 1),
-('mama', 'Mama', 'warning', 'Aguardando 9 convites nacionais.', 'Ernesto Buccheri · Francisco Bravo · Reynaldo Llamas', 2),
-('corporal', 'Corporal', 'critical', 'Atraso crítico; 6 internacionais sem convite.', 'Equipe produção · revisão diretoria', 3),
-('pre-pos', 'Pré e Pós', 'warning', 'Estrutura pronta; pendências administrativas em fechamento.', 'Coordenação acadêmica · secretaria', 4),
-('gestao', 'Gestão', 'critical', 'Sem entregas iniciais.', 'PMO · operações', 5)
-on conflict (slug) do nothing;
-
-insert into public.baps_congresso_disponibilidade (
-  id, referencia, congressistas_cp, residentes, gestores, pre_pos, videomakers,
-  staffs, staffs_patrocinio, visitantes, lab_face, lab_corporal, baps_in_the_house,
-  inscritos_total, congressistas_pagantes, congressistas_isentos
-)
-values (
-  1, 'mai/2026', 400, 30, 150, 120, 30,
-  0, 0, 0, 10, 12, 40,
-  0, 100, 0
-)
-on conflict (id) do nothing;
-
-insert into public.baps_nps_metricas (categoria, ano, valor) values
-('Doctors', 2024, 34),
-('Doctors', 2025, 54),
-('Pré/Pós', 2024, 39),
-('Pré/Pós', 2025, 71),
-('Gestores', 2024, 42),
-('Gestores', 2025, 65)
-on conflict (categoria, ano) do nothing;
-
-insert into public.baps_contratos (fornecedor, status, data_inicio, emissao_nf, vencimento_tipo, vencimento_data, responsavel, testemunha_andressa, testemunha_ana_paula, decisao_notas, destaque_risco)
-select * from (values
-(
-  'Salvador · operação logística premium',
-  'gestao_assinaturas'::text,
-  '2026-02-10'::date,
-  null::date,
-  '15_dias'::text,
-  '2026-03-15'::date,
-  'Diretoria Jurídica'::text,
-  true,
-  false,
-  'Decisão: minuta não habitual aprovada com cláusulas de SLA e multa simétrica; envio para assinatura física na segunda rodada.'::text,
-  true
-),
-(
-  'Fornecedor de Cabeças de Noronha',
-  'em_elaboracao'::text,
-  '2026-01-05'::date,
-  null::date,
-  'automatico'::text,
-  null::date,
-  'Procuradoria interna'::text,
-  true,
-  true,
-  'Decisão: contingenciamento de pagamentos até homologação final do escopo; parecer externo arquivado junto ao dossiê.'::text,
-  true
-),
-(
-  'Audiovisual institucional',
-  'demanda'::text,
-  '2026-03-01'::date,
-  null::date,
-  '15_dias'::text,
-  null::date,
-  'Marketing'::text,
-  false,
-  false,
-  null::text,
-  false
-),
-(
-  'Infraestrutura cloud corporativa',
-  'ativo'::text,
-  '2025-08-01'::date,
-  '2025-08-05'::date,
-  'automatico'::text,
-  '2026-08-01'::date,
-  'TI'::text,
-  false,
-  true,
-  null::text,
-  false
-)) as v(fornecedor, status, data_inicio, emissao_nf, vencimento_tipo, vencimento_data, responsavel, testemunha_andressa, testemunha_ana_paula, decisao_notas, destaque_risco)
-where not exists (
-  select 1 from public.baps_contratos c where c.fornecedor = v.fornecedor
+create table if not exists public.portal_previsao_mensal (
+  id uuid primary key default gen_random_uuid(),
+  referencia_mes text not null unique,
+  total_despesas_previstas numeric not null default 0,
+  total_entradas_previstas numeric not null default 0,
+  notas text default '',
+  updated_at timestamptz not null default now()
 );
 
-insert into public.baps_processos (tipo, parte_envolvida, numero, tribunal, fase, responsavel_escritorio, atualizacao_semanal, nivel_risco)
-select * from (values
-('judicial'::text, 'Cenografia Brasil Ltda.', '0001234-56.2025.8.26.0100', 'TJSP · 5ª Vara Cível', 'andamento'::text, 'Escritório Meyer', 'Contestação protocolada; aguardando audiência de conciliação.', 'medio'::text),
-('extrajudicial', 'TGMED Serviços', 'EXT-2025-089', '—', 'inicial', 'Escritório Meyer', 'Notificação extrajudicial enviada; prazo 15 dias.', 'baixo'),
-('judicial', 'Mtech Indústria', '0008877-11.2024.8.05.0001', 'TJBA · Comercial', 'julgado', 'Escritório Meyer', 'Sentença publicada; análise de recurso.', 'alto'),
-('extrajudicial', 'Sucesso Médico Editora', 'EXT-2026-014', '—', 'andamento', 'Escritório Meyer', 'Proposta de acordo em revisão.', 'medio'),
-('judicial', 'Ammare Holding', '0005512-33.2025.8.13.0024', 'TJMG · Fazenda', 'inicial', 'Escritório Meyer', 'Distribuição confirmada; citação pendente.', 'alto'),
-('extrajudicial', 'App Delivery Partners', 'EXT-2026-031', '—', 'finalizado', 'Escritório Meyer', 'Acordo homologado e quitado.', 'baixo'),
-('judicial', 'Internet Fiber Co.', '0009988-22.2023.8.26.0100', 'TJSP · 12ª Vara', 'andamento', 'Escritório Meyer', 'Perícia técnica designada.', 'medio'),
-('judicial', 'Correios · contrato histórico', '0004421-88.2022.4.03.6100', 'TRF3', 'andamento', 'Escritório Meyer', 'Aguardando manifestação da autarquia.', 'medio'),
-('judicial', 'Uber Brasil', '0007744-55.2025.8.26.0100', 'TJSP · Cível', 'inicial', 'Escritório Meyer', 'Audiência inicial marcada.', 'baixo'),
-('judicial', 'Fast Limpeza Facilities', '0003322-77.2026.8.26.0100', 'TJSP · Vara do Trabalho', 'inicial', 'Escritório Meyer', 'Reunião com RH na quinta-feira.', 'alto'),
-('extrajudicial', 'Neo Capital', 'EXT-2026-052', '—', 'andamento', 'Escritório Meyer', 'Due diligence documental em curso.', 'medio'),
-('judicial', 'Héctor Duran · quota societária', '0006611-44.2025.8.26.0100', 'TJSP · Empresarial', 'andamento', 'Escritório Meyer', 'Audiência de instrução agendada.', 'alto')) as p(tipo, parte_envolvida, numero, tribunal, fase, responsavel_escritorio, atualizacao_semanal, nivel_risco)
-where not exists (
-  select 1 from public.baps_processos x where x.parte_envolvida = p.parte_envolvida and x.numero = p.numero
+create table if not exists public.portal_evento_resultado (
+  id uuid primary key default gen_random_uuid(),
+  nome_evento text not null,
+  referencia_mes text not null,
+  receita_bilheteria numeric not null default 0,
+  receita_patrocinio numeric not null default 0,
+  receita_outros numeric not null default 0,
+  despesas_total numeric not null default 0,
+  updated_at timestamptz not null default now()
 );
 
-insert into public.baps_certidoes (nome, data_ultima_emissao, previsao_proxima, status_pendencia)
-select * from (values
-('Certidão negativa de débitos federais'::text, '2025-11-12'::date, '2026-05-12'::date, 'Sem pendências'::text),
-('Certidão estadual FGTS', '2025-10-02'::date, '2026-04-02'::date, 'Renovar antes do próximo board'),
-('Certidão municipal ISS', '2025-12-20'::date, '2026-06-15'::date, 'Aguardando protocolo eletrônico')) as c(nome, data_ultima_emissao, previsao_proxima, status_pendencia)
-where not exists (select 1 from public.baps_certidoes z where z.nome = c.nome);
+create table if not exists public.portal_associados_historico (
+  id uuid primary key default gen_random_uuid(),
+  periodo_label text not null unique,
+  ano int not null,
+  mes int not null,
+  total_ativos int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.portal_associados_mensal (
+  id uuid primary key default gen_random_uuid(),
+  ano int not null,
+  mes int not null,
+  total_inicio_mes int not null default 0,
+  previsao_renovacoes int not null default 0,
+  renovacoes_realizadas int not null default 0,
+  novas_adesoes int not null default 0,
+  saidas int not null default 0,
+  updated_at timestamptz not null default now(),
+  unique (ano, mes)
+);
+
+create table if not exists public.portal_custos_departamento (
+  id uuid primary key default gen_random_uuid(),
+  departamento text not null,
+  referencia_mes text not null,
+  valor_mensal numeric not null default 0,
+  notas text default '',
+  updated_at timestamptz not null default now(),
+  unique (departamento, referencia_mes)
+);
+
+-- RLS para tabelas portal_*
+alter table public.portal_contas_bancarias enable row level security;
+alter table public.portal_previsao_mensal enable row level security;
+alter table public.portal_evento_resultado enable row level security;
+alter table public.portal_associados_historico enable row level security;
+alter table public.portal_associados_mensal enable row level security;
+alter table public.portal_custos_departamento enable row level security;
+
+drop policy if exists "portal_contas_service_all" on public.portal_contas_bancarias;
+drop policy if exists "portal_prev_service_all" on public.portal_previsao_mensal;
+drop policy if exists "portal_ev_res_service_all" on public.portal_evento_resultado;
+drop policy if exists "portal_assoc_hist_service_all" on public.portal_associados_historico;
+drop policy if exists "portal_assoc_mes_service_all" on public.portal_associados_mensal;
+drop policy if exists "portal_custos_service_all" on public.portal_custos_departamento;
+
+create policy "portal_contas_service_all" on public.portal_contas_bancarias for all using (true) with check (true);
+create policy "portal_prev_service_all" on public.portal_previsao_mensal for all using (true) with check (true);
+create policy "portal_ev_res_service_all" on public.portal_evento_resultado for all using (true) with check (true);
+create policy "portal_assoc_hist_service_all" on public.portal_associados_historico for all using (true) with check (true);
+create policy "portal_assoc_mes_service_all" on public.portal_associados_mensal for all using (true) with check (true);
+create policy "portal_custos_service_all" on public.portal_custos_departamento for all using (true) with check (true);
+
+-- Sem INSERT seed — todas as tabelas portal_* começam vazias.
+
+-- ---------------------------------------------------------------------------
+-- Seed inicial removido — portal parte do zero sem dados demo.
+-- Para popular o banco, use a interface do portal (setor financeiro/executivo).
+-- ---------------------------------------------------------------------------
+-- Todos os dados de seed foram removidos.
+-- O portal inicia sem dados demo — preencha via interface ou via entrada-dados.

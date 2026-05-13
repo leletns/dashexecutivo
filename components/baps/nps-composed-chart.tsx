@@ -123,17 +123,17 @@ export function NpsComposedChart({ data }: { data: BapsSnapshot }) {
             />
             <Tooltip content={<PerfectTooltip />} cursor={{ fill: "hsl(var(--muted) / 0.12)" }} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Bar dataKey="y2024" name="2024" fill="#7c3aed" radius={[6, 6, 2, 2]} barSize={26} />
-            <Bar dataKey="y2025" name="2025" fill="#14b8a6" radius={[6, 6, 2, 2]} barSize={26} />
+            <Bar dataKey="y2024" name="2024" fill="#A5B4FC" radius={[4, 4, 0, 0]} barSize={26} />
+            <Bar dataKey="y2025" name="2025" fill="#7C3AED" radius={[4, 4, 0, 0]} barSize={26} />
             <Line
               type="monotone"
               dataKey="meta"
               name={`Meta (${META_EXCELENCIA})`}
-              stroke="hsl(var(--foreground))"
-              strokeOpacity={0.75}
+              stroke="#F59E0B"
               strokeWidth={2}
-              dot={{ r: 3, fill: "hsl(var(--foreground))" }}
-              activeDot={{ r: 4 }}
+              strokeDasharray="6 3"
+              dot={false}
+              activeDot={{ r: 4, fill: "#F59E0B" }}
             />
           </ComposedChart>
         </ResponsiveContainer>

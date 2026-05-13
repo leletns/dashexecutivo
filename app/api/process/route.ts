@@ -9,6 +9,12 @@ export const dynamic = "force-dynamic";
 const MODEL = "claude-sonnet-4-6";
 const ANTHROPIC_VERSION = "2023-06-01";
 
+export type ColumnMapping = {
+  col: string;
+  mapsTo: "receita" | "despesa" | "lucro" | "ticket" | "serie_mes" | "evento" | "outros";
+  confidence: number;
+};
+
 type Imported = {
   cards?: Partial<{
     receita: number;
@@ -22,12 +28,13 @@ type Imported = {
     despesa: number;
     lucro: number;
   }>;
+  mapping?: ColumnMapping[];
+  detectedHeaders?: string[];
 };
 
 const SYSTEM_PROMPT = `Você é um motor de extração de indicadores financeiros executivos.
-Receberá dados brutos: trechos de texto extraídos de planilhas, CSVs ou PDFs;
-e/ou imagens (prints de dashboards, recibos, relatórios escaneados).
-Sua tarefa é devolver APENAS um JSON válido (sem markdown, sem comentários) com a forma:
+Receberá dados brutos de planilhas, CSVs, PDFs ou imagens de dashboards.
+Devolva APENAS um JSON válido (sem markdown, sem comentários) com a seguinte forma:
 
 {
   "cards": {
@@ -38,16 +45,33 @@ Sua tarefa é devolver APENAS um JSON válido (sem markdown, sem comentários) c
   },
   "series": [
     { "month": "Jan", "receita": number, "despesa": number, "lucro": number }
+  ],
+  "detectedHeaders": ["Coluna A", "Coluna B", ...],
+  "mapping": [
+    { "col": "Nome da coluna", "mapsTo": "receita", "confidence": 0.95 }
   ]
 }
 
-Regras:
-- Valores em reais (BRL), inteiros, sem separadores.
-- "lucro" deve ser igual a "receita" - "despesa" quando possível.
+Regras para extração:
+- Valores em reais (BRL), inteiros, sem separadores de milhar.
+- "lucro" deve ser receita - despesa quando possível.
 - Use no máximo 12 pontos em "series" (Jan..Dez).
-- Quando estiver lendo uma imagem, extraia números visíveis em cards/tabelas/gráficos.
 - Se algum campo não for inferível, omita-o.
-- Não inclua nenhum texto além do JSON.`;
+
+Regras para mapeamento de colunas (campo "mapping"):
+1. Liste todos os headers/colunas detectados em "detectedHeaders".
+2. Para cada coluna, mapeie para uma das categorias:
+   - "receita": entradas, faturamento, receitas, vendas, bilheteria, ingressos
+   - "despesa": custos, gastos, saídas, despesas, pagamentos
+   - "lucro": resultado, lucro líquido, margem, saldo
+   - "ticket": preço médio, ticket médio, valor médio
+   - "serie_mes": séries temporais mensais (datas, períodos, meses)
+   - "evento": dados de eventos (nome do evento, cidade, capacidade)
+   - "outros": colunas sem mapeamento claro
+3. Atribua um score de confiança (0.0 a 1.0) para cada mapeamento.
+4. Inclua "mapping" sempre que houver headers detectados.
+
+Não inclua nenhum texto além do JSON.`;
 
 export async function POST(req: Request) {
   try {
@@ -241,6 +265,8 @@ function safeParseJson(text: string): Imported | null {
   }
 }
 
+const VALID_MAPS_TO = new Set(["receita", "despesa", "lucro", "ticket", "serie_mes", "evento", "outros"]);
+
 function sanitize(input: any): Imported {
   const out: Imported = {};
   if (input?.cards && typeof input.cards === "object") {
@@ -261,6 +287,21 @@ function sanitize(input: any): Imported {
         lucro: Math.round(
           Number(p.lucro) || (Number(p.receita) || 0) - (Number(p.despesa) || 0),
         ),
+      }));
+  }
+  if (Array.isArray(input?.detectedHeaders)) {
+    out.detectedHeaders = input.detectedHeaders
+      .filter((h: any) => typeof h === "string")
+      .slice(0, 50);
+  }
+  if (Array.isArray(input?.mapping)) {
+    out.mapping = input.mapping
+      .filter((m: any) => typeof m?.col === "string" && VALID_MAPS_TO.has(m?.mapsTo))
+      .slice(0, 50)
+      .map((m: any) => ({
+        col: String(m.col),
+        mapsTo: m.mapsTo as ColumnMapping["mapsTo"],
+        confidence: Math.min(1, Math.max(0, Number(m.confidence) || 0)),
       }));
   }
   return out;
