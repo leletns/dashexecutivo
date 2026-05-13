@@ -18,6 +18,7 @@ import {
 import { StatusDot } from "@/components/baps/status-dot";
 import { CommercialOverview } from "@/components/baps/commercial-overview";
 import { ExecutiveHero } from "@/components/baps/executive-hero";
+import { CompanyHealth } from "@/components/dashboard/company-health";
 import { NpsComposedChart } from "@/components/baps/nps-composed-chart";
 import { InstitutionalRiskPanel } from "@/components/baps/institutional-risk-panel";
 import { CongressNucleiTable } from "@/components/baps/congress-nuclei-table";
@@ -232,8 +233,14 @@ export function BapsDashboard({
         )}
       </motion.header>
 
-      {showZone(sector, "macro_executivo") && (
+      {sector === "executivo" && (
         <motion.div initial="hidden" animate="show" custom={1} variants={fade}>
+          <CompanyHealth data={data} />
+        </motion.div>
+      )}
+
+      {showZone(sector, "macro_executivo") && (
+        <motion.div initial="hidden" animate="show" custom={2} variants={fade}>
           <ExecutiveHero data={data} />
         </motion.div>
       )}

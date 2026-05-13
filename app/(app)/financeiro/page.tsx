@@ -34,6 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { AutoConciliacaoSheet } from "@/components/dashboard/auto-conciliacao-sheet";
 import { LancamentoFormDialog } from "@/components/dashboard/lancamento-form-dialog";
+import { PortalFinanceiroTabs } from "@/components/financeiro/portal-financeiro-tabs";
 import {
   type FinanceLancamento,
   metricasEdicao,
@@ -84,6 +85,8 @@ export default function FinanceiroPage() {
       </motion.div>
 
       <KpiGrid totals={totals} />
+
+      <PortalFinanceiroTabs />
 
       <Tabs defaultValue="overview">
         <TabsList>
