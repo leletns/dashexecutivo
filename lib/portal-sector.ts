@@ -112,7 +112,7 @@ const ALL_ZONES: DashboardZone[] = [
 ];
 
 const BY_SECTOR: Record<PortalSector, DashboardZone[]> = {
-  executivo: ["macro_executivo"],
+  executivo: ["macro_executivo", "bloco_nps"],
   juridico: [
     "macro_juridico",
     "bloco_risco_contratos",

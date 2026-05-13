@@ -81,7 +81,7 @@ function PerfectTooltip({
         </div>
       </div>
       <p className="mt-2 pt-2 border-t border-border/50 text-[11px] text-muted-foreground leading-relaxed">
-        <span className="font-medium text-foreground">Por quê: </span>
+        <span className="font-medium text-foreground">O que mudou: </span>
         {row.driver}
       </p>
     </div>
@@ -95,11 +95,10 @@ export function NpsComposedChart({ data }: { data: BapsSnapshot }) {
     <Card className="p-5 sm:p-6 rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm shadow-sm print:break-inside-avoid overflow-hidden">
       <header className="mb-4">
         <h2 className="text-sm font-semibold tracking-tight text-foreground">
-          Qualidade · NPS composto (2024 vs 2025)
+          Satisfação dos membros — 2024 vs 2025
         </h2>
         <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-2xl">
-          Barras agrupadas por público com linha de meta de excelência fixada em {META_EXCELENCIA}. Passe o cursor para ver o
-          contexto qualitativo de cada avanço.
+          Como nossos membros avaliaram a experiência com a BAPS. Passe o cursor sobre as barras para ver detalhes.
         </p>
       </header>
       <div className="h-[320px] w-full baps-chart-print baps-chart-print-composed">
@@ -128,7 +127,7 @@ export function NpsComposedChart({ data }: { data: BapsSnapshot }) {
             <Line
               type="monotone"
               dataKey="meta"
-              name={`Meta (${META_EXCELENCIA})`}
+              name={`Meta de excelência (${META_EXCELENCIA})`}
               stroke="#F59E0B"
               strokeWidth={2}
               strokeDasharray="6 3"

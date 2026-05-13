@@ -195,7 +195,7 @@ export function BapsDashboard({
       >
         <div>
           <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground font-medium">
-            {sector === "executivo" ? "Governança executiva" : sectorShortLabel(sector)}
+            {sector === "executivo" ? "Painel da presidência" : sectorShortLabel(sector)}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
             Dash executivo
@@ -203,11 +203,10 @@ export function BapsDashboard({
           <p className="mt-2 max-w-xl text-sm text-muted-foreground leading-relaxed">
             {sector === "executivo" ? (
               <>
-                Painel consolidado para Presidência e Diretoria. Referência financeira{" "}
+                Visão geral da organização · mês de referência:{" "}
                 <span className="tabular-nums font-medium text-foreground">
                   {data.financeiro_resumo.referencia_mes}
                 </span>
-                . Relatório mensal recomendado até o dia 5.
               </>
             ) : (
               <>
@@ -723,7 +722,7 @@ export function BapsDashboard({
         </>
       )}
 
-      {showZone(sector, "bloco_nps") && sector !== "executivo" && (
+      {showZone(sector, "bloco_nps") && (
         <motion.section initial="hidden" animate="show" custom={8} variants={fade}>
           <NpsComposedChart data={data} />
         </motion.section>
@@ -734,7 +733,47 @@ export function BapsDashboard({
           <CommercialOverview associados={data.associados_resumo} />
         </motion.section>
       )}
+
+      {sector === "executivo" && (
+        <motion.section initial="hidden" animate="show" custom={10} variants={fade}>
+          <CeoHelpCard />
+        </motion.section>
+      )}
     </div>
+  );
+}
+
+function CeoHelpCard() {
+  const items = [
+    {
+      q: 'O que é "Dinheiro em caixa"?',
+      a: "É o valor total disponível nas contas da organização agora. Clique no número para atualizar.",
+    },
+    {
+      q: 'O que é "Satisfação dos membros"?',
+      a: "É uma nota de 0 a 100 que mede o quanto os associados estão satisfeitos com a BAPS. Quanto maior, melhor. A meta é 70 ou mais.",
+    },
+    {
+      q: 'O que é "Total de associados"?',
+      a: "O número de pessoas ativas como membros da BAPS hoje. Clique no número para atualizar.",
+    },
+    {
+      q: "Como atualizar os outros dados?",
+      a: 'Use o botão "Inserir dados" no topo da página para atualizar finanças, eventos, jurídico e muito mais.',
+    },
+  ];
+  return (
+    <Card className="p-5 sm:p-6 rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm shadow-sm print:break-inside-avoid">
+      <h2 className="text-sm font-semibold tracking-tight">Como usar este painel</h2>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {items.map((item) => (
+          <div key={item.q} className="rounded-xl border border-border/40 bg-foreground/[0.02] px-4 py-3">
+            <p className="text-sm font-medium text-foreground leading-snug">{item.q}</p>
+            <p className="mt-1.5 text-[12px] text-muted-foreground leading-relaxed">{item.a}</p>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
