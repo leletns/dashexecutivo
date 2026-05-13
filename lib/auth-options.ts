@@ -40,6 +40,8 @@ export const authOptions = {
 
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
         const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        console.log("[auth] url:", supabaseUrl ? supabaseUrl.slice(0, 30) + "…" : "AUSENTE");
+        console.log("[auth] anon key:", supabaseAnonKey ? "OK" : "AUSENTE");
         if (!supabaseUrl || !supabaseAnonKey) return null;
 
         const supabase = createClient(supabaseUrl, supabaseAnonKey);
