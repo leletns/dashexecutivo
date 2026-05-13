@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { parseLooseNumber } from "@/lib/utils";
 import { FormCongressoDisponibilidade } from "@/components/baps/form-congresso-disponibilidade";
+import type { PortalSector } from "@/lib/portal-sector";
 
 async function postMutate(kind: string, data: Record<string, unknown>) {
   const res = await fetch("/api/baps/mutate", {
@@ -23,7 +24,30 @@ async function postMutate(kind: string, data: Record<string, unknown>) {
   if (!res.ok) throw new Error(json.error ?? "Falha ao gravar");
 }
 
-export function EntradaDadosClient() {
+const TABS_POR_SETOR: Record<PortalSector, string[]> = {
+  executivo: ["contratos", "processos", "certidoes", "financeiro", "congresso", "associados", "institucional"],
+  juridico: ["contratos", "processos", "certidoes"],
+  financeiro: ["financeiro", "associados"],
+  contabil: ["financeiro"],
+  administrativo: ["institucional", "certidoes"],
+  eventos: ["congresso"],
+  marketing: [],
+};
+
+const TAB_LABELS: Record<string, string> = {
+  contratos: "Contratos",
+  processos: "Processos",
+  certidoes: "Certidões",
+  financeiro: "Financeiro",
+  congresso: "5º Congresso",
+  associados: "Associados",
+  institucional: "Institucional",
+};
+
+export function EntradaDadosClient({ sector }: { sector: PortalSector }) {
+  const visibleTabs = TABS_POR_SETOR[sector];
+  const defaultTab = visibleTabs[0];
+
   return (
     <div className="space-y-6 pb-16 max-w-4xl mx-auto print:hidden">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -33,52 +57,69 @@ export function EntradaDadosClient() {
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
           >
             <ArrowLeft className="h-3 w-3" />
-            Voltar ao dashboard
+            Voltar ao painel
           </Link>
-          <h1 className="text-xl font-semibold tracking-tight">Entrada de dados</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Inserir dados</h1>
           <p className="text-xs text-muted-foreground mt-1 max-w-lg leading-relaxed">
-            Formulários para atualizar o Dash executivo. Os dados gravam no Supabase quando as variáveis de ambiente estão configuradas.
-            <span className="block mt-1">Use a aba <strong className="font-medium text-foreground">5º Congresso</strong> para disponibilidade; em <strong className="font-medium text-foreground">Financeiro</strong>, o mesmo nome de evento <strong className="font-medium text-foreground">atualiza</strong> a linha (vendas).</span>
+            Preencha os formulários abaixo para atualizar o painel da sua área.
           </p>
         </div>
       </div>
 
-      <Tabs defaultValue="contratos">
-        <TabsList className="flex flex-wrap h-auto gap-1 p-1">
-          <TabsTrigger value="contratos">Contratos</TabsTrigger>
-          <TabsTrigger value="processos">Processos</TabsTrigger>
-          <TabsTrigger value="certidoes">Certidões</TabsTrigger>
-          <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
-          <TabsTrigger value="congresso">5º Congresso</TabsTrigger>
-          <TabsTrigger value="associados">Associados</TabsTrigger>
-          <TabsTrigger value="institucional">Institucional</TabsTrigger>
-        </TabsList>
+      {visibleTabs.length === 0 ? (
+        <Card className="p-6 rounded-2xl border-border/60 text-sm text-muted-foreground">
+          Sua área não usa este formulário. Use o editor da sua página para atualizar os dados.
+        </Card>
+      ) : (
+        <Tabs defaultValue={defaultTab}>
+          <TabsList className="flex flex-wrap h-auto gap-1 p-1">
+            {visibleTabs.map((tab) => (
+              <TabsTrigger key={tab} value={tab}>
+                {TAB_LABELS[tab]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-        <TabsContent value="contratos" className="mt-4">
-          <FormContrato />
-        </TabsContent>
-        <TabsContent value="processos" className="mt-4">
-          <FormProcesso />
-        </TabsContent>
-        <TabsContent value="certidoes" className="mt-4">
-          <FormCertidao />
-        </TabsContent>
-        <TabsContent value="financeiro" className="mt-4">
-          <div className="space-y-4">
-            <FormFinanceiroResumo />
-            <FormFinanceiroEvento />
-          </div>
-        </TabsContent>
-        <TabsContent value="congresso" className="mt-4">
-          <FormCongressoDisponibilidade />
-        </TabsContent>
-        <TabsContent value="associados" className="mt-4">
-          <FormAssociados />
-        </TabsContent>
-        <TabsContent value="institucional" className="mt-4">
-          <FormInstitucional />
-        </TabsContent>
-      </Tabs>
+          {visibleTabs.includes("contratos") && (
+            <TabsContent value="contratos" className="mt-4">
+              <FormContrato />
+            </TabsContent>
+          )}
+          {visibleTabs.includes("processos") && (
+            <TabsContent value="processos" className="mt-4">
+              <FormProcesso />
+            </TabsContent>
+          )}
+          {visibleTabs.includes("certidoes") && (
+            <TabsContent value="certidoes" className="mt-4">
+              <FormCertidao />
+            </TabsContent>
+          )}
+          {visibleTabs.includes("financeiro") && (
+            <TabsContent value="financeiro" className="mt-4">
+              <div className="space-y-4">
+                <FormFinanceiroResumo />
+                <FormFinanceiroEvento />
+              </div>
+            </TabsContent>
+          )}
+          {visibleTabs.includes("congresso") && (
+            <TabsContent value="congresso" className="mt-4">
+              <FormCongressoDisponibilidade />
+            </TabsContent>
+          )}
+          {visibleTabs.includes("associados") && (
+            <TabsContent value="associados" className="mt-4">
+              <FormAssociados />
+            </TabsContent>
+          )}
+          {visibleTabs.includes("institucional") && (
+            <TabsContent value="institucional" className="mt-4">
+              <FormInstitucional />
+            </TabsContent>
+          )}
+        </Tabs>
+      )}
     </div>
   );
 }
@@ -385,13 +426,13 @@ function FormFinanceiroResumo() {
 
   return (
     <Card className="p-5 sm:p-6 rounded-2xl border-border/60">
-      <h2 className="text-sm font-semibold mb-4">Resumo executivo</h2>
+      <h2 className="text-sm font-semibold mb-4">Resumo financeiro</h2>
       <form onSubmit={submit} className="space-y-4">
         <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Saldo global (R$)">
             <Input value={saldo} onChange={(e) => setSaldo(e.target.value)} />
           </Field>
-          <Field label="Déficit Q1 (R$)">
+          <Field label="Resultado do período (R$)">
             <Input value={deficit} onChange={(e) => setDeficit(e.target.value)} />
           </Field>
         </div>
@@ -449,9 +490,9 @@ function FormFinanceiroEvento() {
 
   return (
     <Card className="p-5 sm:p-6 rounded-2xl border-border/60">
-      <h2 className="text-sm font-semibold mb-4">Receitas / despesas por evento</h2>
+      <h2 className="text-sm font-semibold mb-4">Receitas e despesas por evento</h2>
       <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-        Se já existir um evento com o mesmo nome, os valores são <strong className="text-foreground font-medium">substituídos</strong> (ideal para atualizar vendas).
+        Se já existir um evento com o mesmo nome, os valores são <strong className="text-foreground font-medium">substituídos</strong>.
       </p>
       <form onSubmit={submit} className="space-y-4">
         <Field label="Nome do evento">
@@ -483,7 +524,7 @@ function FormAssociados() {
   const [busy, setBusy] = React.useState(false);
   const [total, setTotal] = React.useState("428");
   const [venc, setVenc] = React.useState("36");
-  const [mes, setMes] = React.useState("5");
+  const [mes, setMes] = React.useState("2");
   const [sem, setSem] = React.useState("2");
   const [ytd, setYtd] = React.useState("18");
   const [notas, setNotas] = React.useState("");
@@ -524,11 +565,11 @@ function FormAssociados() {
           <Field label="Saídas na semana">
             <Input value={sem} onChange={(e) => setSem(e.target.value)} />
           </Field>
-          <Field label="Saídas YTD">
+          <Field label="Saídas no ano">
             <Input value={ytd} onChange={(e) => setYtd(e.target.value)} />
           </Field>
         </div>
-        <Field label="Notas comerciais / marketing">
+        <Field label="Notas">
           <Textarea value={notas} onChange={(e) => setNotas(e.target.value)} />
         </Field>
         <Button type="submit" disabled={busy} className="rounded-xl">
@@ -571,7 +612,7 @@ function FormInstitucional() {
           <input type="checkbox" checked={atas} onChange={(e) => setAtas(e.target.checked)} className="rounded border-input" />
           Atas e procurações em ordem
         </label>
-        <Field label="Status estatutário">
+        <Field label="Situação estatutária">
           <Textarea value={statuto} onChange={(e) => setStatuto(e.target.value)} />
         </Field>
         <Field label="Data próxima assembleia">
