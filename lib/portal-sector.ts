@@ -13,13 +13,25 @@ export function getPortalSectorFromEmail(
 ): PortalSector {
   if (!email) return "marketing";
   const e = email.trim().toLowerCase();
+  // Diretoria Executiva — Ludymilla Paiva
   if (e === "ludymilla@portal.com") return "executivo";
-  if (e === "juridico@portal.com") return "juridico";
-  if (e === "financeiro@portal.com") return "financeiro";
-  if (e === "contabil@portal.com") return "contabil";
+  // Jurídico
+  if (e === "juridico@portal.com" || e === "poliana@portal.com") return "juridico";
+  // Financeiro — Miguel Nascimento + Andressa Radnuz
+  if (
+    e === "financeiro@portal.com" ||
+    e === "miguel@portal.com" ||
+    e === "andressa@portal.com"
+  )
+    return "financeiro";
+  // Contábil — Delta Contabilidade
+  if (e === "contabil@portal.com" || e === "delta@portal.com") return "contabil";
+  // Marketing
   if (e === "marketing@portal.com") return "marketing";
+  // Administrativo
   if (e === "administrativo@portal.com") return "administrativo";
-  if (e === "eventos@portal.com") return "eventos";
+  // Eventos — Andressa (financeiro), Cristina Ishio
+  if (e === "eventos@portal.com" || e === "cristina@portal.com") return "eventos";
   return "marketing";
 }
 

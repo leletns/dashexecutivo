@@ -23,6 +23,7 @@ import { NpsComposedChart } from "@/components/baps/nps-composed-chart";
 import { InstitutionalRiskPanel } from "@/components/baps/institutional-risk-panel";
 import { CongressNucleiTable } from "@/components/baps/congress-nuclei-table";
 import { CongressOperacaoPanel } from "@/components/baps/congress-operacao-panel";
+import { CeoChartBuilder } from "@/components/baps/ceo-chart-builder";
 import type { BapsSnapshot } from "@/lib/baps/types";
 import type { PortalSector } from "@/lib/portal-sector";
 import { sectorShortLabel, showZone } from "@/lib/portal-sector";
@@ -722,9 +723,15 @@ export function BapsDashboard({
         </>
       )}
 
-      {showZone(sector, "bloco_nps") && (
+      {showZone(sector, "bloco_nps") && sector !== "executivo" && (
         <motion.section initial="hidden" animate="show" custom={8} variants={fade}>
           <NpsComposedChart data={data} />
+        </motion.section>
+      )}
+
+      {sector === "executivo" && (
+        <motion.section initial="hidden" animate="show" custom={8} variants={fade}>
+          <CeoChartBuilder data={data} />
         </motion.section>
       )}
 
