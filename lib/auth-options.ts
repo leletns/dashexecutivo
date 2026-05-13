@@ -47,7 +47,11 @@ export const authOptions = {
           email: emailRaw,
           password,
         });
-        if (error || !data.user) return null;
+        if (error) {
+          console.error("[auth] supabase signIn error:", error.message, error.status);
+          return null;
+        }
+        if (!data.user) return null;
 
         return {
           id: emailRaw,
