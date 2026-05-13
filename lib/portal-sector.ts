@@ -58,8 +58,6 @@ export function isRouteAllowedForSector(pathname: string, sector: PortalSector):
 
   if (sector === "executivo") return true;
 
-  if (pathname.startsWith("/entrada-dados")) return false;
-
   if (pathname.startsWith("/dashboard")) return true;
 
   const rules: [string, PortalSector[]][] = [
