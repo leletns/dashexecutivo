@@ -751,38 +751,32 @@ export function BapsDashboard({
 }
 
 function CeoHelpCard() {
-  const faqs = [
-    {
-      q: 'O que é "Dinheiro em caixa"?',
-      a: "É o valor total disponível nas contas da organização neste momento. Clique no número para atualizar diretamente.",
-    },
-    {
-      q: 'O que é "Satisfação dos membros"?',
-      a: "É uma nota de 0 a 100 que mede o quanto os associados estão satisfeitos com a BAPS. Quanto maior, melhor — a meta é 70 ou mais. Clique no número para ajustar.",
-    },
-    {
-      q: 'O que é "Contratos e jurídico"?',
-      a: "Mostra o percentual de contratos e situações jurídicas em dia. Clique no número para atualizar.",
-    },
-    {
-      q: 'O que é "Total de associados"?',
-      a: "O número de pessoas ativas como membros da BAPS hoje. Clique no número para atualizar.",
-    },
-    {
-      q: "O que o suporte pode fazer por mim?",
-      a: "Atualizar qualquer indicador do painel, explicar os números, registrar lançamentos financeiros, buscar contratos ou processos, e responder qualquer dúvida sobre o portal. Use o botão no canto inferior direito da tela.",
-    },
-  ];
   return (
-    <section className="border-t border-border/40 pt-6 pb-2 print:hidden">
-      <p className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground mb-4">Perguntas frequentes</p>
-      <div className="space-y-0 divide-y divide-border/30">
-        {faqs.map((item) => (
-          <div key={item.q} className="py-3.5">
-            <p className="text-sm font-medium text-foreground leading-snug">{item.q}</p>
-            <p className="mt-1 text-[12.5px] text-muted-foreground leading-relaxed">{item.a}</p>
+    <section className="border-t border-border/30 pt-5 pb-3 print:hidden">
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="rounded-xl bg-foreground/[0.03] dark:bg-white/[0.04] px-4 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-3">Sobre os indicadores</p>
+          <div className="space-y-2.5">
+            <p className="text-[12.5px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground">Dinheiro em caixa</span> — total nas contas da organização. Clique no número para atualizar.
+            </p>
+            <p className="text-[12.5px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground">Satisfação dos membros</span> — nota de 0 a 100. Meta: 70 ou mais. Clique para ajustar.
+            </p>
+            <p className="text-[12.5px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground">Total de associados</span> — membros ativos hoje. Clique para atualizar.
+            </p>
           </div>
-        ))}
+        </div>
+        <div className="rounded-xl bg-violet-500/[0.06] border border-violet-500/[0.10] px-4 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-violet-500/80 mb-3">Suporte disponível</p>
+          <p className="text-[12.5px] text-muted-foreground leading-relaxed">
+            O suporte pode atualizar qualquer indicador, explicar os números, registrar lançamentos, buscar contratos e responder suas dúvidas.
+          </p>
+          <p className="mt-2.5 text-[12px] text-muted-foreground/60">
+            Use o botão no canto inferior direito da tela.
+          </p>
+        </div>
       </div>
     </section>
   );
