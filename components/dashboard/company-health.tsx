@@ -12,9 +12,7 @@ import {
   Building2,
   TrendingUp,
   TrendingDown,
-  Minus,
   ChevronRight,
-  ShieldCheck,
 } from "lucide-react";
 import { cn, formatCurrencyBRL } from "@/lib/utils";
 import type { BapsSnapshot } from "@/lib/baps/types";
@@ -241,78 +239,16 @@ const DEPT_DOT: Record<DeptStatus, string> = {
 
 export function CompanyHealth({ data }: { data: BapsSnapshot }) {
   const router = useRouter();
-  const level = computeHealthLevel(data);
-  const bullets = computeBullets(data);
   const depts = computeDepts(data);
-  const cfg = LEVEL_CONFIG[level];
   const npsGrowth = npsWeightedGrowthPct(data);
 
   return (
-    <section aria-label="Saúde geral da empresa" className="space-y-2.5">
-      {/* ── Health banner ───────────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, filter: "blur(6px)" }}
-        animate={{ opacity: 1, filter: "blur(0px)" }}
-        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-        className={cn(
-          "relative overflow-hidden rounded-2xl border backdrop-blur-sm bg-card/60 shadow-sm",
-          cfg.border,
-        )}
-      >
-        <div className={cn("pointer-events-none absolute inset-0 bg-gradient-to-br", cfg.bg)} />
-        <div className="relative px-5 py-4 sm:px-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-start gap-3">
-              {/* Status dot — estático, sem animação */}
-              <span className={cn("mt-1.5 h-2 w-2 flex-shrink-0 rounded-full", cfg.dot)} />
-              <div className="space-y-1.5">
-                <h2 className={cn("text-sm font-semibold leading-none tracking-tight", cfg.text)}>
-                  {cfg.title}
-                </h2>
-                <ul className="space-y-0.5">
-                  {bullets.map((b, i) => (
-                    <motion.li
-                      key={i}
-                      initial={{ opacity: 0, x: -6 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{
-                        delay: 0.15 + i * 0.04,
-                        duration: 0.3,
-                        ease: [0.22, 1, 0.36, 1],
-                      }}
-                      className="flex items-baseline gap-1.5 text-[12px] text-muted-foreground leading-snug"
-                    >
-                      <span className="text-muted-foreground/30 select-none">—</span>
-                      {b}
-                    </motion.li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            {data.financeiro_resumo.referencia_mes && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.3, duration: 0.3 }}
-                className={cn(
-                  "self-start inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium",
-                  cfg.badge,
-                )}
-              >
-                <ShieldCheck className="h-3 w-3" />
-                {data.financeiro_resumo.referencia_mes}
-              </motion.div>
-            )}
-          </div>
-        </div>
-      </motion.div>
-
+    <section aria-label="Panorama por área" className="space-y-2">
       {/* ── Department grid ─────────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, filter: "blur(4px)" }}
         animate={{ opacity: 1, filter: "blur(0px)" }}
-        transition={{ delay: 0.12, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
       >
         <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground/60">
           Panorama por área
@@ -326,7 +262,7 @@ export function CompanyHealth({ data }: { data: BapsSnapshot }) {
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{
-                  delay: 0.18 + i * 0.04,
+                  delay: i * 0.04,
                   duration: 0.3,
                   type: "spring",
                   stiffness: 400,
@@ -365,28 +301,24 @@ export function CompanyHealth({ data }: { data: BapsSnapshot }) {
       </motion.div>
 
       {/* ── NPS trend micro-indicator ───────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.45, duration: 0.3 }}
-        className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60"
-      >
-        {npsGrowth > 0 ? (
-          <TrendingUp className="h-3 w-3 text-emerald-500" />
-        ) : npsGrowth < 0 ? (
-          <TrendingDown className="h-3 w-3 text-red-500" />
-        ) : (
-          <Minus className="h-3 w-3" />
-        )}
-        <span>
-          Satisfação dos membros{" "}
-          {npsGrowth > 0
-            ? `+${npsGrowth}% vs. ano passado`
-            : npsGrowth < 0
-              ? `${npsGrowth}% vs. ano passado`
-              : "estável vs. ano passado"}
-        </span>
-      </motion.div>
+      {npsGrowth !== 0 && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3, duration: 0.3 }}
+          className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60"
+        >
+          {npsGrowth > 0 ? (
+            <TrendingUp className="h-3 w-3 text-emerald-500" />
+          ) : (
+            <TrendingDown className="h-3 w-3 text-red-500" />
+          )}
+          <span>
+            Satisfação dos membros{" "}
+            {npsGrowth > 0 ? `+${npsGrowth}%` : `${npsGrowth}%`} vs. ano passado
+          </span>
+        </motion.div>
+      )}
     </section>
   );
 }
