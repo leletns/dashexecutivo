@@ -204,10 +204,15 @@ export function BapsDashboard({
           <p className="mt-2 max-w-xl text-sm text-muted-foreground leading-relaxed">
             {sector === "executivo" ? (
               <>
-                Visão geral da organização · mês de referência:{" "}
-                <span className="tabular-nums font-medium text-foreground">
-                  {data.financeiro_resumo.referencia_mes}
-                </span>
+                Visão geral da organização
+                {data.financeiro_resumo.referencia_mes && (
+                  <>
+                    {" · "}
+                    <span className="tabular-nums font-medium text-foreground">
+                      {data.financeiro_resumo.referencia_mes}
+                    </span>
+                  </>
+                )}
               </>
             ) : (
               <>
