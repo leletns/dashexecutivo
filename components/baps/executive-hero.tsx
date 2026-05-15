@@ -76,6 +76,44 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
     saveField("associados_resumo", { total_ativos: n });
   };
 
+  // — Card 2: Satisfação dos membros (editável)
+  const [nps, setNps] = React.useState(nps25);
+  const [editNps, setEditNps] = React.useState(false);
+  const [draftNps, setDraftNps] = React.useState("");
+  const npsRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => setNps(nps25), [nps25]);
+
+  const beginNps = () => {
+    setDraftNps(String(nps).replace(".", ","));
+    setEditNps(true);
+    requestAnimationFrame(() => { npsRef.current?.focus(); npsRef.current?.select(); });
+  };
+  const commitNps = () => {
+    const n = parseLooseNumber(draftNps);
+    setNps(n);
+    setEditNps(false);
+    saveField("financeiro_resumo", { nps_manual: n });
+  };
+
+  // — Card 3: Contratos e jurídico (editável)
+  const [conformidade, setConformidade] = React.useState(conform);
+  const [editConformidade, setEditConformidade] = React.useState(false);
+  const [draftConformidade, setDraftConformidade] = React.useState("");
+  const conformidadeRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => setConformidade(conform), [conform]);
+
+  const beginConformidade = () => {
+    setDraftConformidade(String(conformidade));
+    setEditConformidade(true);
+    requestAnimationFrame(() => { conformidadeRef.current?.focus(); conformidadeRef.current?.select(); });
+  };
+  const commitConformidade = () => {
+    const n = Math.min(100, Math.max(0, Math.round(parseLooseNumber(draftConformidade))));
+    setConformidade(n);
+    setEditConformidade(false);
+    saveField("financeiro_resumo", { conformidade_manual: n });
+  };
+
   const growthSub =
     growth > 0
       ? `Crescimento de +${growth}% comparado ao ano passado`
@@ -157,9 +195,33 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
             <TrendingUp className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
             <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Satisfação dos membros</span>
           </div>
-          <p className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
-            {nps25.toFixed(1).replace(".", ",")}
-          </p>
+          {editNps ? (
+            <div className="flex items-center gap-2">
+              <Input
+                ref={npsRef}
+                value={draftNps}
+                onChange={(e) => setDraftNps(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitNps();
+                  if (e.key === "Escape") setEditNps(false);
+                }}
+                onBlur={commitNps}
+                inputMode="decimal"
+                className="h-10 text-xl font-semibold tabular-nums"
+                placeholder="0 a 100"
+              />
+              <button onClick={commitNps} className="h-9 w-9 grid place-items-center rounded-lg bg-foreground text-background shrink-0" aria-label="Salvar">
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <button onClick={beginNps} className="group/val flex items-center gap-2 text-left" aria-label="Editar satisfação">
+              <span className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
+                {nps.toFixed(1).replace(".", ",")}
+              </span>
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity" />
+            </button>
+          )}
           <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{growthSub}</p>
         </div>
       </motion.div>
@@ -172,9 +234,33 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
             <Scale className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
             <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Contratos e jurídico</span>
           </div>
-          <p className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
-            {conform}%
-          </p>
+          {editConformidade ? (
+            <div className="flex items-center gap-2">
+              <Input
+                ref={conformidadeRef}
+                value={draftConformidade}
+                onChange={(e) => setDraftConformidade(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitConformidade();
+                  if (e.key === "Escape") setEditConformidade(false);
+                }}
+                onBlur={commitConformidade}
+                inputMode="numeric"
+                className="h-10 text-xl font-semibold tabular-nums"
+                placeholder="0 a 100"
+              />
+              <button onClick={commitConformidade} className="h-9 w-9 grid place-items-center rounded-lg bg-foreground text-background shrink-0" aria-label="Salvar">
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <button onClick={beginConformidade} className="group/val flex items-center gap-2 text-left" aria-label="Editar contratos">
+              <span className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
+                {conformidade}%
+              </span>
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity" />
+            </button>
+          )}
           <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{procSub}</p>
         </div>
       </motion.div>

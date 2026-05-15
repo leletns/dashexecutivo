@@ -242,7 +242,7 @@ function FormProcesso() {
   const [numero, setNumero] = React.useState("");
   const [tribunal, setTribunal] = React.useState("");
   const [fase, setFase] = React.useState("inicial");
-  const [escritorio, setEscritorio] = React.useState("Escritório Meyer");
+  const [escritorio, setEscritorio] = React.useState("");
   const [atualizacao, setAtualizacao] = React.useState("");
   const [risco, setRisco] = React.useState("medio");
 
@@ -397,12 +397,12 @@ function FormCertidao() {
 
 function FormFinanceiroResumo() {
   const [busy, setBusy] = React.useState(false);
-  const [saldo, setSaldo] = React.useState("1190000");
-  const [deficit, setDeficit] = React.useState("-25900");
+  const [saldo, setSaldo] = React.useState("");
+  const [deficit, setDeficit] = React.useState("");
   const [contas, setContas] = React.useState("");
   const [pendencias, setPendencias] = React.useState("");
   const [inad, setInad] = React.useState("");
-  const [ref, setRef] = React.useState("mar/2026");
+  const [ref, setRef] = React.useState("");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -522,11 +522,11 @@ function FormFinanceiroEvento() {
 
 function FormAssociados() {
   const [busy, setBusy] = React.useState(false);
-  const [total, setTotal] = React.useState("428");
-  const [venc, setVenc] = React.useState("36");
-  const [mes, setMes] = React.useState("2");
-  const [sem, setSem] = React.useState("2");
-  const [ytd, setYtd] = React.useState("18");
+  const [total, setTotal] = React.useState("");
+  const [venc, setVenc] = React.useState("");
+  const [mes, setMes] = React.useState("");
+  const [sem, setSem] = React.useState("");
+  const [ytd, setYtd] = React.useState("");
   const [notas, setNotas] = React.useState("");
 
   const submit = async (e: React.FormEvent) => {
