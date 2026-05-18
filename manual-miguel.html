@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Manual do Portal — Financeiro</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --violet: #7C3AED;
+    --violet-light: #EDE9FE;
+    --violet-mid: #C4B5FD;
+    --emerald: #059669;
+    --emerald-light: #ECFDF5;
+    --rose: #E11D48;
+    --rose-light: #FFF1F2;
+    --amber: #D97706;
+    --amber-light: #FFFBEB;
+    --sky: #0284C7;
+    --sky-light: #F0F9FF;
+    --gray-50: #F9FAFB;
+    --gray-100: #F3F4F6;
+    --gray-200: #E5E7EB;
+    --gray-300: #D1D5DB;
+    --gray-400: #9CA3AF;
+    --gray-500: #6B7280;
+    --gray-600: #4B5563;
+    --gray-700: #374151;
+    --gray-800: #1F2937;
+    --gray-900: #111827;
+  }
+
+  html { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 10pt; color: var(--gray-800); background: white; }
+  body { max-width: 210mm; margin: 0 auto; background: white; }
+
+  /* ── PRINT ─────────────────────────────────────────────────── */
+  @media print {
+    html { font-size: 9.5pt; }
+    .page { page-break-after: always; }
+    .no-break { page-break-inside: avoid; }
+    @page { size: A4; margin: 0; }
+  }
+
+  /* ── COVER PAGE ─────────────────────────────────────────────── */
+  .cover {
+    width: 210mm;
+    height: 297mm;
+    background: linear-gradient(145deg, #1E1B4B 0%, #4C1D95 45%, #6D28D9 80%, #7C3AED 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: -80px; right: -80px;
+    width: 320px; height: 320px;
+    background: radial-gradient(circle, rgba(255,255,255,0.07) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .cover::after {
+    content: '';
+    position: absolute;
+    bottom: 40px; left: -60px;
+    width: 260px; height: 260px;
+    background: radial-gradient(circle, rgba(196,181,253,0.12) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .cover-top { padding: 52px 52px 0; }
+  .cover-logo {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 8px;
+  }
+  .cover-logo-icon {
+    width: 40px; height: 40px;
+    background: rgba(255,255,255,0.15);
+    border: 1.5px solid rgba(255,255,255,0.25);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cover-logo-icon svg { width: 22px; height: 22px; }
+  .cover-logo-name { font-size: 15pt; font-weight: 700; color: white; letter-spacing: -0.02em; }
+  .cover-logo-name span { font-weight: 300; opacity: 0.75; }
+  .cover-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.8);
+    font-size: 7.5pt;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 20px;
+    margin-top: 24px;
+  }
+
+  .cover-mid {
+    padding: 0 52px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .cover-eyebrow {
+    font-size: 8pt; font-weight: 600; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--violet-mid);
+    margin-bottom: 14px;
+  }
+  .cover-title {
+    font-size: 34pt; font-weight: 800; color: white;
+    line-height: 1.08; letter-spacing: -0.03em;
+    margin-bottom: 10px;
+  }
+  .cover-subtitle {
+    font-size: 13pt; font-weight: 300; color: rgba(255,255,255,0.65);
+    line-height: 1.5; max-width: 380px;
+  }
+
+  .cover-divider {
+    width: 48px; height: 3px;
+    background: linear-gradient(90deg, #A78BFA, #7C3AED);
+    border-radius: 2px;
+    margin: 28px 0;
+  }
+
+  .cover-meta {
+    display: flex; gap: 32px;
+  }
+  .cover-meta-item { }
+  .cover-meta-label { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.14em; color: rgba(255,255,255,0.45); margin-bottom: 4px; }
+  .cover-meta-value { font-size: 10pt; font-weight: 600; color: rgba(255,255,255,0.9); }
+
+  .cover-bottom {
+    padding: 32px 52px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .cover-bottom-left { font-size: 8pt; color: rgba(255,255,255,0.4); }
+  .cover-badge {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.6);
+    font-size: 7.5pt; font-weight: 500;
+    padding: 5px 12px; border-radius: 20px;
+  }
+
+  /* ── INNER PAGES ─────────────────────────────────────────────── */
+  .inner {
+    padding: 20mm 18mm 16mm;
+  }
+
+  .section-title {
+    font-size: 7.5pt; font-weight: 700; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--violet);
+    margin-bottom: 4px;
+  }
+  h2 {
+    font-size: 18pt; font-weight: 800; letter-spacing: -0.025em;
+    color: var(--gray-900); margin-bottom: 6px; line-height: 1.15;
+  }
+  .subtitle {
+    font-size: 10pt; color: var(--gray-500); line-height: 1.6;
+    margin-bottom: 28px; max-width: 500px;
+  }
+
+  .page-header {
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--gray-200);
+    margin-bottom: 28px;
+  }
+
+  /* TOC */
+  .toc { }
+  .toc-item {
+    display: flex; align-items: center; gap: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--gray-100);
+  }
+  .toc-num {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: var(--violet-light); color: var(--violet);
+    font-size: 8.5pt; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-right: 14px;
+  }
+  .toc-label { font-size: 10.5pt; font-weight: 500; color: var(--gray-800); flex: 1; }
+  .toc-dots { flex: 1; border-bottom: 1px dotted var(--gray-300); margin: 0 10px; position: relative; top: -2px; }
+  .toc-page { font-size: 9pt; color: var(--gray-400); font-weight: 500; }
+
+  /* STEP CARDS */
+  .steps { display: flex; flex-direction: column; gap: 0; }
+  .step {
+    display: flex; gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--gray-100);
+  }
+  .step:last-child { border-bottom: none; }
+  .step-num {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--violet); color: white;
+    font-size: 9pt; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .step-body { flex: 1; }
+  .step-title { font-size: 10.5pt; font-weight: 600; color: var(--gray-900); margin-bottom: 3px; }
+  .step-desc { font-size: 9.5pt; color: var(--gray-600); line-height: 1.5; }
+
+  /* INFO BOXES */
+  .info-box {
+    border-radius: 10px; padding: 14px 16px;
+    margin: 16px 0;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .info-box.tip { background: var(--violet-light); border-left: 3px solid var(--violet); }
+  .info-box.warning { background: var(--amber-light); border-left: 3px solid var(--amber); }
+  .info-box.success { background: var(--emerald-light); border-left: 3px solid var(--emerald); }
+  .info-box.info { background: var(--sky-light); border-left: 3px solid var(--sky); }
+  .info-icon { font-size: 14pt; flex-shrink: 0; line-height: 1; margin-top: 1px; }
+  .info-content { flex: 1; }
+  .info-title { font-size: 9.5pt; font-weight: 700; color: var(--gray-900); margin-bottom: 3px; }
+  .info-text { font-size: 9pt; color: var(--gray-600); line-height: 1.5; }
+
+  /* PILL BADGES */
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: 8pt; font-weight: 600;
+  }
+  .pill.violet { background: var(--violet-light); color: var(--violet); }
+  .pill.emerald { background: var(--emerald-light); color: var(--emerald); }
+  .pill.rose { background: var(--rose-light); color: var(--rose); }
+  .pill.amber { background: var(--amber-light); color: var(--amber); }
+  .pill.gray { background: var(--gray-100); color: var(--gray-500); }
+
+  /* FEATURE CARDS */
+  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+  .feature-card {
+    border: 1px solid var(--gray-200);
+    border-radius: 12px; padding: 16px;
+    background: var(--gray-50);
+  }
+  .feature-card-icon {
+    width: 34px; height: 34px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16pt; margin-bottom: 10px;
+  }
+  .feature-card-icon.violet { background: var(--violet-light); }
+  .feature-card-icon.emerald { background: var(--emerald-light); }
+  .feature-card-icon.amber { background: var(--amber-light); }
+  .feature-card-icon.sky { background: var(--sky-light); }
+  .feature-card h3 { font-size: 10pt; font-weight: 700; color: var(--gray-900); margin-bottom: 4px; }
+  .feature-card p { font-size: 8.5pt; color: var(--gray-500); line-height: 1.5; }
+
+  /* TAB CARDS */
+  .tab-section { margin: 20px 0; }
+  .tab-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px;
+    background: var(--gray-900); border-radius: 12px 12px 0 0;
+  }
+  .tab-header-num {
+    width: 24px; height: 24px; border-radius: 6px;
+    background: var(--violet); color: white;
+    font-size: 9pt; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .tab-header-title { font-size: 11pt; font-weight: 700; color: white; }
+  .tab-header-desc { font-size: 8.5pt; color: rgba(255,255,255,0.5); margin-left: auto; }
+  .tab-body {
+    border: 1px solid var(--gray-200); border-top: none;
+    border-radius: 0 0 12px 12px; padding: 16px;
+    background: white;
+  }
+
+  /* MOCKUP TABLE */
+  .mock-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin: 10px 0; }
+  .mock-table th {
+    background: var(--gray-50); color: var(--gray-500);
+    font-size: 7.5pt; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 7px 10px;
+    text-align: left; border-bottom: 1px solid var(--gray-200);
+  }
+  .mock-table td { padding: 8px 10px; border-bottom: 1px solid var(--gray-100); color: var(--gray-700); }
+  .mock-table tr:last-child td { border-bottom: none; }
+  .mock-table .total { font-weight: 700; color: var(--gray-900); background: var(--gray-50); }
+  .mock-table .green { color: var(--emerald); font-weight: 600; }
+  .mock-table .red { color: var(--rose); font-weight: 600; }
+
+  /* FIELD ROWS */
+  .field-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+  .field-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--gray-50); border: 1px solid var(--gray-200);
+    border-radius: 8px; padding: 9px 12px;
+  }
+  .field-required {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--rose); flex-shrink: 0;
+  }
+  .field-optional {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--gray-300); flex-shrink: 0;
+  }
+  .field-label { font-size: 9pt; font-weight: 600; color: var(--gray-800); min-width: 140px; }
+  .field-type { font-size: 8pt; color: var(--gray-400); }
+  .field-example { font-size: 8pt; color: var(--gray-500); font-style: italic; margin-left: auto; }
+
+  /* WORKFLOW SCENARIO */
+  .scenario-box {
+    background: linear-gradient(135deg, #1E1B4B 0%, #4C1D95 100%);
+    border-radius: 12px; padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  .scenario-label { font-size: 7.5pt; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: var(--violet-mid); margin-bottom: 6px; }
+  .scenario-title { font-size: 12pt; font-weight: 700; color: white; margin-bottom: 4px; }
+  .scenario-desc { font-size: 9pt; color: rgba(255,255,255,0.6); }
+
+  /* ANALYSIS CARDS */
+  .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+  .analysis-card {
+    border: 1px solid var(--gray-200); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .analysis-icon { font-size: 16pt; margin-bottom: 8px; display: block; }
+  .analysis-label { font-size: 8pt; color: var(--gray-500); margin-bottom: 4px; font-weight: 500; }
+  .analysis-value { font-size: 14pt; font-weight: 800; color: var(--gray-900); letter-spacing: -0.02em; margin-bottom: 4px; }
+  .analysis-hint { font-size: 7.5pt; color: var(--gray-400); }
+
+  /* FAQ */
+  .faq-item {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--gray-100);
+  }
+  .faq-item:last-child { border-bottom: none; }
+  .faq-q { font-size: 10pt; font-weight: 600; color: var(--gray-900); margin-bottom: 5px; display: flex; align-items: flex-start; gap: 8px; }
+  .faq-q::before { content: '?'; display: inline-flex; width: 18px; height: 18px; border-radius: 50%; background: var(--violet-light); color: var(--violet); font-size: 8pt; font-weight: 800; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .faq-a { font-size: 9pt; color: var(--gray-600); line-height: 1.6; padding-left: 26px; }
+
+  /* FOOTER BAR */
+  .page-footer {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    padding: 8px 18mm;
+    border-top: 1px solid var(--gray-100);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 7.5pt; color: var(--gray-400);
+    background: white;
+  }
+
+  /* SEPARATOR */
+  .sep { height: 1px; background: var(--gray-100); margin: 24px 0; }
+  .sep-violet { height: 2px; background: linear-gradient(90deg, var(--violet), transparent); border-radius: 1px; margin: 20px 0; }
+
+  /* INLINE CODE */
+  code {
+    background: var(--gray-100); color: var(--violet);
+    padding: 1px 6px; border-radius: 4px;
+    font-size: 8.5pt; font-family: 'SF Mono', 'Fira Code', monospace;
+    font-weight: 500;
+  }
+
+  /* NAVIGATION VISUAL */
+  .nav-visual {
+    background: var(--gray-900); border-radius: 12px;
+    padding: 12px 16px; margin: 12px 0;
+  }
+  .nav-tabs { display: flex; gap: 2px; }
+  .nav-tab {
+    padding: 6px 14px; border-radius: 7px;
+    font-size: 8.5pt; font-weight: 500;
+    color: rgba(255,255,255,0.45);
+    cursor: default;
+  }
+  .nav-tab.active {
+    background: rgba(255,255,255,0.1);
+    color: white; font-weight: 600;
+  }
+  .nav-line { height: 1px; background: rgba(255,255,255,0.08); margin: 8px 0 4px; }
+
+  /* CREDENTIAL BOX */
+  .cred-box {
+    display: flex; gap: 16px;
+    background: var(--gray-50); border: 1px solid var(--gray-200);
+    border-radius: 10px; padding: 16px;
+    margin: 12px 0;
+  }
+  .cred-item { flex: 1; }
+  .cred-label { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.12em; color: var(--gray-400); margin-bottom: 4px; }
+  .cred-value { font-size: 10pt; font-weight: 700; color: var(--gray-900); }
+  .cred-div { width: 1px; background: var(--gray-200); }
+
+  ul.checklist { list-style: none; display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+  ul.checklist li {
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 9.5pt; color: var(--gray-700); line-height: 1.5;
+  }
+  ul.checklist li::before {
+    content: '✓';
+    display: inline-flex; width: 17px; height: 17px; border-radius: 5px;
+    background: var(--emerald-light); color: var(--emerald);
+    font-size: 9pt; font-weight: 800;
+    align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;
+  }
+
+  h3 {
+    font-size: 11.5pt; font-weight: 700; color: var(--gray-900);
+    margin-bottom: 12px; margin-top: 20px;
+  }
+  h3:first-child { margin-top: 0; }
+
+  p { font-size: 9.5pt; color: var(--gray-600); line-height: 1.6; margin-bottom: 10px; }
+
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     CAPA
+═══════════════════════════════════════════════════════════ -->
+<div class="cover page">
+  <div class="cover-top">
+    <div class="cover-logo">
+      <div class="cover-logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+        </svg>
+      </div>
+      <div class="cover-logo-name">Dash <span>executivo</span></div>
+    </div>
+    <div class="cover-tag">Portal Interno · Uso Restrito</div>
+  </div>
+
+  <div class="cover-mid">
+    <div class="cover-eyebrow">Manual de uso</div>
+    <div class="cover-title">Guia do<br/>Financeiro</div>
+    <div class="cover-subtitle">Tudo o que você precisa saber para alimentar, atualizar e acompanhar os dados financeiros da BAPS no portal.</div>
+    <div class="cover-divider"></div>
+    <div class="cover-meta">
+      <div class="cover-meta-item">
+        <div class="cover-meta-label">Setor</div>
+        <div class="cover-meta-value">Financeiro</div>
+      </div>
+      <div class="cover-meta-item">
+        <div class="cover-meta-label">Usuário</div>
+        <div class="cover-meta-value">miguel@portal.com</div>
+      </div>
+      <div class="cover-meta-item">
+        <div class="cover-meta-label">Versão</div>
+        <div class="cover-meta-value">1.0 — 2026</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cover-bottom">
+    <div class="cover-bottom-left">Documento confidencial. Não compartilhar fora da organização.</div>
+    <div class="cover-badge">odashexecutivo.vercel.app</div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     ÍNDICE
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Índice</div>
+    <h2>O que tem neste manual</h2>
+    <div class="subtitle">Siga a ordem ou vá direto ao que precisa.</div>
+  </div>
+
+  <div class="toc">
+    <div class="toc-item">
+      <div class="toc-num">1</div>
+      <div class="toc-label">Primeiro acesso — como entrar no portal</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">3</div>
+    </div>
+    <div class="toc-item">
+      <div class="toc-num">2</div>
+      <div class="toc-label">O que você verá ao entrar — visão geral</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">4</div>
+    </div>
+    <div class="toc-item">
+      <div class="toc-num">3</div>
+      <div class="toc-label">Portal Financeiro — as 6 abas explicadas</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">5</div>
+    </div>
+    <div class="toc-item">
+      <div class="toc-num">4</div>
+      <div class="toc-label">Aba Contas — cadastrar contas bancárias</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">6</div>
+    </div>
+    <div class="toc-item">
+      <div class="toc-num">5</div>
+      <div class="toc-label">Aba Previsão — orçamento do mês</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">7</div>
+    </div>
+    <div class="toc-item">
+      <div class="toc-num">6</div>
+      <div class="toc-label">Aba Eventos — resultado financeiro por evento</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">8</div>
+    </div>
+    <div class="toc-item">
+      <div class="toc-num">7</div>
+      <div class="toc-label">Aba Associados — histórico e acompanhamento 2026</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">9</div>
+    </div>
+    <div class="toc-item">
+      <div class="toc-num">8</div>
+      <div class="toc-label">Aba Departamentos — custos por área</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">10</div>
+    </div>
+    <div class="toc-item">
+      <div class="toc-num">9</div>
+      <div class="toc-label">Aba Análise — os números calculados para você</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">11</div>
+    </div>
+    <div class="toc-item">
+      <div class="toc-num">10</div>
+      <div class="toc-label">Passo a passo completo — fluxo do mês</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">12</div>
+    </div>
+    <div class="toc-item">
+      <div class="toc-num">11</div>
+      <div class="toc-label">Dúvidas frequentes e suporte</div>
+      <div class="toc-dots"></div>
+      <div class="toc-page">13</div>
+    </div>
+  </div>
+
+  <div style="margin-top:32px;">
+    <div class="info-box tip no-break">
+      <div class="info-icon">💡</div>
+      <div class="info-content">
+        <div class="info-title">Não precisa saber de tecnologia</div>
+        <div class="info-text">Este manual foi feito para quem nunca usou o portal antes. Cada passo é explicado com imagens e exemplos reais. Se travar em qualquer etapa, use o botão de suporte no canto inferior direito da tela.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 3 — PRIMEIRO ACESSO
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 1</div>
+    <h2>Primeiro acesso</h2>
+    <div class="subtitle">Como entrar no portal pela primeira vez — e o que fazer se der erro.</div>
+  </div>
+
+  <h3>Suas credenciais de acesso</h3>
+
+  <div class="cred-box no-break">
+    <div class="cred-item">
+      <div class="cred-label">Endereço do portal</div>
+      <div class="cred-value">odashexecutivo.vercel.app</div>
+    </div>
+    <div class="cred-div"></div>
+    <div class="cred-item">
+      <div class="cred-label">E-mail</div>
+      <div class="cred-value">miguel@portal.com</div>
+    </div>
+    <div class="cred-div"></div>
+    <div class="cred-item">
+      <div class="cred-label">Senha</div>
+      <div class="cred-value">Mig@Baps2026</div>
+    </div>
+  </div>
+
+  <div class="info-box warning no-break" style="margin-top:8px;">
+    <div class="info-icon">🔒</div>
+    <div class="info-content">
+      <div class="info-title">Mantenha sua senha segura</div>
+      <div class="info-text">Não compartilhe sua senha. Cada pessoa tem um acesso individual. Se precisar trocar, avise a presidência.</div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:24px;">Passo a passo para entrar</h3>
+
+  <div class="steps no-break">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Abra o portal no navegador</div>
+        <div class="step-desc">Acesse <code>odashexecutivo.vercel.app</code> em qualquer navegador (Chrome, Safari, Edge). Funciona no celular e no computador.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">Digite seu e-mail e senha</div>
+        <div class="step-desc">Na tela de login, insira seu e-mail <code>miguel@portal.com</code> e sua senha. Clique em <strong>Entrar</strong>.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Você está dentro</div>
+        <div class="step-desc">Você verá o painel do Financeiro. No canto superior esquerdo aparece <strong>"Olá, Miguel"</strong> com seu setor.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box info no-break" style="margin-top:16px;">
+    <div class="info-icon">ℹ️</div>
+    <div class="info-content">
+      <div class="info-title">Se aparecer "E-mail ou senha incorretos"</div>
+      <div class="info-text">Verifique se está usando exatamente <strong>miguel@portal.com</strong> (com o @ e o .com). A senha diferencia maiúsculas de minúsculas. Se ainda assim não entrar, contate a presidência para redefinir.</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 4 — VISÃO GERAL
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 2</div>
+    <h2>O que você verá ao entrar</h2>
+    <div class="subtitle">Uma visão rápida de onde tudo fica e o que você pode acessar.</div>
+  </div>
+
+  <div class="feature-grid no-break">
+    <div class="feature-card">
+      <div class="feature-card-icon violet">📊</div>
+      <h3>Painel inicial</h3>
+      <p>Ao entrar, você vê um resumo do setor financeiro com os principais indicadores: saldo conferido, contas a receber, a pagar e resultado projetado.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-icon emerald">💰</div>
+      <h3>Seção Financeiro</h3>
+      <p>A sua principal área de trabalho. Acesse pelo menu lateral clicando em <strong>Financeiro</strong>. É aqui que você alimenta todos os dados.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-icon amber">📝</div>
+      <h3>Inserir dados</h3>
+      <p>Formulários simplificados para lançar resumos financeiros e eventos rapidamente, sem precisar navegar por abas.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-icon sky">💬</div>
+      <h3>Suporte integrado</h3>
+      <p>O botão redondo no canto inferior direito da tela abre um chat de suporte que responde dúvidas sobre o portal e os dados.</p>
+    </div>
+  </div>
+
+  <h3>O que você pode e não pode acessar</h3>
+
+  <div class="no-break">
+    <ul class="checklist">
+      <li>Painel principal — visão do financeiro com gráficos e KPIs</li>
+      <li>Seção <strong>Financeiro</strong> com as 6 abas completas</li>
+      <li>Área de <strong>Inserir dados</strong> — abas Financeiro e Associados</li>
+      <li>Lançamentos de receitas e despesas (contas a receber e a pagar)</li>
+      <li>Suporte integrado pelo chat</li>
+    </ul>
+    <div class="info-box warning" style="margin-top:12px;">
+      <div class="info-icon">⚠️</div>
+      <div class="info-content">
+        <div class="info-title">Acesso restrito</div>
+        <div class="info-text">Você não tem acesso às seções de Jurídico, Marketing, Eventos e Administrativo — essas são visíveis apenas pelos setores correspondentes e pela presidência.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 5 — AS 6 ABAS
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 3</div>
+    <h2>Portal Financeiro — as 6 abas</h2>
+    <div class="subtitle">A seção Financeiro é o seu espaço de trabalho principal. Ela tem 6 abas, cada uma com um propósito diferente.</div>
+  </div>
+
+  <div class="nav-visual no-break">
+    <div class="nav-tabs">
+      <div class="nav-tab active">Contas</div>
+      <div class="nav-tab">Previsão</div>
+      <div class="nav-tab">Eventos</div>
+      <div class="nav-tab">Associados</div>
+      <div class="nav-tab">Departamentos</div>
+      <div class="nav-tab">Análise</div>
+    </div>
+    <div class="nav-line"></div>
+    <div style="font-size:7.5pt; color:rgba(255,255,255,0.3); padding:2px 4px;">← clique para trocar de aba</div>
+  </div>
+
+  <div class="info-box tip no-break">
+    <div class="info-icon">📅</div>
+    <div class="info-content">
+      <div class="info-title">Seletor de mês</div>
+      <div class="info-text">No canto superior direito do Portal Financeiro há um menu suspenso com os meses de 2026. Sempre selecione o mês correto antes de inserir dados — cada mês tem seu próprio conjunto de informações.</div>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+
+  <table class="mock-table no-break">
+    <thead>
+      <tr>
+        <th>Aba</th>
+        <th>O que é</th>
+        <th>Você pode editar?</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Contas</strong></td>
+        <td>Contas bancárias da organização com saldos</td>
+        <td><span class="pill emerald">✓ Sim</span></td>
+      </tr>
+      <tr>
+        <td><strong>Previsão</strong></td>
+        <td>Orçamento do mês: entradas e despesas previstas</td>
+        <td><span class="pill emerald">✓ Sim</span></td>
+      </tr>
+      <tr>
+        <td><strong>Eventos</strong></td>
+        <td>Resultado financeiro de cada evento realizado no mês</td>
+        <td><span class="pill emerald">✓ Sim</span></td>
+      </tr>
+      <tr>
+        <td><strong>Associados</strong></td>
+        <td>Histórico anual e acompanhamento mensal de membros</td>
+        <td><span class="pill emerald">✓ Sim</span></td>
+      </tr>
+      <tr>
+        <td><strong>Departamentos</strong></td>
+        <td>Custo operacional de cada departamento no mês</td>
+        <td><span class="pill emerald">✓ Sim</span></td>
+      </tr>
+      <tr>
+        <td><strong>Análise</strong></td>
+        <td>Métricas calculadas automaticamente (runway, custo/associado)</td>
+        <td><span class="pill gray">Automático</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="info-box success no-break" style="margin-top:16px;">
+    <div class="info-icon">✅</div>
+    <div class="info-content">
+      <div class="info-title">Tudo salva automaticamente no banco de dados</div>
+      <div class="info-text">Ao clicar em <strong>Salvar</strong> (ou pressionar Enter nos campos de edição inline), os dados são enviados diretamente para o banco de dados e ficam disponíveis para a presidência em tempo real.</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 6 — ABA CONTAS
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 4</div>
+    <h2>Aba Contas</h2>
+    <div class="subtitle">Cadastre e atualize os saldos de todas as contas bancárias da organização.</div>
+  </div>
+
+  <table class="mock-table no-break" style="margin-bottom:16px;">
+    <thead>
+      <tr><th>Conta</th><th>Banco</th><th>Tipo</th><th>Data</th><th>Saldo</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Itaú Corrente</td><td>Itaú</td><td>Corrente</td><td>15/05/2026</td><td class="green">R$ 48.200,00</td></tr>
+      <tr><td>Caixa Poupança</td><td>Caixa</td><td>Poupança</td><td>15/05/2026</td><td class="green">R$ 25.000,00</td></tr>
+      <tr><td>Aplicação CDB</td><td>XP</td><td>Investimento</td><td>01/05/2026</td><td class="green">R$ 120.000,00</td></tr>
+      <tr class="total"><td colspan="4"><strong>Total</strong></td><td class="green"><strong>R$ 193.200,00</strong></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Como adicionar uma conta nova</h3>
+
+  <div class="steps no-break">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Clique em <strong>"+ Adicionar conta"</strong></div>
+        <div class="step-desc">O botão fica no topo da aba Contas. Um formulário aparece na tela.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">Preencha os campos</div>
+        <div class="step-desc">Veja abaixo o que cada campo significa:</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="field-list no-break">
+    <div class="field-row"><div class="field-required"></div><div class="field-label">Nome da conta</div><div class="field-type">Texto</div><div class="field-example">ex: "Itaú Corrente Principal"</div></div>
+    <div class="field-row"><div class="field-optional"></div><div class="field-label">Banco</div><div class="field-type">Texto</div><div class="field-example">ex: "Itaú", "Bradesco", "Caixa"</div></div>
+    <div class="field-row"><div class="field-required"></div><div class="field-label">Tipo</div><div class="field-type">Lista</div><div class="field-example">Corrente / Poupança / Investimento / Outros</div></div>
+    <div class="field-row"><div class="field-required"></div><div class="field-label">Saldo (R$)</div><div class="field-type">Número</div><div class="field-example">ex: 48200.50</div></div>
+    <div class="field-row"><div class="field-required"></div><div class="field-label">Data do saldo</div><div class="field-type">Data</div><div class="field-example">Data em que o saldo foi verificado</div></div>
+  </div>
+  <div style="font-size:7.5pt; color:var(--gray-400); margin-top:4px; display:flex; gap:12px;">
+    <span>● Campo obrigatório</span><span style="color:var(--gray-300);">● Campo opcional</span>
+  </div>
+
+  <div class="steps no-break" style="margin-top:12px;">
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Clique em <strong>Salvar</strong></div>
+        <div class="step-desc">A conta aparece na tabela e o total é recalculado automaticamente.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Para excluir, clique no ícone de lixeira</div>
+        <div class="step-desc">Cada linha da tabela tem um ícone de lixeira no lado direito. Clique para remover a conta.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box tip no-break">
+    <div class="info-icon">💡</div>
+    <div class="info-content">
+      <div class="info-title">Atualize os saldos mensalmente</div>
+      <div class="info-text">Os saldos não atualizam sozinhos — você precisa entrar e corrigir os valores toda vez que verificar os extratos. Sugestão: atualize no dia 1 de cada mês com os saldos do mês anterior.</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 7 — ABA PREVISÃO
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 5</div>
+    <h2>Aba Previsão</h2>
+    <div class="subtitle">Registre quanto a organização espera receber e gastar no mês selecionado.</div>
+  </div>
+
+  <p>A aba Previsão funciona como um <strong>orçamento mensal simples</strong>: você informa o total que espera entrar (receitas) e o total que espera gastar (despesas). O resultado é calculado automaticamente.</p>
+
+  <div class="no-break" style="background:var(--gray-50); border:1px solid var(--gray-200); border-radius:12px; padding:20px; margin:16px 0;">
+    <div style="font-size:8pt; text-transform:uppercase; letter-spacing:0.12em; color:var(--gray-400); margin-bottom:14px; font-weight:600;">Previsão — Maio 2026</div>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-size:9pt; color:var(--gray-500); margin-bottom:2px;">Entradas previstas</div>
+          <div style="font-size:18pt; font-weight:800; color:var(--emerald); letter-spacing:-0.02em;">R$ 85.000,00</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:9pt; color:var(--gray-500); margin-bottom:2px;">Despesas previstas</div>
+          <div style="font-size:18pt; font-weight:800; color:var(--rose); letter-spacing:-0.02em;">R$ 62.000,00</div>
+        </div>
+      </div>
+      <div style="height:1px; background:var(--gray-200);"></div>
+      <div>
+        <div style="font-size:9pt; color:var(--gray-500); margin-bottom:2px;">Resultado previsto</div>
+        <div style="font-size:18pt; font-weight:800; color:var(--emerald); letter-spacing:-0.02em;">R$ 23.000,00 ↑</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Como editar a previsão</h3>
+
+  <div class="steps no-break">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Selecione o mês correto no topo</div>
+        <div class="step-desc">Use o menu suspenso de meses para garantir que está editando o mês certo.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">Clique no ícone de lápis (✏️) no canto superior direito do card</div>
+        <div class="step-desc">Os campos tornam-se editáveis.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Digite os valores e uma nota (opcional)</div>
+        <div class="step-desc">Insira os números em reais (sem R$, sem ponto). Use vírgula ou ponto para decimais. O campo <strong>Notas</strong> é livre para observações.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Clique em <strong>Salvar</strong></div>
+        <div class="step-desc">O resultado previsto atualiza instantaneamente. O card da aba <strong>Análise</strong> também se atualiza.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 8 — ABA EVENTOS
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 6</div>
+    <h2>Aba Eventos</h2>
+    <div class="subtitle">Registre o resultado financeiro de cada evento realizado no mês: quanto entrou e quanto saiu.</div>
+  </div>
+
+  <table class="mock-table no-break" style="margin-bottom:16px;">
+    <thead>
+      <tr><th>Evento</th><th>Bilheteria</th><th>Patrocínio</th><th>Outros</th><th>Despesas</th><th>Resultado</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>5º Congresso 2026</td>
+        <td>R$ 125.000</td>
+        <td>R$ 45.000</td>
+        <td>R$ 5.000</td>
+        <td class="red">R$ 120.000</td>
+        <td class="green"><strong>R$ 55.000</strong></td>
+      </tr>
+      <tr>
+        <td>Workshop ADM</td>
+        <td>R$ 8.000</td>
+        <td>—</td>
+        <td>—</td>
+        <td class="red">R$ 3.500</td>
+        <td class="green"><strong>R$ 4.500</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Como adicionar um evento</h3>
+
+  <div class="steps no-break">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Selecione o mês do evento</div>
+        <div class="step-desc">Escolha o mês em que o evento aconteceu no seletor do topo.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">Clique em <strong>"+ Adicionar evento"</strong></div>
+        <div class="step-desc">O formulário de cadastro aparece.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Preencha os campos de receita e despesa</div>
+        <div class="step-desc">Todos os valores são em R$. Deixe em branco (ou zero) os que não se aplicam.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="field-list no-break">
+    <div class="field-row"><div class="field-required"></div><div class="field-label">Nome do evento</div><div class="field-type">Texto</div><div class="field-example">ex: "5º Congresso 2026"</div></div>
+    <div class="field-row"><div class="field-optional"></div><div class="field-label">Bilheteria (R$)</div><div class="field-type">Número</div><div class="field-example">Total arrecadado com ingressos</div></div>
+    <div class="field-row"><div class="field-optional"></div><div class="field-label">Patrocínio (R$)</div><div class="field-type">Número</div><div class="field-example">Total recebido de patrocinadores</div></div>
+    <div class="field-row"><div class="field-optional"></div><div class="field-label">Outros (R$)</div><div class="field-type">Número</div><div class="field-example">Outras receitas do evento</div></div>
+    <div class="field-row"><div class="field-required"></div><div class="field-label">Despesas (R$)</div><div class="field-type">Número</div><div class="field-example">Total gasto para realizar o evento</div></div>
+  </div>
+
+  <div class="steps no-break" style="margin-top:12px;">
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Clique em <strong>Salvar</strong></div>
+        <div class="step-desc">O evento aparece na tabela com o resultado calculado automaticamente (verde = lucro, vermelho = prejuízo).</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 9 — ABA ASSOCIADOS
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 7</div>
+    <h2>Aba Associados</h2>
+    <div class="subtitle">Dois painéis: histórico anual (de 2022 até 2025) e o acompanhamento mês a mês de 2026.</div>
+  </div>
+
+  <h3>Parte A — Histórico anual</h3>
+  <p>Registre quantos associados ativos existiam em agosto de cada ano — é o retrato anual da base de membros.</p>
+
+  <table class="mock-table no-break" style="margin-bottom:16px; max-width:300px;">
+    <thead><tr><th>Período</th><th>Associados ativos</th></tr></thead>
+    <tbody>
+      <tr><td>ago/2022</td><td>312</td></tr>
+      <tr><td>ago/2023</td><td>358</td></tr>
+      <tr><td>ago/2024</td><td>401</td></tr>
+      <tr><td>ago/2025</td><td>428</td></tr>
+    </tbody>
+  </table>
+
+  <div class="info-box tip no-break">
+    <div class="info-icon">✏️</div>
+    <div class="info-content">
+      <div class="info-title">Como editar o histórico</div>
+      <div class="info-text">Clique diretamente no número da tabela. Um campo de texto aparece no lugar. Digite o novo valor e pressione <strong>Enter</strong> para salvar, ou <strong>Esc</strong> para cancelar.</div>
+    </div>
+  </div>
+
+  <h3>Parte B — Acompanhamento 2026 (mês a mês)</h3>
+  <p>Para cada mês de 2026, registre os movimentos da base de associados:</p>
+
+  <table class="mock-table no-break">
+    <thead>
+      <tr>
+        <th>Mês</th>
+        <th>Início</th>
+        <th>Prev. renov.</th>
+        <th>Renov. real.</th>
+        <th>Novas adesões</th>
+        <th>Saídas</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Janeiro</td><td>428</td><td>42</td><td>38</td><td>6</td><td>3</td></tr>
+      <tr><td>Fevereiro</td><td>469</td><td>35</td><td>33</td><td>4</td><td>1</td></tr>
+      <tr><td>Março</td><td>505</td><td colspan="4" style="color:var(--gray-300); text-align:center;">— aguardando dados —</td></tr>
+    </tbody>
+  </table>
+
+  <div class="field-list no-break" style="margin-top:14px;">
+    <div class="field-row"><div class="field-required"></div><div class="field-label">Total início do mês</div><div class="field-type">Número</div><div class="field-example">Associados ativos no 1º dia do mês</div></div>
+    <div class="field-row"><div class="field-optional"></div><div class="field-label">Previsão de renovações</div><div class="field-type">Número</div><div class="field-example">Quantas renovações eram esperadas</div></div>
+    <div class="field-row"><div class="field-optional"></div><div class="field-label">Renovações realizadas</div><div class="field-type">Número</div><div class="field-example">Quantas renovações de fato ocorreram</div></div>
+    <div class="field-row"><div class="field-optional"></div><div class="field-label">Novas adesões</div><div class="field-type">Número</div><div class="field-example">Novos membros que se associaram</div></div>
+    <div class="field-row"><div class="field-optional"></div><div class="field-label">Saídas</div><div class="field-type">Número</div><div class="field-example">Membros que cancelaram</div></div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 10 — ABA DEPARTAMENTOS
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 8</div>
+    <h2>Aba Departamentos</h2>
+    <div class="subtitle">Registre o custo operacional de cada departamento para o mês selecionado.</div>
+  </div>
+
+  <p>Cada departamento tem um custo fixo mensal (salários, fornecedores, despesas correntes). Esses valores alimentam a aba Análise para calcular métricas como custo por associado e runway de caixa.</p>
+
+  <table class="mock-table no-break" style="margin-bottom:16px;">
+    <thead><tr><th>Departamento</th><th>Custo mensal</th></tr></thead>
+    <tbody>
+      <tr><td>Institucional</td><td>R$ 4.200,00</td></tr>
+      <tr><td>Marketing</td><td>R$ 8.500,00</td></tr>
+      <tr><td>Comercial</td><td>R$ 6.800,00</td></tr>
+      <tr><td>Administrativo</td><td>R$ 12.000,00</td></tr>
+      <tr><td>Financeiro / Contábil</td><td>R$ 9.500,00</td></tr>
+      <tr><td>TI</td><td>R$ 3.200,00</td></tr>
+      <tr><td>Segurança</td><td>R$ 5.400,00</td></tr>
+      <tr><td>Jurídico</td><td>R$ 7.800,00</td></tr>
+      <tr><td>Ouvidoria</td><td>R$ 2.100,00</td></tr>
+      <tr><td>Assessoria Executiva</td><td>R$ 11.000,00</td></tr>
+      <tr><td>Tesouraria</td><td>R$ 4.600,00</td></tr>
+      <tr><td>Presidência</td><td>R$ 15.200,00</td></tr>
+      <tr class="total"><td><strong>Total geral</strong></td><td class="green"><strong>R$ 90.300,00</strong></td></tr>
+    </tbody>
+  </table>
+
+  <div class="info-box tip no-break">
+    <div class="info-icon">✏️</div>
+    <div class="info-content">
+      <div class="info-title">Como editar um custo</div>
+      <div class="info-text">Clique diretamente no valor do departamento que quer alterar. Um campo de entrada aparece. Digite o novo valor em R$ e pressione <strong>Enter</strong> para salvar, ou <strong>Esc</strong> para cancelar. O total atualiza automaticamente.</div>
+    </div>
+  </div>
+
+  <div class="info-box warning no-break">
+    <div class="info-icon">📅</div>
+    <div class="info-content">
+      <div class="info-title">Cada mês tem seus próprios custos</div>
+      <div class="info-text">Os dados de departamentos não se copiam automaticamente de um mês para o outro. Se os custos são iguais todo mês, você precisa preencher mês a mês. Futuramente isso poderá ser automatizado.</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 11 — ABA ANÁLISE
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 9</div>
+    <h2>Aba Análise</h2>
+    <div class="subtitle">Esta aba não precisa ser preenchida — ela calcula tudo sozinha com os dados das outras abas.</div>
+  </div>
+
+  <p>Assim que você preencher as abas de <strong>Contas</strong>, <strong>Departamentos</strong>, <strong>Associados</strong> e <strong>Previsão</strong>, a aba Análise exibirá automaticamente estas métricas:</p>
+
+  <div class="analysis-grid no-break">
+    <div class="analysis-card">
+      <span class="analysis-icon">🏦</span>
+      <div class="analysis-label">Caixa cobre despesas até quando?</div>
+      <div class="analysis-value" style="color:var(--emerald);">8,4 meses</div>
+      <div class="analysis-hint">Saldo total ÷ Custo mensal médio</div>
+    </div>
+    <div class="analysis-card">
+      <span class="analysis-icon">👥</span>
+      <div class="analysis-label">Ponto de equilíbrio para 24 meses</div>
+      <div class="analysis-value">1.248</div>
+      <div class="analysis-hint">Associados necessários para cobrir 24 meses de custos</div>
+    </div>
+    <div class="analysis-card">
+      <span class="analysis-icon">📅</span>
+      <div class="analysis-label">Custo por associado / mês</div>
+      <div class="analysis-value">R$ 211,00</div>
+      <div class="analysis-hint">Total custos ÷ associados ativos</div>
+    </div>
+    <div class="analysis-card">
+      <span class="analysis-icon">📈</span>
+      <div class="analysis-label">Resultado previsto do mês</div>
+      <div class="analysis-value" style="color:var(--emerald);">R$ 23.000</div>
+      <div class="analysis-hint">Entradas previstas − Despesas previstas</div>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+
+  <h3>O que cada número significa</h3>
+
+  <div class="no-break">
+    <div class="faq-item">
+      <div class="faq-q">Caixa atual cobre até quando?</div>
+      <div class="faq-a">Divide o saldo total das contas pelos custos mensais médios. Resultado em meses. Se ficar abaixo de 3 meses, o número fica vermelho — é um sinal de alerta.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Ponto de equilíbrio</div>
+      <div class="faq-a">Calcula quantos associados seriam necessários para que as mensalidades cubram os custos pelos próximos 24 meses.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Custo por associado</div>
+      <div class="faq-a">Divide o total de custos dos departamentos pelo número de associados ativos. Mostra o custo real de cada membro para a organização.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Resultado previsto</div>
+      <div class="faq-a">Subtrai as despesas previstas das entradas previstas (aba Previsão). Verde = superávit, vermelho = déficit.</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 12 — FLUXO DO MÊS
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 10</div>
+    <h2>Passo a passo do mês</h2>
+    <div class="subtitle">Siga esta ordem todo mês para manter o portal sempre atualizado.</div>
+  </div>
+
+  <div class="scenario-box no-break">
+    <div class="scenario-label">Rotina mensal recomendada</div>
+    <div class="scenario-title">Atualize o portal no início de cada mês</div>
+    <div class="scenario-desc">Sugestão: faça isso todo dia 1 a 5 do mês com os dados do mês anterior.</div>
+  </div>
+
+  <div class="steps">
+    <div class="step no-break">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Entre em <strong>Financeiro</strong> e selecione o mês</div>
+        <div class="step-desc">Use o seletor no topo para escolher o mês que vai preencher.</div>
+      </div>
+    </div>
+    <div class="step no-break">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">Aba <strong>Contas</strong> — atualize os saldos</div>
+        <div class="step-desc">Verifique os extratos bancários e corrija os saldos de cada conta para refletir o fechamento do mês.</div>
+      </div>
+    </div>
+    <div class="step no-break">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Aba <strong>Previsão</strong> — registre o orçamento</div>
+        <div class="step-desc">Informe o total de entradas e despesas previstas para o mês. Se já tiver os dados realizados, use-os.</div>
+      </div>
+    </div>
+    <div class="step no-break">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Aba <strong>Eventos</strong> — registre cada evento realizado</div>
+        <div class="step-desc">Se houve eventos no mês, cadastre bilheteria, patrocínios e despesas de cada um.</div>
+      </div>
+    </div>
+    <div class="step no-break">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <div class="step-title">Aba <strong>Associados</strong> — atualize os números</div>
+        <div class="step-desc">Preencha a linha do mês atual: total no início, renovações previstas e realizadas, novas adesões e saídas.</div>
+      </div>
+    </div>
+    <div class="step no-break">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <div class="step-title">Aba <strong>Departamentos</strong> — registre os custos</div>
+        <div class="step-desc">Atualize o custo de cada departamento para o mês atual conforme os dados contábeis.</div>
+      </div>
+    </div>
+    <div class="step no-break">
+      <div class="step-num">7</div>
+      <div class="step-body">
+        <div class="step-title">Aba <strong>Análise</strong> — confirme os indicadores</div>
+        <div class="step-desc">Verifique se os cálculos fazem sentido. Runway alto é bom sinal. Resultado previsto negativo precisa de atenção.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box success no-break" style="margin-top:16px;">
+    <div class="info-icon">🎯</div>
+    <div class="info-content">
+      <div class="info-title">Dados salvos = presidência informada em tempo real</div>
+      <div class="info-text">Assim que você salva qualquer dado no portal, a presidência e outros setores autorizados já veem os números atualizados no painel deles. Não é preciso enviar e-mail ou WhatsApp.</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PG 13 — DÚVIDAS E SUPORTE
+═══════════════════════════════════════════════════════════ -->
+<div class="inner page">
+  <div class="page-header">
+    <div class="section-title">Capítulo 11</div>
+    <h2>Dúvidas e suporte</h2>
+    <div class="subtitle">Respostas para as situações mais comuns.</div>
+  </div>
+
+  <div class="faq-item no-break">
+    <div class="faq-q">Errei um número. Posso corrigir?</div>
+    <div class="faq-a">Sim. Vá na aba correspondente, clique no valor e corrija. Não existe confirmação adicional — o valor é substituído automaticamente ao salvar.</div>
+  </div>
+
+  <div class="faq-item no-break">
+    <div class="faq-q">Posso ver dados de meses anteriores?</div>
+    <div class="faq-a">Sim. Use o seletor de mês no topo do Portal Financeiro para navegar entre janeiro e dezembro de 2026. Os dados de cada mês ficam salvos independentemente.</div>
+  </div>
+
+  <div class="faq-item no-break">
+    <div class="faq-q">A aba Análise está mostrando traço (—) no lugar dos números</div>
+    <div class="faq-a">Isso acontece quando as abas de Contas, Departamentos ou Associados ainda não têm dados. Preencha essas abas primeiro e os cálculos aparecerão automaticamente.</div>
+  </div>
+
+  <div class="faq-item no-break">
+    <div class="faq-q">Posso usar o portal no celular?</div>
+    <div class="faq-a">Sim. O portal foi desenvolvido para funcionar bem em celular e tablet. Todas as abas e formulários funcionam normalmente no navegador mobile.</div>
+  </div>
+
+  <div class="faq-item no-break">
+    <div class="faq-q">Quem mais vê os dados que eu inserir?</div>
+    <div class="faq-a">A presidência (Ludymilla) vê os indicadores consolidados no painel dela. Os dados de contas e departamentos alimentam os gráficos do CEO. Outros setores não têm acesso à área financeira.</div>
+  </div>
+
+  <div class="faq-item no-break">
+    <div class="faq-q">O que fazer se não conseguir entrar ou encontrar algum erro?</div>
+    <div class="faq-a">Use o botão de suporte — o círculo escuro no canto inferior direito de qualquer tela do portal. Você pode digitar sua dúvida diretamente lá. Para problemas de login ou senha, contate a presidência.</div>
+  </div>
+
+  <div class="sep-violet"></div>
+
+  <div class="info-box tip no-break">
+    <div class="info-icon">💬</div>
+    <div class="info-content">
+      <div class="info-title">O suporte integrado sabe tudo sobre o portal</div>
+      <div class="info-text">O chat de suporte (botão redondo no canto inferior direito) pode responder dúvidas sobre como usar cada aba, explicar o que um número significa, ajudar a interpretar a aba Análise e muito mais. Não hesite em perguntar.</div>
+    </div>
+  </div>
+
+  <div style="margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--gray-100); display:flex; align-items:center; justify-content:space-between;">
+    <div>
+      <div style="font-size:7.5pt; color:var(--gray-400); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.1em;">Dash executivo</div>
+      <div style="font-size:9pt; color:var(--gray-600);">Manual do Financeiro · Versão 1.0 · 2026</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:7.5pt; color:var(--gray-400);">Documento de uso interno</div>
+      <div style="font-size:8pt; color:var(--gray-500); font-weight:600; margin-top:2px;">odashexecutivo.vercel.app</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
