@@ -306,3 +306,92 @@ create policy "portal_custos_service_all" on public.portal_custos_departamento f
 -- ---------------------------------------------------------------------------
 -- Todos os dados de seed foram removidos.
 -- O portal inicia sem dados demo — preencha via interface ou via entrada-dados.
+
+-- ---------------------------------------------------------------------------
+-- Google Sheets Sync — lançamentos importados do e-Gestor
+-- ---------------------------------------------------------------------------
+
+-- Tabela principal: espelho da aba "personalizadoFinanceiro (13)"
+create table if not exists public.portal_lancamentos (
+  id                    uuid primary key default gen_random_uuid(),
+  cod                   text not null unique,                  -- Cód. do e-Gestor (chave natural)
+  data_competencia      date,                                  -- Data de competência
+  data_pagamento        date,                                  -- Data de créd/déb (liquidação)
+  data_vencimento       date,                                  -- Data de vencimento
+  nome_razao_social     text,                                  -- Nome / Razão Social
+  evento                text,                                  -- Evento associado
+  plano_primario_contas text,                                  -- Plano Primário de Contas
+  classificacao         text,                                  -- Classificação
+  sub_classificacao     text,                                  -- Sub-Classificação
+  rec_desp              text,                                  -- "Receitas" | "Despesas"
+  ent_saida             text,                                  -- "Entrada" | "Saída"
+  situacao              text,                                  -- "Recebido" | "Pago" | "A receber" | "A pagar"
+  valor                 numeric not null default 0,
+  conta_caixa           text,                                  -- Conta / banco (ex: VIACREDI)
+  synced_at             timestamptz not null default now(),    -- momento do último sync
+  created_at            timestamptz not null default now()
+);
+
+-- Índices para queries frequentes
+create index if not exists idx_lancamentos_evento          on public.portal_lancamentos (evento);
+create index if not exists idx_lancamentos_situacao        on public.portal_lancamentos (situacao);
+create index if not exists idx_lancamentos_rec_desp        on public.portal_lancamentos (rec_desp);
+create index if not exists idx_lancamentos_data_comp       on public.portal_lancamentos (data_competencia);
+create index if not exists idx_lancamentos_conta_caixa     on public.portal_lancamentos (conta_caixa);
+
+-- Log de sincronizações
+create table if not exists public.portal_sheets_sync_log (
+  id             uuid primary key default gen_random_uuid(),
+  started_at     timestamptz not null default now(),
+  finished_at    timestamptz,
+  status         text not null default 'running'
+                   check (status in ('running', 'success', 'error')),
+  rows_read      int default 0,
+  rows_upserted  int default 0,
+  error_message  text,
+  triggered_by   text
+);
+
+-- RLS
+alter table public.portal_lancamentos       enable row level security;
+alter table public.portal_sheets_sync_log   enable row level security;
+
+drop policy if exists "portal_lancamentos_service_all"     on public.portal_lancamentos;
+drop policy if exists "portal_sheets_sync_log_service_all" on public.portal_sheets_sync_log;
+
+create policy "portal_lancamentos_service_all"
+  on public.portal_lancamentos for all using (true) with check (true);
+
+create policy "portal_sheets_sync_log_service_all"
+  on public.portal_sheets_sync_log for all using (true) with check (true);
+
+-- ---------------------------------------------------------------------------
+-- Função RPC: totais agregados dos lançamentos (evita N+1 no cliente)
+-- ---------------------------------------------------------------------------
+create or replace function public.lancamentos_totais()
+returns table (
+  total_receitas_pagas    numeric,
+  total_despesas_pagas    numeric,
+  total_a_receber         numeric,
+  total_a_pagar           numeric,
+  saldo_realizado         numeric,
+  resultado_projetado     numeric,
+  count_total             bigint
+)
+language sql
+security definer
+as $$
+  select
+    coalesce(sum(valor) filter (where rec_desp = 'Receitas' and situacao = 'Recebido'), 0) as total_receitas_pagas,
+    coalesce(sum(valor) filter (where rec_desp = 'Despesas' and situacao = 'Pago'),     0) as total_despesas_pagas,
+    coalesce(sum(valor) filter (where situacao = 'A receber'),                           0) as total_a_receber,
+    coalesce(sum(valor) filter (where situacao = 'A pagar'),                             0) as total_a_pagar,
+    coalesce(sum(valor) filter (where rec_desp = 'Receitas' and situacao = 'Recebido'), 0)
+      - coalesce(sum(valor) filter (where rec_desp = 'Despesas' and situacao = 'Pago'), 0) as saldo_realizado,
+    coalesce(sum(valor) filter (where rec_desp = 'Receitas' and situacao = 'Recebido'), 0)
+      - coalesce(sum(valor) filter (where rec_desp = 'Despesas' and situacao = 'Pago'), 0)
+      + coalesce(sum(valor) filter (where situacao = 'A receber'), 0)
+      - coalesce(sum(valor) filter (where situacao = 'A pagar'),   0) as resultado_projetado,
+    count(*) as count_total
+  from public.portal_lancamentos;
+$$;

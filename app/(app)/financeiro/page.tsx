@@ -35,6 +35,7 @@ import { Select, type SelectOption } from "@/components/ui/select";
 import { AutoConciliacaoSheet } from "@/components/dashboard/auto-conciliacao-sheet";
 import { LancamentoFormDialog } from "@/components/dashboard/lancamento-form-dialog";
 import { PortalFinanceiroTabs } from "@/components/financeiro/portal-financeiro-tabs";
+import { SheetsSyncPanel } from "@/components/financeiro/sheets-sync-panel";
 import {
   type FinanceLancamento,
   metricasEdicao,
@@ -95,6 +96,7 @@ export default function FinanceiroPage() {
           <TabsTrigger value="receber">Contas a receber</TabsTrigger>
           <TabsTrigger value="pagar">Contas a pagar</TabsTrigger>
           <TabsTrigger value="margem">Margem por evento</TabsTrigger>
+          <TabsTrigger value="egestor">e-Gestor</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-2">
@@ -115,6 +117,10 @@ export default function FinanceiroPage() {
 
         <TabsContent value="margem" className="mt-2">
           <MargemTab margens={margens} />
+        </TabsContent>
+
+        <TabsContent value="egestor" className="mt-2">
+          <SheetsSyncPanel />
         </TabsContent>
       </Tabs>
     </div>
