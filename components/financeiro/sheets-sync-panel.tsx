@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Search,
   Sheet,
+  Upload,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -95,6 +96,8 @@ export function SheetsSyncPanel() {
   const [status, setStatus] = React.useState<SyncStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = React.useState(true);
   const [syncing, setSyncing] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Filtros / paginação
   const [search, setSearch] = React.useState("");
@@ -148,7 +151,38 @@ export function SheetsSyncPanel() {
       .finally(() => setLoadingRows(false));
   }, [status?.total_lancamentos, page, searchDebounced, situacaoFilter, recDespFilter]);
 
-  // ── Sync ─────────────────────────────────────────────────────────────────
+  // ── Upload CSV/XLSX ───────────────────────────────────────────────────────
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset input so same file can be re-uploaded
+    e.target.value = "";
+
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+
+      const res = await fetch("/api/sync/upload", { method: "POST", body: form });
+      const json = await res.json();
+
+      if (!res.ok) {
+        toast.error(`Upload falhou: ${json.error}`);
+      } else {
+        toast.success(
+          `Importação concluída! ${json.rows_upserted.toLocaleString("pt-BR")} lançamentos importados.`
+        );
+        await fetchStatus();
+        setPage(1);
+      }
+    } catch {
+      toast.error("Erro ao enviar arquivo.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ── Sync automático (Google Sheets) ──────────────────────────────────────
   const handleSync = async () => {
     setSyncing(true);
     try {
@@ -207,25 +241,42 @@ export function SheetsSyncPanel() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {status.configured ? (
-              <Badge variant="success" className="gap-1 text-[11px]">
-                <Wifi className="h-3 w-3" /> Configurado
-              </Badge>
-            ) : (
-              <Badge variant="destructive" className="gap-1 text-[11px]">
-                <WifiOff className="h-3 w-3" /> Não configurado
-              </Badge>
-            )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Upload manual — funciona sem configuração */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="hidden"
+              onChange={handleUpload}
+            />
             <Button
               size="sm"
-              onClick={handleSync}
-              disabled={syncing || !status.configured}
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
               className="gap-1.5"
             >
-              <RefreshCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} />
-              {syncing ? "Sincronizando…" : "Sincronizar agora"}
+              <Upload className={cn("h-3.5 w-3.5", uploading && "animate-bounce")} />
+              {uploading ? "Importando…" : "Enviar CSV / XLSX"}
             </Button>
+
+            {/* Sync automático — requer Google Sheets configurado */}
+            {status.configured ? (
+              <Button
+                size="sm"
+                onClick={handleSync}
+                disabled={syncing}
+                className="gap-1.5"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} />
+                {syncing ? "Sincronizando…" : "Sync Google Sheets"}
+              </Button>
+            ) : (
+              <Badge variant="warning" className="gap-1 text-[11px]">
+                <WifiOff className="h-3 w-3" /> Sheets não configurado
+              </Badge>
+            )}
           </div>
         </div>
 
