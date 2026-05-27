@@ -311,33 +311,86 @@ create policy "portal_custos_service_all" on public.portal_custos_departamento f
 -- Google Sheets Sync — lançamentos importados do e-Gestor
 -- ---------------------------------------------------------------------------
 
--- Tabela principal: espelho da aba "personalizadoFinanceiro (13)"
+-- Tabela principal: espelho completo da aba "personalizadoFinanceiro (13)"
+-- Colunas mapeadas das 27 colunas (A→AA) da planilha real.
 create table if not exists public.portal_lancamentos (
   id                    uuid primary key default gen_random_uuid(),
-  cod                   text not null unique,                  -- Cód. do e-Gestor (chave natural)
-  data_competencia      date,                                  -- Data de competência
-  data_pagamento        date,                                  -- Data de créd/déb (liquidação)
-  data_vencimento       date,                                  -- Data de vencimento
-  nome_razao_social     text,                                  -- Nome / Razão Social
-  evento                text,                                  -- Evento associado
-  plano_primario_contas text,                                  -- Plano Primário de Contas
-  classificacao         text,                                  -- Classificação
-  sub_classificacao     text,                                  -- Sub-Classificação
-  rec_desp              text,                                  -- "Receitas" | "Despesas"
-  ent_saida             text,                                  -- "Entrada" | "Saída"
-  situacao              text,                                  -- "Recebido" | "Pago" | "A receber" | "A pagar"
+
+  -- Col A: Identificador único do e-Gestor
+  cod                   text not null unique,
+
+  -- Col B: Descrição do lançamento
+  descricao             text,
+
+  -- Col C: Conta Caixa (ex: "CAIXA DE FUNDAÇÃO BAPS", "VIACREDI")
+  conta_caixa           text,
+
+  -- Col D: Plano de contas base do e-Gestor (ex: "SÓCIOS FUNDADORES")
+  plano_contas          text,
+
+  -- Col E/X: Nome/Razão Social (preferindo col X — nome limpo)
+  nome_razao_social     text,
+
+  -- Col G: Forma de pagamento (PIX, DINHEIRO, etc.)
+  forma_pagamento       text,
+
+  -- Col H: Situação (Recebido | Pago | A receber | A pagar)
+  situacao              text,
+
+  -- Col I: Valor absoluto (despesas chegam negativas no e-Gestor → abs)
   valor                 numeric not null default 0,
-  conta_caixa           text,                                  -- Conta / banco (ex: VIACREDI)
-  synced_at             timestamptz not null default now(),    -- momento do último sync
+
+  -- Col K: Data de vencimento
+  data_vencimento       date,
+
+  -- Col L: Data de pagamento
+  data_pagamento        date,
+
+  -- Col M: Data de créd/déb (efetivação bancária)
+  data_cred_deb         date,
+
+  -- Col P: Plano Primário de Contas enriquecido
+  --        (ex: "DESPESAS OPERACIONAIS BAPS", "RECEITAS OPERACIONAIS BAPS")
+  plano_primario_contas text,
+
+  -- Col Q: Classificação de Contas
+  --        (ex: "DESPESAS COM SERVIÇOS PROFISSIONAIS DE APOIO OPERACIONAL")
+  classificacao         text,
+
+  -- Col R: Sub Classificação de Contas
+  --        (ex: "IMÓVEL - ALUGUEL", "PRESTAÇÃO DE SERVIÇOS DE CONTABILIDADE")
+  sub_classificacao     text,
+
+  -- Col S: Ent./Saída (Crédito | Débito)
+  ent_saida             text,
+
+  -- Col T: Rec./Des. (Receitas | Despesas)
+  rec_desp              text,
+
+  -- Col U: Tratativa (Empréstimos | Despesas | Receitas)
+  tratativa             text,
+
+  -- Col W: Tratativa Oculta de Nome/Razão Social
+  tratativa_oculta      text,
+
+  -- Col AA: Evento (ex: "OPERAÇÃO DE FUNDAÇÃO BAPS", "5º CONGRESSO BAPS")
+  evento                text,
+
+  -- Controle de sync
+  synced_at             timestamptz not null default now(),
   created_at            timestamptz not null default now()
 );
 
 -- Índices para queries frequentes
-create index if not exists idx_lancamentos_evento          on public.portal_lancamentos (evento);
-create index if not exists idx_lancamentos_situacao        on public.portal_lancamentos (situacao);
-create index if not exists idx_lancamentos_rec_desp        on public.portal_lancamentos (rec_desp);
-create index if not exists idx_lancamentos_data_comp       on public.portal_lancamentos (data_competencia);
-create index if not exists idx_lancamentos_conta_caixa     on public.portal_lancamentos (conta_caixa);
+create index if not exists idx_lancamentos_evento           on public.portal_lancamentos (evento);
+create index if not exists idx_lancamentos_situacao         on public.portal_lancamentos (situacao);
+create index if not exists idx_lancamentos_rec_desp         on public.portal_lancamentos (rec_desp);
+create index if not exists idx_lancamentos_data_vencimento  on public.portal_lancamentos (data_vencimento);
+create index if not exists idx_lancamentos_data_pagamento   on public.portal_lancamentos (data_pagamento);
+create index if not exists idx_lancamentos_conta_caixa      on public.portal_lancamentos (conta_caixa);
+create index if not exists idx_lancamentos_plano_primario   on public.portal_lancamentos (plano_primario_contas);
+create index if not exists idx_lancamentos_classificacao    on public.portal_lancamentos (classificacao);
+create index if not exists idx_lancamentos_tratativa        on public.portal_lancamentos (tratativa);
 
 -- Log de sincronizações
 create table if not exists public.portal_sheets_sync_log (

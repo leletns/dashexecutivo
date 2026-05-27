@@ -49,17 +49,19 @@ interface SyncStatus {
 interface Lancamento {
   id: string;
   cod: string;
-  data_competencia: string | null;
-  data_pagamento: string | null;
-  data_vencimento: string | null;
+  descricao: string | null;
+  conta_caixa: string | null;
   nome_razao_social: string | null;
-  evento: string | null;
+  forma_pagamento: string | null;
+  situacao: string | null;
+  valor: number;
+  data_vencimento: string | null;
+  data_pagamento: string | null;
   plano_primario_contas: string | null;
   classificacao: string | null;
   rec_desp: string | null;
-  situacao: string | null;
-  valor: number;
-  conta_caixa: string | null;
+  tratativa: string | null;
+  evento: string | null;
 }
 
 interface LancamentosPage {
@@ -341,15 +343,15 @@ export function SheetsSyncPanel() {
 
           {/* Tabela */}
           <div className="overflow-x-auto rounded-xl border border-border/60">
-            <table className="w-full min-w-[860px] text-sm">
+            <table className="w-full min-w-[960px] text-sm">
               <thead>
                 <tr className="bg-foreground/[0.02] dark:bg-white/[0.02]">
                   {[
                     "Cód.",
-                    "Data competência",
+                    "Descrição",
                     "Nome / Razão Social",
+                    "Plano Primário",
                     "Evento",
-                    "Classificação",
                     "Situação",
                     "Valor",
                     "Conta",
@@ -382,29 +384,40 @@ export function SheetsSyncPanel() {
                 {!loadingRows &&
                   lancamentos?.data.map((l) => (
                     <tr key={l.id} className="border-t border-border/50 hover:bg-foreground/[0.015]">
-                      <td className="px-3 py-2 text-xs font-mono text-muted-foreground">{l.cod}</td>
-                      <td className="px-3 py-2 text-xs whitespace-nowrap">
-                        {formatDateBR(l.data_competencia)}
+                      <td className="px-3 py-2 text-xs font-mono text-muted-foreground shrink-0">
+                        {l.cod}
                       </td>
-                      <td className="px-3 py-2 max-w-[220px]">
-                        <div className="text-xs truncate" title={l.nome_razao_social ?? ""}>
-                          {l.nome_razao_social ?? "—"}
+                      <td className="px-3 py-2 max-w-[240px]">
+                        <div className="text-xs font-medium truncate" title={l.descricao ?? ""}>
+                          {l.descricao ?? <span className="text-muted-foreground">—</span>}
                         </div>
+                        {l.data_vencimento && (
+                          <div className="text-[10px] text-muted-foreground">
+                            Venc. {formatDateBR(l.data_vencimento)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2 max-w-[180px]">
+                        <div className="text-xs truncate text-muted-foreground" title={l.nome_razao_social ?? ""}>
+                          {l.nome_razao_social ?? <span className="opacity-40">—</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 max-w-[160px]">
+                        <div className="text-xs truncate text-muted-foreground" title={l.plano_primario_contas ?? ""}>
+                          {l.plano_primario_contas ?? <span className="opacity-40">—</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 max-w-[160px]">
                         <div className="text-xs truncate text-muted-foreground" title={l.evento ?? ""}>
                           {l.evento ?? <span className="opacity-40">—</span>}
                         </div>
-                      </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground max-w-[160px] truncate">
-                        {l.classificacao ?? "—"}
                       </td>
                       <td className="px-3 py-2">
                         <SituacaoBadge value={l.situacao} />
                       </td>
                       <td
                         className={cn(
-                          "px-3 py-2 text-right font-semibold tabular-nums text-sm",
+                          "px-3 py-2 text-right font-semibold tabular-nums text-sm whitespace-nowrap",
                           l.rec_desp === "Receitas"
                             ? "text-emerald-600 dark:text-emerald-400"
                             : "text-rose-600 dark:text-rose-400"

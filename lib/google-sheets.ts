@@ -117,62 +117,141 @@ export function findHeaderRowIndex(rows: string[][]): number {
   return 4; // padrão: pula 4 linhas de cabeçalho do e-Gestor
 }
 
-/** Mapa de índices de coluna baseado no cabeçalho detectado. */
+/**
+ * Mapa completo de colunas — baseado na planilha real "personalizadoFinanceiro (13)":
+ *
+ *  A  Cód.
+ *  B  Descrição
+ *  C  Conta Caixa
+ *  D  Plano de contas  (base e-Gestor — ex: "SÓCIOS FUNDADORES")
+ *  E  Nome/Razão do contato
+ *  F  CPF/CNPJ (não armazenado — privacidade)
+ *  G  Forma de pagamento  (PIX / DINHEIRO)
+ *  H  Situação  (Recebido / Pago / A receber / A pagar)
+ *  I  Valor  (negativo para Despesas)
+ *  J  Data de cadastro (ignorada)
+ *  K  Data de vencimento
+ *  L  Data de pagamento
+ *  M  Data de créd/déb  (efetivação bancária)
+ *  N  Observações
+ *  O  (vazia)
+ *  P  Plano Primário de Contas  (ex: "DESPESAS OPERACIONAIS BAPS")
+ *  Q  Classificação de Contas   (ex: "DESPESAS COM SERVIÇOS PROFISSIONAIS")
+ *  R  Sub Classificação de Contas (ex: "IMÓVEL - ALUGUEL")
+ *  S  Ent./Saída  (Crédito / Débito)
+ *  T  Rec./Des.   (Receitas / Despesas)
+ *  U  Tratativa   (Empréstimos / Despesas / Receitas)
+ *  V  Forma de Ptgto. (duplicata simplificada de G)
+ *  W  Tratativa Oculta de Nome/Razão Social
+ *  X  Nome/Razão Social (versão limpa — para exibição)
+ *  Y  Coluna3 (CPF/CNPJ — não armazenado)
+ *  Z  Coluna32 (REALIZADO — sempre igual, ignorado)
+ *  AA Evento  (ex: "OPERAÇÃO DE FUNDAÇÃO BAPS")
+ */
 export interface SheetColumnMap {
   cod?: number;
-  data_competencia?: number;
-  data_pagamento?: number;
-  data_vencimento?: number;
-  nome_razao_social?: number;
-  evento?: number;
-  plano_primario_contas?: number;
-  classificacao?: number;
-  sub_classificacao?: number;
-  rec_desp?: number;
-  ent_saida?: number;
-  situacao?: number;
-  valor?: number;
+  descricao?: number;
   conta_caixa?: number;
+  plano_contas?: number;           // col D — plano base do e-Gestor
+  nome_razao_social?: number;      // col E
+  forma_pagamento?: number;        // col G
+  situacao?: number;               // col H
+  valor?: number;                  // col I
+  data_vencimento?: number;        // col K
+  data_pagamento?: number;         // col L
+  data_cred_deb?: number;          // col M
+  plano_primario_contas?: number;  // col P — categoria principal enriquecida
+  classificacao?: number;          // col Q
+  sub_classificacao?: number;      // col R
+  ent_saida?: number;              // col S
+  rec_desp?: number;               // col T
+  tratativa?: number;              // col U
+  tratativa_oculta?: number;       // col W
+  nome_completo?: number;          // col X — nome limpo para exibição
+  evento?: number;                 // col AA
 }
 
 export function buildColumnMap(headers: string[]): SheetColumnMap {
   const map: SheetColumnMap = {};
 
-  headers.forEach((h, i) => {
-    const n = h.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  // Normaliza: minúsculas sem acentos
+  const norm = (h: string) =>
+    h.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
-    if (/^co[dó]/.test(n) && n.length <= 5) {
+  headers.forEach((h, i) => {
+    const n = norm(h);
+
+    // ── Identificação ─────────────────────────────────────────────────────
+    if (/^co[d]\.?$/.test(n) || n === "cod" || n === "codigo") {
       map.cod = i;
-    } else if (n.includes("competencia") || n.includes("competência")) {
-      map.data_competencia = i;
-    } else if (
-      (n.includes("cred") && n.includes("deb")) ||
-      n.includes("pagamento") ||
-      n.includes("liquidac")
-    ) {
-      map.data_pagamento = i;
-    } else if (n.includes("vencimento")) {
-      map.data_vencimento = i;
-    } else if (n.includes("nome") || n.includes("razao") || n.includes("razão")) {
-      map.nome_razao_social = i;
-    } else if (n === "evento") {
-      map.evento = i;
-    } else if (n.includes("plano") || n.includes("primario") || n.includes("primário")) {
+
+    // ── Descrição do lançamento ───────────────────────────────────────────
+    } else if (n === "descricao" || n === "descricao do lancamento") {
+      map.descricao = i;
+
+    // ── Conta Caixa ───────────────────────────────────────────────────────
+    } else if (n.includes("conta") && n.includes("caixa")) {
+      map.conta_caixa = i;
+
+    // ── Plano Primário de Contas (col P — enriquecido) ────────────────────
+    } else if (n.includes("plano") && n.includes("primario")) {
       map.plano_primario_contas = i;
+
+    // ── Plano de contas base (col D — e-Gestor nativo) ────────────────────
+    } else if (n === "plano de contas" || (n.includes("plano") && n.includes("conta") && !n.includes("primario"))) {
+      map.plano_contas = i;
+
+    // ── Classificação e Sub ───────────────────────────────────────────────
     } else if (n.includes("sub") && n.includes("classif")) {
       map.sub_classificacao = i;
     } else if (n.includes("classif") && !n.includes("sub")) {
       map.classificacao = i;
-    } else if (n.includes("rec") && n.includes("desp")) {
-      map.rec_desp = i;
-    } else if ((n.includes("ent") && n.includes("saida")) || n.includes("entrada")) {
-      map.ent_saida = i;
-    } else if (n.includes("situac") || n.includes("situação")) {
+
+    // ── Nomes ────────────────────────────────────────────────────────────
+    } else if (n === "nome/razao social" || n === "nome/razao do social") {
+      // col X — nome limpo (prioridade maior)
+      map.nome_completo = i;
+    } else if (n.includes("tratativa oculta")) {
+      map.tratativa_oculta = i;
+    } else if ((n.includes("nome") || n.includes("razao")) && !n.includes("social")) {
+      // col E — "Nome/Razão do contato"
+      map.nome_razao_social = map.nome_razao_social ?? i;
+    } else if (n.includes("nome") || n.includes("razao")) {
+      map.nome_razao_social = map.nome_razao_social ?? i;
+
+    // ── Forma de pagamento ───────────────────────────────────────────────
+    } else if ((n.includes("forma") && n.includes("pagamento")) ||
+               (n.includes("forma") && n.includes("ptgto"))) {
+      map.forma_pagamento = map.forma_pagamento ?? i;
+
+    // ── Situação ─────────────────────────────────────────────────────────
+    } else if (n === "situacao" || n.includes("situac")) {
       map.situacao = i;
+
+    // ── Valor ────────────────────────────────────────────────────────────
     } else if (n === "valor") {
       map.valor = i;
-    } else if (n.includes("conta") || n.includes("caixa") || n.includes("banco")) {
-      map.conta_caixa = i;
+
+    // ── Datas ────────────────────────────────────────────────────────────
+    } else if (n.includes("vencimento")) {
+      map.data_vencimento = i;
+    } else if (n.includes("cred") && n.includes("deb")) {
+      map.data_cred_deb = i;
+    } else if (n.includes("pagamento")) {
+      map.data_pagamento = i;
+
+    // ── Rec./Desp., Ent./Saída, Tratativa ────────────────────────────────
+    } else if ((n.includes("rec") && n.includes("des")) ||
+               (n.includes("receita") && n.includes("despesa"))) {
+      map.rec_desp = i;
+    } else if (n.includes("ent") && n.includes("saida")) {
+      map.ent_saida = i;
+    } else if (n === "tratativa") {
+      map.tratativa = i;
+
+    // ── Evento ───────────────────────────────────────────────────────────
+    } else if (n === "evento") {
+      map.evento = i;
     }
   });
 

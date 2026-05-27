@@ -45,9 +45,10 @@ export async function GET(req: Request) {
     let query = sb
       .from("portal_lancamentos")
       .select(
-        "id, cod, data_competencia, data_pagamento, data_vencimento, " +
-          "nome_razao_social, evento, plano_primario_contas, classificacao, " +
-          "sub_classificacao, rec_desp, ent_saida, situacao, valor, conta_caixa",
+        "id, cod, descricao, conta_caixa, plano_contas, nome_razao_social, " +
+          "forma_pagamento, situacao, valor, data_vencimento, data_pagamento, " +
+          "data_cred_deb, plano_primario_contas, classificacao, sub_classificacao, " +
+          "ent_saida, rec_desp, tratativa, evento",
         { count: "exact" }
       );
 

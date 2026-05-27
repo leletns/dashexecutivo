@@ -13,21 +13,17 @@ import {
   findHeaderRowIndex,
   buildColumnMap,
   parseDateBR,
-  parseValueBR,
 } from "@/lib/google-sheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Tamanho dos lotes para upsert no Supabase
 const BATCH_SIZE = 500;
-
-// Setores autorizados
 const WRITE_SECTORS = new Set(["financeiro", "executivo"]);
 
 // ─── GET — status do último sync ─────────────────────────────────────────────
 
-export async function GET(req: Request) {
+export async function GET(_req: Request) {
   try {
     const portal = await requirePortalSession();
     if (!portal) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
@@ -62,7 +58,7 @@ export async function GET(req: Request) {
 
 // ─── POST — executar sync ─────────────────────────────────────────────────────
 
-export async function POST(req: Request) {
+export async function POST(_req: Request) {
   try {
     const portal = await requirePortalSession();
     if (!portal) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
@@ -72,7 +68,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Sem permissão para sincronização." }, { status: 403 });
     }
 
-    // Valida configuração
     const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
     const sheetName =
       process.env.GOOGLE_SHEETS_SHEET_NAME ?? "personalizadoFinanceiro (13)";
@@ -91,12 +86,11 @@ export async function POST(req: Request) {
     const sb = createSupabaseAdmin();
     if (!sb) return NextResponse.json({ error: "Banco não configurado." }, { status: 503 });
 
-    // Cria registro de log
-    const startedAt = new Date().toISOString();
+    // ── Log de início ─────────────────────────────────────────────────────────
     const { data: logRow } = await sb
       .from("portal_sheets_sync_log")
       .insert({
-        started_at: startedAt,
+        started_at: new Date().toISOString(),
         status: "running",
         triggered_by: (portal as any).email ?? "desconhecido",
       })
@@ -130,100 +124,72 @@ export async function POST(req: Request) {
     }
 
     if (rawRows.length === 0) {
-      await updateLog("error", 0, 0, "Planilha vazia ou sem dados.");
+      await updateLog("error", 0, 0, "Planilha vazia.");
       return NextResponse.json({ error: "Planilha vazia." }, { status: 422 });
     }
 
-    // ── 2. Detecta cabeçalho ──────────────────────────────────────────────────
+    // ── 2. Detecta cabeçalho e mapeia colunas ─────────────────────────────────
     const headerIdx = findHeaderRowIndex(rawRows);
     const headers = rawRows[headerIdx] ?? [];
     const colMap = buildColumnMap(headers);
     const dataRows = rawRows.slice(headerIdx + 1);
 
     // ── 3. Transforma linhas ──────────────────────────────────────────────────
-    interface LancamentoRow {
-      cod: string;
-      data_competencia: string | null;
-      data_pagamento: string | null;
-      data_vencimento: string | null;
-      nome_razao_social: string | null;
-      evento: string | null;
-      plano_primario_contas: string | null;
-      classificacao: string | null;
-      sub_classificacao: string | null;
-      rec_desp: string | null;
-      ent_saida: string | null;
-      situacao: string | null;
-      valor: number;
-      conta_caixa: string | null;
-      synced_at: string;
-    }
-
     const now = new Date().toISOString();
-    const records: LancamentoRow[] = [];
+
+    // Helper: extrai texto de coluna opcional
+    const col = (row: string[], idx: number | undefined): string =>
+      idx !== undefined ? (row[idx] ?? "").trim() : "";
+
+    const records = [];
 
     for (const row of dataRows) {
-      const cod =
-        colMap.cod !== undefined ? (row[colMap.cod] ?? "").trim() : "";
+      const cod = col(row, colMap.cod);
+      if (!cod || cod.toLowerCase().includes("total")) continue;
 
-      // Ignora linhas sem Cód. (linhas vazias ou subtotais)
-      if (!cod || cod === "" || cod.toLowerCase().includes("total")) continue;
+      // Valor bruto — negativo indica Despesa no e-Gestor
+      const rawValor = col(row, colMap.valor);
+      const valorRaw = parseFloat(
+        rawValor.replace(/R\$\s?/, "").replace(/\./g, "").replace(",", ".")
+      ) || 0;
+
+      // Rec./Desp.: usa coluna T se existir, senão deriva do sinal
+      const recDespCol = col(row, colMap.rec_desp);
+      const recDesp =
+        recDespCol ||
+        (valorRaw < 0 ? "Despesas" : valorRaw > 0 ? "Receitas" : null);
+
+      // Nome: prefere col X (Nome/Razão Social limpo) → col W (Tratativa Oculta) → col E
+      const nomeX = col(row, colMap.nome_completo);
+      const nomeW = col(row, colMap.tratativa_oculta);
+      const nomeE = col(row, colMap.nome_razao_social);
+      const nomeDisplay =
+        (nomeX && nomeX !== "*NÃO INFORMADO*" ? nomeX : null) ||
+        (nomeW && nomeW !== "*NÃO INFORMADO*" ? nomeW : null) ||
+        (nomeE && nomeE !== "*NÃO INFORMADO*" ? nomeE : null) ||
+        null;
 
       records.push({
         cod,
-        data_competencia:
-          colMap.data_competencia !== undefined
-            ? parseDateBR(row[colMap.data_competencia] ?? "")
-            : null,
-        data_pagamento:
-          colMap.data_pagamento !== undefined
-            ? parseDateBR(row[colMap.data_pagamento] ?? "")
-            : null,
-        data_vencimento:
-          colMap.data_vencimento !== undefined
-            ? parseDateBR(row[colMap.data_vencimento] ?? "")
-            : null,
-        nome_razao_social:
-          colMap.nome_razao_social !== undefined
-            ? (row[colMap.nome_razao_social] ?? "").trim() || null
-            : null,
-        evento:
-          colMap.evento !== undefined
-            ? (row[colMap.evento] ?? "").trim() || null
-            : null,
-        plano_primario_contas:
-          colMap.plano_primario_contas !== undefined
-            ? (row[colMap.plano_primario_contas] ?? "").trim() || null
-            : null,
-        classificacao:
-          colMap.classificacao !== undefined
-            ? (row[colMap.classificacao] ?? "").trim() || null
-            : null,
-        sub_classificacao:
-          colMap.sub_classificacao !== undefined
-            ? (row[colMap.sub_classificacao] ?? "").trim() || null
-            : null,
-        rec_desp:
-          colMap.rec_desp !== undefined
-            ? (row[colMap.rec_desp] ?? "").trim() || null
-            : null,
-        ent_saida:
-          colMap.ent_saida !== undefined
-            ? (row[colMap.ent_saida] ?? "").trim() || null
-            : null,
-        situacao:
-          colMap.situacao !== undefined
-            ? (row[colMap.situacao] ?? "").trim() || null
-            : null,
-        valor:
-          colMap.valor !== undefined
-            ? parseValueBR(row[colMap.valor] ?? "")
-            : 0,
-        conta_caixa:
-          colMap.conta_caixa !== undefined
-            ? (row[colMap.conta_caixa] ?? "").trim() || null
-            : null,
-        synced_at: now,
+        descricao:             col(row, colMap.descricao)            || null,
+        conta_caixa:           col(row, colMap.conta_caixa)          || null,
+        plano_contas:          col(row, colMap.plano_contas)         || null,
+        nome_razao_social:     nomeDisplay,
+        forma_pagamento:       col(row, colMap.forma_pagamento)      || null,
+        situacao:              col(row, colMap.situacao)             || null,
+        valor:                 Math.abs(valorRaw),
+        data_vencimento:       parseDateBR(col(row, colMap.data_vencimento)),
+        data_pagamento:        parseDateBR(col(row, colMap.data_pagamento)),
+        data_cred_deb:         parseDateBR(col(row, colMap.data_cred_deb)),
+        plano_primario_contas: col(row, colMap.plano_primario_contas) || null,
+        classificacao:         col(row, colMap.classificacao)        || null,
+        sub_classificacao:     col(row, colMap.sub_classificacao)    || null,
+        ent_saida:             col(row, colMap.ent_saida)            || null,
+        rec_desp:              recDesp,
+        tratativa:             col(row, colMap.tratativa)            || null,
+        tratativa_oculta:      col(row, colMap.tratativa_oculta)     || null,
+        evento:                col(row, colMap.evento)               || null,
+        synced_at:             now,
       });
     }
 
@@ -238,14 +204,14 @@ export async function POST(req: Request) {
       if (error) {
         await updateLog("error", dataRows.length, totalUpserted, error.message);
         return NextResponse.json(
-          { error: `Erro ao salvar lote ${i / BATCH_SIZE + 1}: ${error.message}` },
+          { error: `Erro no lote ${i / BATCH_SIZE + 1}: ${error.message}` },
           { status: 500 }
         );
       }
       totalUpserted += batch.length;
     }
 
-    // ── 5. Finaliza log ───────────────────────────────────────────────────────
+    // ── 5. Finaliza ───────────────────────────────────────────────────────────
     await updateLog("success", dataRows.length, totalUpserted);
 
     return NextResponse.json({
