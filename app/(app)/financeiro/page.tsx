@@ -48,8 +48,39 @@ const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set",
 
 type LancStatusFilter = "todos" | "pago" | "aberto";
 
+interface LancTotais {
+  total_receitas_pagas: number;
+  total_despesas_pagas: number;
+  total_a_receber: number;
+  total_a_pagar: number;
+  saldo_realizado: number;
+  resultado_projetado: number;
+  count_total: number;
+}
+
+function useLancamentosResumo() {
+  const [totais, setTotais] = React.useState<LancTotais | null>(null);
+  const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    fetch("/api/lancamentos/resumo", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.totais?.[0]) setTotais(d.totais[0] as LancTotais);
+      })
+      .catch(() => {});
+    fetch("/api/sync/sheets", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.last_sync?.finished_at && setUpdatedAt(d.last_sync.finished_at as string))
+      .catch(() => {});
+  }, []);
+
+  return { totais, updatedAt };
+}
+
 export default function FinanceiroPage() {
   const { state } = useAppState();
+  const { totais: lancTotais, updatedAt } = useLancamentosResumo();
 
   const totals = React.useMemo(() => computeTotals(state.financeiro), [state.financeiro]);
   const fluxoMensal = React.useMemo(() => computeFluxoMensal(state.financeiro), [state.financeiro]);
@@ -58,15 +89,35 @@ export default function FinanceiroPage() {
     [state.edicoes, state.financeiro],
   );
 
+  const displayTotals: Totals = lancTotais
+    ? {
+        saldoConferido: lancTotais.saldo_realizado,
+        aReceber: lancTotais.total_a_receber,
+        aReceberCount: 0,
+        aPagar: lancTotais.total_a_pagar,
+        aPagarCount: 0,
+        resultadoProjetado: lancTotais.resultado_projetado,
+        entradasPeriodo: lancTotais.total_receitas_pagas,
+        saidasPeriodo: lancTotais.total_despesas_pagas,
+      }
+    : totals;
+
   useRegisterPageState({
     module: "Financeiro",
     summary: [
-      { label: "A receber (em aberto)", value: formatCurrencyBRL(totals.aReceber) },
-      { label: "A pagar (em aberto)", value: formatCurrencyBRL(totals.aPagar) },
-      { label: "Saldo conferido", value: formatCurrencyBRL(totals.saldoConferido) },
-      { label: "Resultado projetado", value: formatCurrencyBRL(totals.resultadoProjetado) },
+      { label: "A receber (em aberto)", value: formatCurrencyBRL(displayTotals.aReceber) },
+      { label: "A pagar (em aberto)", value: formatCurrencyBRL(displayTotals.aPagar) },
+      { label: "Saldo conferido", value: formatCurrencyBRL(displayTotals.saldoConferido) },
+      { label: "Resultado projetado", value: formatCurrencyBRL(displayTotals.resultadoProjetado) },
     ],
   });
+
+  const relTime = (iso: string) => {
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 3600) return `${Math.floor(diff / 60)} min atrás`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} h atrás`;
+    return `${Math.floor(diff / 86400)} dias atrás`;
+  };
 
   return (
     <div className="space-y-5">
@@ -79,13 +130,15 @@ export default function FinanceiroPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Financeiro</h1>
           <p className="text-xs text-muted-foreground">
-            Fluxo de caixa, contas a pagar e a receber, margem por edição e auto-conciliação bancária
+            {lancTotais?.count_total
+              ? `${lancTotais.count_total.toLocaleString("pt-BR")} movimentações registradas${updatedAt ? ` · atualizado ${relTime(updatedAt)}` : ""}`
+              : "Fluxo de caixa, contas a pagar e a receber, margem por edição"}
           </p>
         </div>
         <AutoConciliacaoSheet />
       </motion.div>
 
-      <KpiGrid totals={totals} />
+      <KpiGrid totals={displayTotals} />
 
       <PortalFinanceiroTabs />
 
@@ -143,14 +196,14 @@ function KpiGrid({ totals }: { totals: Totals }) {
       <KpiCard
         label="A receber"
         value={totals.aReceber}
-        hint={`${totals.aReceberCount} lançamentos em aberto`}
+        hint={totals.aReceberCount > 0 ? `${totals.aReceberCount} em aberto` : undefined}
         icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
         accent="emerald"
       />
       <KpiCard
         label="A pagar"
         value={totals.aPagar}
-        hint={`${totals.aPagarCount} lançamentos em aberto`}
+        hint={totals.aPagarCount > 0 ? `${totals.aPagarCount} em aberto` : undefined}
         icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
         accent="rose"
       />

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { getPortalSectorFromEmail } from "@/lib/portal-sector";
 import {
   EMPTY_SNAPSHOT,
   type PortalFinanceiroSnapshot,
@@ -84,7 +85,7 @@ export async function POST(req: Request) {
     const portal = await requirePortalSession();
     if (!portal) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
 
-    const sector = (portal as any).sector ?? "";
+    const sector = getPortalSectorFromEmail(portal.email);
     if (!WRITE_SECTORS.has(sector)) {
       return NextResponse.json({ error: "Sem permissão para edição." }, { status: 403 });
     }
