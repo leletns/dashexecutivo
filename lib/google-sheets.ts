@@ -258,13 +258,20 @@ export function buildColumnMap(headers: string[]): SheetColumnMap {
   return map;
 }
 
-/** Converte data brasileira (dd/mm/yyyy) para ISO (yyyy-mm-dd). */
+/** Converte data brasileira (dd/mm/yyyy) ou americana (mm/dd/yyyy) para ISO (yyyy-mm-dd). */
 export function parseDateBR(value: string): string | null {
   if (!value?.trim()) return null;
   const v = value.trim();
-  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    let d = parseInt(m[1], 10);
+    let mo = parseInt(m[2], 10);
+    const y = parseInt(m[3], 10);
+    if (mo > 12 && d <= 12) { [d, mo] = [mo, d]; }
+    if (mo > 12 || mo < 1 || d > 31 || d < 1) return null;
+    return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  }
   return null;
 }
 

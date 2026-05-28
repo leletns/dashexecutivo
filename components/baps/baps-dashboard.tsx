@@ -169,7 +169,7 @@ export function BapsDashboard({
   ]);
 
   useRegisterPageState({
-    module: sector === "executivo" ? "Dash executivo" : `Dash · ${sectorShortLabel(sector)}`,
+    module: sector === "executivo" ? "Painel da presidência" : `Painel · ${sectorShortLabel(sector)}`,
     summary: pageSummary,
   });
 
@@ -180,7 +180,7 @@ export function BapsDashboard({
           BAPS · relatório executivo
         </p>
         <p className="text-lg font-semibold text-neutral-900 mt-1 tracking-tight">
-          Dash executivo — referência {data.financeiro_resumo.referencia_mes}
+          Painel executivo — referência {data.financeiro_resumo.referencia_mes}
         </p>
         <p className="text-xs text-neutral-600 mt-1">
           Documento otimizado para impressão / PDF (Ctrl+P · Guardar como PDF).
@@ -198,7 +198,7 @@ export function BapsDashboard({
             {sector === "executivo" ? "Painel da presidência" : sectorShortLabel(sector)}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-            Dash executivo
+            Painel da presidência
           </h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground leading-relaxed">
             {sector === "executivo" ? (
@@ -244,6 +244,11 @@ export function BapsDashboard({
         </motion.div>
       )}
 
+      {sector === "executivo" && (
+        <motion.div initial="hidden" animate="show" custom={3} variants={fade}>
+          <LancamentosKpiStrip />
+        </motion.div>
+      )}
 
       {showZone(sector, "macro_juridico") && (
         <motion.section
@@ -862,5 +867,99 @@ function ContratoTable({ rows, empty }: { rows: BapsSnapshot["contratos"]; empty
         ))}
       </TableBody>
     </Table>
+  );
+}
+
+// ─── LancamentosKpiStrip ──────────────────────────────────────────────────────
+// Mostra KPIs financeiros reais no painel da presidência.
+// Atualiza sempre que o financeiro faz upload.
+
+interface LancTotais {
+  total_receitas_pagas: number;
+  total_despesas_pagas: number;
+  total_a_receber: number;
+  total_a_pagar: number;
+  saldo_realizado: number;
+  resultado_projetado: number;
+  count_total: number;
+}
+
+function LancamentosKpiStrip() {
+  const [totais, setTotais] = React.useState<LancTotais | null>(null);
+  const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    fetch("/api/lancamentos/resumo", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        if (!d?.totais?.[0]) return;
+        setTotais(d.totais[0]);
+      })
+      .catch(() => {});
+    fetch("/api/sync/sheets", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => d?.last_sync?.finished_at && setUpdatedAt(d.last_sync.finished_at))
+      .catch(() => {});
+  }, []);
+
+  if (!totais || !totais.count_total) return null;
+
+  const rel = (iso: string) => {
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 3600) return `${Math.floor(diff / 60)} min atrás`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} h atrás`;
+    return `${Math.floor(diff / 86400)} dias atrás`;
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
+            Resumo financeiro
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {totais.count_total.toLocaleString("pt-BR")} movimentações registradas
+            {updatedAt && ` · atualizado ${rel(updatedAt)}`}
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <LancKpi
+          label="Receitas recebidas"
+          value={formatCurrencyBRL(totais.total_receitas_pagas)}
+          color="text-emerald-600 dark:text-emerald-400"
+        />
+        <LancKpi
+          label="Despesas pagas"
+          value={formatCurrencyBRL(totais.total_despesas_pagas)}
+          color="text-rose-600 dark:text-rose-400"
+        />
+        <LancKpi
+          label="Saldo realizado"
+          value={formatCurrencyBRL(totais.saldo_realizado)}
+          color={totais.saldo_realizado >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}
+        />
+        <LancKpi
+          label="A receber"
+          value={formatCurrencyBRL(totais.total_a_receber)}
+          color="text-amber-600 dark:text-amber-400"
+        />
+        <LancKpi
+          label="A pagar"
+          value={formatCurrencyBRL(totais.total_a_pagar)}
+          color="text-orange-600 dark:text-orange-400"
+        />
+      </div>
+    </div>
+  );
+}
+
+function LancKpi({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <Card className="p-4">
+      <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground font-medium">{label}</p>
+      <p className={cn("mt-1.5 text-lg font-semibold tabular-nums leading-none", color)}>{value}</p>
+    </Card>
   );
 }

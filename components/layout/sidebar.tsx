@@ -35,7 +35,7 @@ export function Sidebar() {
           <Logo size={34} withGlow />
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-semibold tracking-tight">
-              Dash executivo
+              Portal BAPS
             </span>
             <span className="text-[11px] text-muted-foreground">
               {sector === "executivo" ? "Visão integral" : "Acesso do seu setor"}

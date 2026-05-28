@@ -23,7 +23,7 @@ export type NavItem = {
 };
 
 export const STATIC_NAV: NavItem[] = [
-  { href: "/dashboard", label: "Dash executivo", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Painel principal", icon: LayoutDashboard },
   {
     href: "/entrada-dados",
     label: "Entrada de dados",

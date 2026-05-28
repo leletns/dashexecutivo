@@ -14,27 +14,24 @@ const inter = Inter({
 
 const siteUrl = "https://portalexecutivo.app";
 const description =
-  "Dash executivo: inteligência estratégica, gestão jurídica, contábil e de marketing em tempo real.";
+  "Portal BAPS: visão integrada da organização — financeiro, jurídico, contábil e muito mais.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Dash executivo",
-    template: "%s · Dash executivo",
+    default: "Portal BAPS",
+    template: "%s · Portal BAPS",
   },
   description,
-  applicationName: "Dash executivo",
-  authors: [{ name: "Dash executivo" }],
+  applicationName: "Portal BAPS",
+  authors: [{ name: "Portal BAPS" }],
   generator: "Next.js",
   keywords: [
-    "Dash executivo",
-    "Dashboard executivo",
-    "Inteligência estratégica",
+    "Portal BAPS",
     "Gestão financeira",
     "Gestão jurídica",
     "Gestão contábil",
     "Marketing",
-    "Auto-conciliação bancária",
     "Tempo real",
   ],
   category: "business",
@@ -42,14 +39,14 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "pt_BR",
-    siteName: "Dash executivo",
-    title: "Dash executivo",
+    siteName: "Portal BAPS",
+    title: "Portal BAPS",
     description,
     url: siteUrl,
   },
   twitter: {
     card: "summary_large_image",
-    title: "Dash executivo",
+    title: "Portal BAPS",
     description,
   },
   robots: { index: false, follow: false },

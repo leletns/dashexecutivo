@@ -96,7 +96,7 @@ export default function FinanceiroPage() {
           <TabsTrigger value="receber">Contas a receber</TabsTrigger>
           <TabsTrigger value="pagar">Contas a pagar</TabsTrigger>
           <TabsTrigger value="margem">Margem por evento</TabsTrigger>
-          <TabsTrigger value="egestor">e-Gestor</TabsTrigger>
+          <TabsTrigger value="egestor">Atualizar dados</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-2">
