@@ -10,7 +10,7 @@
  *   evento    — filtro exato por evento
  *   situacao  — filtro exato por situação
  *   rec_desp  — "Receitas" | "Despesas"
- *   mes       — yyyy-mm (filtra por data_competencia)
+ *   ano       — filtro por ano (YYYY) usando data_vencimento
  *   conta     — filtro por conta_caixa
  */
 
@@ -38,7 +38,7 @@ export async function GET(req: Request) {
     const evento = searchParams.get("evento")?.trim() ?? "";
     const situacao = searchParams.get("situacao")?.trim() ?? "";
     const recDesp = searchParams.get("rec_desp")?.trim() ?? "";
-    const mes = searchParams.get("mes")?.trim() ?? "";
+    const ano = searchParams.get("ano")?.trim() ?? "";
     const conta = searchParams.get("conta")?.trim() ?? "";
 
     // ── Query base ────────────────────────────────────────────────────────────
@@ -54,21 +54,21 @@ export async function GET(req: Request) {
 
     if (search) {
       query = query.or(
-        `nome_razao_social.ilike.%${search}%,evento.ilike.%${search}%,classificacao.ilike.%${search}%,plano_primario_contas.ilike.%${search}%`
+        `nome_razao_social.ilike.%${search}%,evento.ilike.%${search}%,classificacao.ilike.%${search}%,descricao.ilike.%${search}%`
       );
     }
     if (evento) query = query.eq("evento", evento);
     if (situacao) query = query.eq("situacao", situacao);
     if (recDesp) query = query.eq("rec_desp", recDesp);
     if (conta) query = query.eq("conta_caixa", conta);
-    if (mes) {
-      const start = `${mes}-01`;
-      const end = `${mes}-31`;
-      query = query.gte("data_competencia", start).lte("data_competencia", end);
+    if (ano) {
+      query = query
+        .gte("data_vencimento", `${ano}-01-01`)
+        .lte("data_vencimento", `${ano}-12-31`);
     }
 
     const { data, count, error } = await query
-      .order("data_competencia", { ascending: false })
+      .order("data_vencimento", { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -22,6 +22,14 @@ const fade = {
   }),
 };
 
+function fmtCompact(value: number): string {
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${sign}R$ ${(abs / 1_000_000).toFixed(2).replace(".", ",")}M`;
+  if (abs >= 1_000) return `${sign}R$ ${(abs / 1_000).toFixed(1).replace(".", ",")}k`;
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
+}
+
 async function saveField(table: string, payload: Record<string, unknown>) {
   await fetch("/api/baps/mutate", {
     method: "POST",
@@ -136,16 +144,22 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
           ) : (
             <button
               onClick={beginSaldo}
-              className="group/val flex items-center gap-2 text-left"
+              className="group/val flex items-center gap-2 text-left min-w-0 w-full"
               aria-label="Editar dinheiro em caixa"
             >
-              <span className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
-                {formatCurrencyBRL(saldo)}
+              <span
+                className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate"
+                title={formatCurrencyBRL(saldo)}
+              >
+                {fmtCompact(saldo)}
               </span>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity" />
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />
             </button>
           )}
           <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{déficitSub}</p>
+          <a href="/financeiro" className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors self-start leading-none">
+            Ver detalhes →
+          </a>
         </div>
       </motion.div>
 
@@ -157,10 +171,13 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
             <TrendingUp className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
             <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Satisfação dos membros</span>
           </div>
-          <p className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
+          <p className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate">
             {nps25.toFixed(1).replace(".", ",")}
           </p>
           <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{growthSub}</p>
+          <span className="text-[10px] text-muted-foreground/60 leading-none">
+            Gráfico visível no painel
+          </span>
         </div>
       </motion.div>
 
@@ -172,10 +189,13 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
             <Scale className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
             <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Contratos e jurídico</span>
           </div>
-          <p className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
+          <p className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate">
             {conform}%
           </p>
           <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{procSub}</p>
+          <a href="/juridico" className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors self-start leading-none">
+            Ver detalhes →
+          </a>
         </div>
       </motion.div>
 
@@ -212,16 +232,19 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
           ) : (
             <button
               onClick={beginAtivos}
-              className="group/val flex items-center gap-2 text-left"
+              className="group/val flex items-center gap-2 text-left min-w-0 w-full"
               aria-label="Editar total de associados"
             >
-              <span className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
+              <span className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate">
                 {formatNumberBR(ativos)}
               </span>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity" />
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />
             </button>
           )}
           <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{ativosSub}</p>
+          <a href="/associados" className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors self-start leading-none">
+            Ver detalhes →
+          </a>
         </div>
       </motion.div>
     </section>
