@@ -146,17 +146,23 @@ export function SheetsSyncPanel() {
         setUploadProgress("Processando planilha…");
         const XLSX = await import("xlsx");
         const ab = await file.arrayBuffer();
-        const wb = XLSX.read(ab, { type: "array", cellDates: false, raw: false });
+        // cellDates: true → datas viram JS Date; dateNF força formato ISO no output
+        const wb = XLSX.read(ab, { type: "array", cellDates: true });
 
         // Prioridade: aba personalizadoFinanceiro → primeira aba
         const sheetName =
-          wb.SheetNames.find((n) => n === (process.env.NEXT_PUBLIC_SHEET_NAME ?? "personalizadoFinanceiro (13)")) ??
+          wb.SheetNames.find((n) => n === "personalizadoFinanceiro (13)") ??
           wb.SheetNames.find((n) => n.toLowerCase().includes("personalizadofinanceiro") || n.toLowerCase().includes("personalizado")) ??
           wb.SheetNames[0];
 
         if (!sheetName) { toast.error("Nenhuma aba encontrada no arquivo."); return; }
         const ws = wb.Sheets[sheetName];
-        allRows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: "", raw: false }) as string[][];
+        allRows = XLSX.utils.sheet_to_json<string[]>(ws, {
+          header: 1,
+          defval: "",
+          raw: false,
+          dateNF: "yyyy-mm-dd",  // força datas como ISO — evita "2022-31-01"
+        }) as string[][];
       } else {
         // CSV: lê como texto
         const text = await file.text();
