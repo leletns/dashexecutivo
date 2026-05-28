@@ -17,10 +17,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useProfile, getInitials, type AccentTheme } from "@/lib/profile";
+import { usePortalSession } from "@/components/layout/portal-sector-context";
+import { sectorShortLabel } from "@/lib/portal-sector";
 import { cn } from "@/lib/utils";
 
 export function Header() {
   const { profile, update, hydrated } = useProfile();
+  const { sector } = usePortalSession();
+  const roleLabel = sector === "executivo" ? "Presidência" : sectorShortLabel(sector);
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(profile.name);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -185,7 +189,7 @@ export function Header() {
               )}
             </div>
             <div className="text-[11px] text-muted-foreground truncate">
-              {profile.role}
+              {roleLabel}
             </div>
           </div>
         </div>

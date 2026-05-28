@@ -43,9 +43,7 @@ export function CongressOperacaoPanel({ data }: { data: BapsSnapshot }) {
       <div className="px-5 pt-5 pb-3 border-b border-border/50">
         <h2 className="text-sm font-semibold tracking-tight">5º Congresso · disponibilidade e vendas</h2>
         <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-          Referência operacional <span className="font-medium text-foreground">{c.referencia}</span>. Números editáveis em{" "}
-          <span className="font-medium text-foreground">Entrada de dados → 5º Congresso</span> e vendas por evento em{" "}
-          <span className="font-medium text-foreground">Financeiro</span>.
+          Referência: <span className="font-medium text-foreground">{c.referencia}</span>.
         </p>
       </div>
 

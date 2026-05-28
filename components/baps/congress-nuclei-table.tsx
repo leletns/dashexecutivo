@@ -25,7 +25,7 @@ export function CongressNucleiTable({ trilhas }: { trilhas: BapsEventoTrilhaRow[
       <div className="px-5 pt-5 pb-3 border-b border-border/50">
         <h2 className="text-sm font-semibold tracking-tight">Overview de núcleos · 5º Congresso</h2>
         <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-          Status operacional por eixo com semáforo animado (sem emojis) e detalhe executivo.
+          Status atual dos núcleos do 5º Congresso.
         </p>
       </div>
       <Table>
