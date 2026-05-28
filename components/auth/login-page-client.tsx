@@ -105,7 +105,7 @@ export function LoginPageClient({ callbackUrl, authError }: LoginPageClientProps
           <Logo size={30} withGlow />
           <div className="leading-tight">
             <div className="text-sm font-semibold tracking-tight">
-              Dash executivo
+              Portal BAPS
             </div>
             <div className="text-[10px] text-muted-foreground -mt-0.5">
               Visão consolidada da operação
@@ -264,7 +264,7 @@ export function LoginPageClient({ callbackUrl, authError }: LoginPageClientProps
           <div className="flex items-center gap-2">
             <Logo size={16} />
             <span>
-              © {year} Dash executivo. Todos os direitos reservados.
+              © {year} Portal BAPS. Todos os direitos reservados.
             </span>
           </div>
           <div className="flex items-center gap-4">

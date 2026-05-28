@@ -80,6 +80,9 @@ async function mutate(
     const err = await res.json().catch(() => ({}));
     throw new Error((err as any).error ?? "Erro ao salvar.");
   }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("portal:data-updated"));
+  }
   return res.json();
 }
 
@@ -140,7 +143,7 @@ export function PortalFinanceiroTabs() {
         <div className="ml-auto">
           <Select
             value={mes}
-            onChange={(v) => setMes(v)}
+            onValueChange={(v) => setMes(v)}
             options={mesOptions}
             className="h-8 text-xs"
           />
@@ -350,7 +353,7 @@ function ContasTab({
               />
               <Select
                 value={form.tipo ?? "corrente"}
-                onChange={(v) => setForm((f) => ({ ...f, tipo: v as ContaBancaria["tipo"] }))}
+                onValueChange={(v) => setForm((f) => ({ ...f, tipo: v as ContaBancaria["tipo"] }))}
                 options={[
                   { value: "corrente", label: "Corrente" },
                   { value: "poupanca", label: "Poupança" },

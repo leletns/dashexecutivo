@@ -22,6 +22,14 @@ const fade = {
   }),
 };
 
+function fmtCompact(value: number): string {
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${sign}R$ ${(abs / 1_000_000).toFixed(2).replace(".", ",")}M`;
+  if (abs >= 1_000) return `${sign}R$ ${(abs / 1_000).toFixed(1).replace(".", ",")}k`;
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
+}
+
 async function saveField(table: string, payload: Record<string, unknown>) {
   await fetch("/api/baps/mutate", {
     method: "POST",
@@ -74,44 +82,6 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
     setAtivos(n);
     setEditAtivos(false);
     saveField("associados_resumo", { total_ativos: n });
-  };
-
-  // — Card 2: Satisfação dos membros (editável)
-  const [nps, setNps] = React.useState(nps25);
-  const [editNps, setEditNps] = React.useState(false);
-  const [draftNps, setDraftNps] = React.useState("");
-  const npsRef = React.useRef<HTMLInputElement>(null);
-  React.useEffect(() => setNps(nps25), [nps25]);
-
-  const beginNps = () => {
-    setDraftNps(String(nps).replace(".", ","));
-    setEditNps(true);
-    requestAnimationFrame(() => { npsRef.current?.focus(); npsRef.current?.select(); });
-  };
-  const commitNps = () => {
-    const n = parseLooseNumber(draftNps);
-    setNps(n);
-    setEditNps(false);
-    saveField("financeiro_resumo", { nps_manual: n });
-  };
-
-  // — Card 3: Contratos e jurídico (editável)
-  const [conformidade, setConformidade] = React.useState(conform);
-  const [editConformidade, setEditConformidade] = React.useState(false);
-  const [draftConformidade, setDraftConformidade] = React.useState("");
-  const conformidadeRef = React.useRef<HTMLInputElement>(null);
-  React.useEffect(() => setConformidade(conform), [conform]);
-
-  const beginConformidade = () => {
-    setDraftConformidade(String(conformidade));
-    setEditConformidade(true);
-    requestAnimationFrame(() => { conformidadeRef.current?.focus(); conformidadeRef.current?.select(); });
-  };
-  const commitConformidade = () => {
-    const n = Math.min(100, Math.max(0, Math.round(parseLooseNumber(draftConformidade))));
-    setConformidade(n);
-    setEditConformidade(false);
-    saveField("financeiro_resumo", { conformidade_manual: n });
   };
 
   const growthSub =
@@ -174,16 +144,22 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
           ) : (
             <button
               onClick={beginSaldo}
-              className="group/val flex items-center gap-2 text-left"
+              className="group/val flex items-center gap-2 text-left min-w-0 w-full"
               aria-label="Editar dinheiro em caixa"
             >
-              <span className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
-                {formatCurrencyBRL(saldo)}
+              <span
+                className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate"
+                title={formatCurrencyBRL(saldo)}
+              >
+                {fmtCompact(saldo)}
               </span>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity" />
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />
             </button>
           )}
           <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{déficitSub}</p>
+          <a href="/financeiro" className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors self-start leading-none">
+            Ver detalhes →
+          </a>
         </div>
       </motion.div>
 
@@ -195,34 +171,13 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
             <TrendingUp className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
             <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Satisfação dos membros</span>
           </div>
-          {editNps ? (
-            <div className="flex items-center gap-2">
-              <Input
-                ref={npsRef}
-                value={draftNps}
-                onChange={(e) => setDraftNps(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitNps();
-                  if (e.key === "Escape") setEditNps(false);
-                }}
-                onBlur={commitNps}
-                inputMode="decimal"
-                className="h-10 text-xl font-semibold tabular-nums"
-                placeholder="0 a 100"
-              />
-              <button onClick={commitNps} className="h-9 w-9 grid place-items-center rounded-lg bg-foreground text-background shrink-0" aria-label="Salvar">
-                <Check className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <button onClick={beginNps} className="group/val flex items-center gap-2 text-left" aria-label="Editar satisfação">
-              <span className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
-                {nps.toFixed(1).replace(".", ",")}
-              </span>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity" />
-            </button>
-          )}
+          <p className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate">
+            {nps25.toFixed(1).replace(".", ",")}
+          </p>
           <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{growthSub}</p>
+          <span className="text-[10px] text-muted-foreground/60 leading-none">
+            Gráfico visível no painel
+          </span>
         </div>
       </motion.div>
 
@@ -234,34 +189,13 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
             <Scale className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
             <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Contratos e jurídico</span>
           </div>
-          {editConformidade ? (
-            <div className="flex items-center gap-2">
-              <Input
-                ref={conformidadeRef}
-                value={draftConformidade}
-                onChange={(e) => setDraftConformidade(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitConformidade();
-                  if (e.key === "Escape") setEditConformidade(false);
-                }}
-                onBlur={commitConformidade}
-                inputMode="numeric"
-                className="h-10 text-xl font-semibold tabular-nums"
-                placeholder="0 a 100"
-              />
-              <button onClick={commitConformidade} className="h-9 w-9 grid place-items-center rounded-lg bg-foreground text-background shrink-0" aria-label="Salvar">
-                <Check className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <button onClick={beginConformidade} className="group/val flex items-center gap-2 text-left" aria-label="Editar contratos">
-              <span className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
-                {conformidade}%
-              </span>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity" />
-            </button>
-          )}
+          <p className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate">
+            {conform}%
+          </p>
           <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{procSub}</p>
+          <a href="/juridico" className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors self-start leading-none">
+            Ver detalhes →
+          </a>
         </div>
       </motion.div>
 
@@ -298,16 +232,19 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
           ) : (
             <button
               onClick={beginAtivos}
-              className="group/val flex items-center gap-2 text-left"
+              className="group/val flex items-center gap-2 text-left min-w-0 w-full"
               aria-label="Editar total de associados"
             >
-              <span className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight">
+              <span className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate">
                 {formatNumberBR(ativos)}
               </span>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity" />
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />
             </button>
           )}
           <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{ativosSub}</p>
+          <a href="/associados" className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors self-start leading-none">
+            Ver detalhes →
+          </a>
         </div>
       </motion.div>
     </section>

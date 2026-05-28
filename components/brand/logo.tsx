@@ -140,7 +140,7 @@ export function LogoLockup({
     <div className={cn("flex items-center gap-2.5", className)}>
       <Logo size={size} />
       <div className="leading-tight">
-        <div className="text-sm font-semibold tracking-tight">Dash executivo</div>
+        <div className="text-sm font-semibold tracking-tight">Portal BAPS</div>
         <div className="text-[10px] text-muted-foreground -mt-0.5">
           Visão consolidada
         </div>

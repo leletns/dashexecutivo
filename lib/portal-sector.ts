@@ -30,7 +30,7 @@ export function getPortalSectorFromEmail(
   if (e === "marketing@portal.com") return "marketing";
   // Administrativo
   if (e === "administrativo@portal.com") return "administrativo";
-  // Eventos — Andressa (financeiro), Cristina Ishio
+  // Eventos — Cristina Ishio
   if (e === "eventos@portal.com" || e === "cristina@portal.com") return "eventos";
   return "marketing";
 }
@@ -57,6 +57,8 @@ export function isRouteAllowedForSector(pathname: string, sector: PortalSector):
   }
 
   if (sector === "executivo") return true;
+
+  if (pathname.startsWith("/entrada-dados")) return false;
 
   if (pathname.startsWith("/dashboard")) return true;
 

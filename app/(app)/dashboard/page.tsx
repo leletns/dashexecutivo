@@ -5,9 +5,9 @@ import { getPortalSession } from "@/lib/auth-server";
 import { getPortalSectorFromEmail } from "@/lib/portal-sector";
 
 export const metadata: Metadata = {
-  title: "Dash executivo",
+  title: "Painel principal",
   description:
-    "Painel executivo · governança jurídica, financeira e operacional.",
+    "Visão geral da organização — financeiro, jurídico e operacional.",
 };
 
 export default async function DashboardPage() {

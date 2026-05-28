@@ -41,7 +41,6 @@ export const authOptions = {
         const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
         const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY;
         if (!rawUrl || !supabaseAnonKey) return null;
-        // garante que a URL não tem /rest/v1 ou outros sufixos
         const supabaseUrl = rawUrl.replace(/\/(rest|auth)(\/.*)?$/, "").replace(/\/$/, "");
 
         const supabase = createClient(supabaseUrl, supabaseAnonKey);

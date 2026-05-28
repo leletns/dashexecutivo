@@ -132,8 +132,7 @@ export function SheetsSyncPanel() {
     if (!file) return;
     e.target.value = "";
 
-    const name = file.name.toLowerCase();
-    const isXlsx = name.endsWith(".xlsx") || name.endsWith(".xls");
+    const isXlsx = file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls");
 
     setUploading(true);
     setUploadProgress("Lendo arquivo…");
@@ -142,29 +141,23 @@ export function SheetsSyncPanel() {
       let allRows: string[][];
 
       if (isXlsx) {
-        // XLSX: parseia no browser com a biblioteca xlsx
+        // XLSX: parseia no browser para evitar limite 4.5MB do Vercel
         setUploadProgress("Processando planilha…");
-        const XLSX = await import("xlsx");
         const ab = await file.arrayBuffer();
-        // cellDates: true → datas viram JS Date; dateNF força formato ISO no output
+        const XLSX = await import("xlsx");
         const wb = XLSX.read(ab, { type: "array", cellDates: true });
-
-        // Prioridade: aba personalizadoFinanceiro → primeira aba
         const sheetName =
-          wb.SheetNames.find((n) => n === "personalizadoFinanceiro (13)") ??
-          wb.SheetNames.find((n) => n.toLowerCase().includes("personalizadofinanceiro") || n.toLowerCase().includes("personalizado")) ??
+          wb.SheetNames.find((n) => n.toLowerCase().includes("personalizado")) ??
           wb.SheetNames[0];
-
-        if (!sheetName) { toast.error("Nenhuma aba encontrada no arquivo."); return; }
         const ws = wb.Sheets[sheetName];
         allRows = XLSX.utils.sheet_to_json<string[]>(ws, {
           header: 1,
           defval: "",
           raw: false,
-          dateNF: "yyyy-mm-dd",  // força datas como ISO — evita "2022-31-01"
+          dateNF: "yyyy-mm-dd",
         }) as string[][];
       } else {
-        // CSV: lê como texto
+        // CSV: processa no browser para evitar limite de tamanho
         const text = await file.text();
         const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(Boolean);
         const firstLine = lines[0] ?? "";
@@ -189,7 +182,7 @@ export function SheetsSyncPanel() {
       for (let i = 0; i < totalChunks; i++) {
         const chunk = dataRows.slice(i * CHUNK, (i + 1) * CHUNK);
         setUploadProgress(
-          `Importando… ${Math.min((i + 1) * CHUNK, dataRows.length).toLocaleString("pt-BR")} / ${dataRows.length.toLocaleString("pt-BR")} lançamentos`
+          `Importando… ${Math.min((i + 1) * CHUNK, dataRows.length).toLocaleString("pt-BR")} / ${dataRows.length.toLocaleString("pt-BR")} registros`
         );
 
         const res = await fetch("/api/sync/batch", {
@@ -210,7 +203,8 @@ export function SheetsSyncPanel() {
         if (i === 0) logId = json.log_id;
       }
 
-      toast.success(`Concluído! ${dataRows.length.toLocaleString("pt-BR")} lançamentos atualizados.`);
+      toast.success(`Concluído! ${dataRows.length.toLocaleString("pt-BR")} movimentações atualizadas.`);
+      window.dispatchEvent(new CustomEvent("portal:data-updated"));
       await fetchStatus();
       setPage(1);
     } catch (err: any) {
@@ -251,9 +245,9 @@ export function SheetsSyncPanel() {
       <Card className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-sm font-semibold tracking-tight">Lançamentos do e-Gestor</div>
+            <div className="text-sm font-semibold tracking-tight">Atualizar movimentações financeiras</div>
             <div className="text-[12px] text-muted-foreground mt-0.5">
-              Envie o arquivo exportado do e-Gestor para atualizar os dados para todos os usuários.
+              Envie o arquivo da planilha financeira para atualizar os dados para todos os usuários.
             </div>
           </div>
 
@@ -302,7 +296,7 @@ export function SheetsSyncPanel() {
                 <>
                   <span className="text-muted-foreground">·</span>
                   <span className="text-muted-foreground">
-                    {status.last_sync.rows_upserted.toLocaleString("pt-BR")} lançamentos
+                    {status.last_sync.rows_upserted.toLocaleString("pt-BR")} movimentações
                   </span>
                 </>
               )}
@@ -316,7 +310,7 @@ export function SheetsSyncPanel() {
         {status?.total_lancamentos ? (
           <div className="mt-4 grid grid-cols-2 gap-3">
             <StatMini
-              label="Total de lançamentos no banco"
+              label="Total de movimentações"
               value={status.total_lancamentos.toLocaleString("pt-BR")}
             />
             <StatMini
@@ -330,7 +324,7 @@ export function SheetsSyncPanel() {
           </div>
         ) : !uploading ? (
           <div className="mt-4 rounded-xl border border-dashed border-border/60 p-6 text-center text-[12px] text-muted-foreground">
-            Nenhum lançamento importado ainda. Clique em <strong>Enviar arquivo</strong> para começar.
+            Nenhuma movimentação importada ainda. Clique em <strong>Enviar arquivo</strong> para começar.
           </div>
         ) : null}
       </Card>
@@ -398,7 +392,7 @@ export function SheetsSyncPanel() {
                 {!loadingRows && lancamentos?.data.length === 0 && (
                   <tr>
                     <td colSpan={8} className="text-center py-10 text-xs text-muted-foreground">
-                      Nenhum lançamento para os filtros selecionados.
+                      Nenhuma movimentação para os filtros selecionados.
                     </td>
                   </tr>
                 )}
@@ -449,7 +443,7 @@ export function SheetsSyncPanel() {
               <span>
                 {((lancamentos.page - 1) * lancamentos.limit + 1).toLocaleString("pt-BR")}–
                 {Math.min(lancamentos.page * lancamentos.limit, lancamentos.total).toLocaleString("pt-BR")} de{" "}
-                {lancamentos.total.toLocaleString("pt-BR")} lançamentos
+                {lancamentos.total.toLocaleString("pt-BR")} movimentações
               </span>
               <div className="flex items-center gap-1">
                 <Button size="icon" variant="ghost" className="h-7 w-7" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>

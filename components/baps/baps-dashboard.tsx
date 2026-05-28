@@ -23,7 +23,6 @@ import { NpsComposedChart } from "@/components/baps/nps-composed-chart";
 import { InstitutionalRiskPanel } from "@/components/baps/institutional-risk-panel";
 import { CongressNucleiTable } from "@/components/baps/congress-nuclei-table";
 import { CongressOperacaoPanel } from "@/components/baps/congress-operacao-panel";
-import { CeoChartBuilder } from "@/components/baps/ceo-chart-builder";
 import type { BapsSnapshot } from "@/lib/baps/types";
 import type { PortalSector } from "@/lib/portal-sector";
 import { sectorShortLabel, showZone } from "@/lib/portal-sector";
@@ -77,6 +76,15 @@ export function BapsDashboard({
   sector: PortalSector;
 }) {
   const [data, setData] = React.useState<BapsSnapshot>(initial);
+  const [lancTotais, setLancTotais] = React.useState<{
+    total_receitas_pagas: number;
+    total_despesas_pagas: number;
+    total_a_receber: number;
+    total_a_pagar: number;
+    saldo_realizado: number;
+    resultado_projetado: number;
+    count_total: number;
+  } | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -94,6 +102,23 @@ export function BapsDashboard({
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    if (sector !== "financeiro" && sector !== "contabil") return;
+    const load = () => {
+      fetch("/api/lancamentos/resumo", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => d?.totais?.[0] && setLancTotais(d.totais[0]))
+        .catch(() => {});
+    };
+    load();
+    const interval = setInterval(load, 30_000);
+    window.addEventListener("portal:data-updated", load);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("portal:data-updated", load);
+    };
+  }, [sector]);
 
   const demandas = data.contratos.filter((c) => c.status !== "ativo");
   const ativos = data.contratos.filter((c) => c.status === "ativo");
@@ -170,7 +195,7 @@ export function BapsDashboard({
   ]);
 
   useRegisterPageState({
-    module: sector === "executivo" ? "Dash executivo" : `Dash · ${sectorShortLabel(sector)}`,
+    module: sector === "executivo" ? "Painel da presidência" : `Painel · ${sectorShortLabel(sector)}`,
     summary: pageSummary,
   });
 
@@ -181,7 +206,7 @@ export function BapsDashboard({
           BAPS · relatório executivo
         </p>
         <p className="text-lg font-semibold text-neutral-900 mt-1 tracking-tight">
-          Dash executivo — referência {data.financeiro_resumo.referencia_mes}
+          Painel executivo — referência {data.financeiro_resumo.referencia_mes}
         </p>
         <p className="text-xs text-neutral-600 mt-1">
           Documento otimizado para impressão / PDF (Ctrl+P · Guardar como PDF).
@@ -196,10 +221,10 @@ export function BapsDashboard({
       >
         <div>
           <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground font-medium">
-            {sector === "executivo" ? "Painel da presidência" : sectorShortLabel(sector)}
+            {sectorShortLabel(sector)}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-            Dash executivo
+            {sector === "executivo" ? "Painel da presidência" : `Painel ${sectorShortLabel(sector)}`}
           </h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground leading-relaxed">
             {sector === "executivo" ? (
@@ -207,7 +232,7 @@ export function BapsDashboard({
                 Visão geral da organização
                 {data.financeiro_resumo.referencia_mes && (
                   <>
-                    {" · "}
+                    {" "}· mês de referência:{" "}
                     <span className="tabular-nums font-medium text-foreground">
                       {data.financeiro_resumo.referencia_mes}
                     </span>
@@ -216,12 +241,16 @@ export function BapsDashboard({
               </>
             ) : (
               <>
-                Visão apenas do setor de <span className="font-medium text-foreground">{sectorShortLabel(sector)}</span>.
-                Referência financeira{" "}
-                <span className="tabular-nums font-medium text-foreground">
-                  {data.financeiro_resumo.referencia_mes}
-                </span>
-                .
+                Visão geral do setor de{" "}
+                <span className="font-medium text-foreground">{sectorShortLabel(sector)}</span>
+                {data.financeiro_resumo.referencia_mes && (
+                  <>
+                    {" "}· referência{" "}
+                    <span className="tabular-nums font-medium text-foreground">
+                      {data.financeiro_resumo.referencia_mes}
+                    </span>
+                  </>
+                )}
               </>
             )}
           </p>
@@ -255,7 +284,6 @@ export function BapsDashboard({
           <LancamentosKpiStrip />
         </motion.div>
       )}
-
 
       {showZone(sector, "macro_juridico") && (
         <motion.section
@@ -292,28 +320,59 @@ export function BapsDashboard({
           variants={fade}
           className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-2"
         >
-          <Kpi
-            label="Saldo global"
-            value={formatCurrencyBRL(data.financeiro_resumo.saldo_global)}
-            hint="Posição líquida consolidada"
-          />
-          <Kpi
-            label="Déficit Q1"
-            value={formatCurrencyBRL(data.financeiro_resumo.deficit_q1)}
-            hint="Resultado parcial trimestral"
-            accent={data.financeiro_resumo.deficit_q1 < 0 ? "rose" : undefined}
-          />
-          <Kpi
-            label="Receitas (eventos)"
-            value={formatCurrencyBRL(totalReceitasEventos)}
-            hint="Soma dos eventos no painel"
-          />
-          <Kpi
-            label="Resultado (eventos)"
-            value={formatCurrencyBRL(resultadoEventos)}
-            hint="Receitas − despesas pagas"
-            accent={resultadoEventos < 0 ? "rose" : undefined}
-          />
+          {lancTotais ? (
+            <>
+              <Kpi
+                label="Receitas recebidas"
+                value={formatCurrencyBRL(lancTotais.total_receitas_pagas)}
+                hint={`${lancTotais.count_total.toLocaleString("pt-BR")} movimentações registradas`}
+                accent="emerald"
+              />
+              <Kpi
+                label="Despesas pagas"
+                value={formatCurrencyBRL(lancTotais.total_despesas_pagas)}
+                hint="Total de pagamentos realizados"
+                accent="rose"
+              />
+              <Kpi
+                label="Saldo realizado"
+                value={formatCurrencyBRL(lancTotais.saldo_realizado)}
+                hint="Receitas recebidas − despesas pagas"
+                accent={lancTotais.saldo_realizado < 0 ? "rose" : undefined}
+              />
+              <Kpi
+                label="Resultado projetado"
+                value={formatCurrencyBRL(lancTotais.resultado_projetado)}
+                hint="Saldo + a receber − a pagar"
+                accent={lancTotais.resultado_projetado < 0 ? "rose" : undefined}
+              />
+            </>
+          ) : (
+            <>
+              <Kpi
+                label="Saldo global"
+                value={formatCurrencyBRL(data.financeiro_resumo.saldo_global)}
+                hint="Posição líquida consolidada"
+              />
+              <Kpi
+                label="Déficit Q1"
+                value={formatCurrencyBRL(data.financeiro_resumo.deficit_q1)}
+                hint="Resultado parcial trimestral"
+                accent={data.financeiro_resumo.deficit_q1 < 0 ? "rose" : undefined}
+              />
+              <Kpi
+                label="Receitas (eventos)"
+                value={formatCurrencyBRL(totalReceitasEventos)}
+                hint="Soma dos eventos no painel"
+              />
+              <Kpi
+                label="Resultado (eventos)"
+                value={formatCurrencyBRL(resultadoEventos)}
+                hint="Receitas − despesas pagas"
+                accent={resultadoEventos < 0 ? "rose" : undefined}
+              />
+            </>
+          )}
         </motion.section>
       )}
 
@@ -740,12 +799,6 @@ export function BapsDashboard({
         </motion.section>
       )}
 
-      {sector === "executivo" && (
-        <motion.section initial="hidden" animate="show" custom={8} variants={fade}>
-          <CeoChartBuilder data={data} />
-        </motion.section>
-      )}
-
       {showZone(sector, "bloco_comercial") && (
         <motion.section initial="hidden" animate="show" custom={9} variants={fade}>
           <CommercialOverview associados={data.associados_resumo} />
@@ -762,34 +815,36 @@ export function BapsDashboard({
 }
 
 function CeoHelpCard() {
+  const items = [
+    {
+      q: 'O que é "Dinheiro em caixa"?',
+      a: "É o valor total disponível nas contas da organização agora. Clique no número para atualizar.",
+    },
+    {
+      q: 'O que é "Satisfação dos membros"?',
+      a: "É uma nota de 0 a 100 que mede o quanto os associados estão satisfeitos com a BAPS. Quanto maior, melhor. A meta é 70 ou mais.",
+    },
+    {
+      q: 'O que é "Total de associados"?',
+      a: "O número de pessoas ativas como membros da BAPS hoje. Clique no número para atualizar.",
+    },
+    {
+      q: "Como atualizar os outros dados?",
+      a: 'Use o botão "Inserir dados" no topo da página para atualizar finanças, eventos, jurídico e muito mais.',
+    },
+  ];
   return (
-    <section className="border-t border-border/30 pt-5 pb-3 print:hidden">
-      <div className="grid sm:grid-cols-2 gap-3">
-        <div className="rounded-xl bg-foreground/[0.03] dark:bg-white/[0.04] px-4 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-3">Sobre os indicadores</p>
-          <div className="space-y-2.5">
-            <p className="text-[12.5px] text-muted-foreground leading-relaxed">
-              <span className="font-medium text-foreground">Dinheiro em caixa</span> — total nas contas da organização. Clique no número para atualizar.
-            </p>
-            <p className="text-[12.5px] text-muted-foreground leading-relaxed">
-              <span className="font-medium text-foreground">Satisfação dos membros</span> — nota de 0 a 100. Meta: 70 ou mais. Clique para ajustar.
-            </p>
-            <p className="text-[12.5px] text-muted-foreground leading-relaxed">
-              <span className="font-medium text-foreground">Total de associados</span> — membros ativos hoje. Clique para atualizar.
-            </p>
+    <Card className="p-5 sm:p-6 rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm shadow-sm print:break-inside-avoid">
+      <h2 className="text-sm font-semibold tracking-tight">Como usar este painel</h2>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {items.map((item) => (
+          <div key={item.q} className="rounded-xl border border-border/40 bg-foreground/[0.02] px-4 py-3">
+            <p className="text-sm font-medium text-foreground leading-snug">{item.q}</p>
+            <p className="mt-1.5 text-[12px] text-muted-foreground leading-relaxed">{item.a}</p>
           </div>
-        </div>
-        <div className="rounded-xl bg-violet-500/[0.06] border border-violet-500/[0.10] px-4 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-violet-500/80 mb-3">Suporte disponível</p>
-          <p className="text-[12.5px] text-muted-foreground leading-relaxed">
-            O suporte pode atualizar qualquer indicador, explicar os números, registrar lançamentos, buscar contratos e responder suas dúvidas.
-          </p>
-          <p className="mt-2.5 text-[12px] text-muted-foreground/60">
-            Use o botão no canto inferior direito da tela.
-          </p>
-        </div>
+        ))}
       </div>
-    </section>
+    </Card>
   );
 }
 
@@ -802,7 +857,7 @@ function Kpi({
   label: string;
   value: string;
   hint?: string;
-  accent?: "rose";
+  accent?: "rose" | "emerald";
 }) {
   return (
     <Card className="p-5 rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm shadow-sm print:break-inside-avoid">
@@ -812,6 +867,7 @@ function Kpi({
         className={cn(
           "mt-3 text-xl font-semibold tracking-tight tabular-nums",
           accent === "rose" && "text-rose-600 dark:text-rose-400",
+          accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
         )}
       >
         {value}
@@ -882,8 +938,8 @@ function ContratoTable({ rows, empty }: { rows: BapsSnapshot["contratos"]; empty
 }
 
 // ─── LancamentosKpiStrip ──────────────────────────────────────────────────────
-// Mostra KPIs reais da planilha do e-Gestor no painel da Ludymilla.
-// Atualiza sempre que Miguel faz upload.
+// Mostra KPIs financeiros reais no painel da presidência.
+// Atualiza sempre que o financeiro faz upload.
 
 interface LancTotais {
   total_receitas_pagas: number;
@@ -899,19 +955,26 @@ function LancamentosKpiStrip() {
   const [totais, setTotais] = React.useState<LancTotais | null>(null);
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
+  const loadData = React.useCallback(() => {
     fetch("/api/lancamentos/resumo", { cache: "no-store" })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => {
-        if (!d?.totais?.[0]) return;
-        setTotais(d.totais[0]);
-      })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.totais?.[0]) setTotais(d.totais[0]); })
       .catch(() => {});
     fetch("/api/sync/sheets", { cache: "no-store" })
-      .then((r) => r.ok ? r.json() : null)
+      .then((r) => (r.ok ? r.json() : null))
       .then((d) => d?.last_sync?.finished_at && setUpdatedAt(d.last_sync.finished_at))
       .catch(() => {});
   }, []);
+
+  React.useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 30_000);
+    window.addEventListener("portal:data-updated", loadData);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("portal:data-updated", loadData);
+    };
+  }, [loadData]);
 
   if (!totais || !totais.count_total) return null;
 
@@ -927,10 +990,10 @@ function LancamentosKpiStrip() {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-            Dados reais — e-Gestor
+            Resumo financeiro
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {totais.count_total.toLocaleString("pt-BR")} lançamentos importados
+            {totais.count_total.toLocaleString("pt-BR")} movimentações registradas
             {updatedAt && ` · atualizado ${rel(updatedAt)}`}
           </p>
         </div>

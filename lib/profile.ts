@@ -14,8 +14,8 @@ export type Profile = {
 const KEY = "portal.profile.v1";
 
 const DEFAULT: Profile = {
-  name: "Ludymilla",
-  role: "CEO · Dash executivo",
+  name: "Portal BAPS",
+  role: "",
   avatarDataUrl: null,
   accent: "lilas",
 };

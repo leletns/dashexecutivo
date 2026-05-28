@@ -5,7 +5,7 @@ import { getPortalSectorFromEmail } from "@/lib/portal-sector";
 
 export const metadata: Metadata = {
   title: "Entrada de dados",
-  description: "Formulários para alimentar o Dash executivo.",
+  description: "Formulários para atualizar os dados do portal.",
 };
 
 export default async function EntradaDadosPage() {

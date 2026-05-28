@@ -16,15 +16,13 @@ import {
 import {
   ArrowDownRight,
   ArrowUpRight,
-  CalendarRange,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleDot,
-  Pencil,
-  Plus,
   Receipt,
-  Trash2,
-  Wallet,
   Search,
+  Wallet,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +31,6 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { AutoConciliacaoSheet } from "@/components/dashboard/auto-conciliacao-sheet";
-import { LancamentoFormDialog } from "@/components/dashboard/lancamento-form-dialog";
 import { PortalFinanceiroTabs } from "@/components/financeiro/portal-financeiro-tabs";
 import { SheetsSyncPanel } from "@/components/financeiro/sheets-sync-panel";
 import {
@@ -42,31 +39,203 @@ import {
   useAppState,
 } from "@/lib/app-state";
 import { useRegisterPageState } from "@/lib/page-state";
-import { cn, formatCurrencyBRL, formatNumberBR } from "@/lib/utils";
+import { cn, formatCurrencyBRL } from "@/lib/utils";
 
 const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const ANOS = ["2022", "2023", "2024", "2025", "2026"];
+
+// ---------------------------------------------------------------------------
+// Compact BRL — prevents number overflow inside KPI cards
+// ---------------------------------------------------------------------------
+
+function fmtCompact(value: number): string {
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) {
+    const s = (abs / 1_000_000).toFixed(1).replace(".", ",");
+    return `${sign}R$ ${s}M`;
+  }
+  if (abs >= 1_000) {
+    const s = (abs / 1_000).toFixed(0);
+    return `${sign}R$ ${s}k`;
+  }
+  return formatCurrencyBRL(value);
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 type LancStatusFilter = "todos" | "pago" | "aberto";
 
+interface FluxoTotais {
+  total_receitas_pagas: number;
+  total_despesas_pagas: number;
+  total_a_receber: number;
+  total_a_pagar: number;
+  saldo_realizado: number;
+  resultado_projetado: number;
+}
+
+interface FluxoRow {
+  mes: string;
+  chave?: string;
+  entradas: number;
+  saidas: number;
+  saldo: number;
+  acumulado: number;
+}
+
+interface EventoRow {
+  nome: string;
+  Receita: number;
+  Despesa: number;
+  resultado: number;
+}
+
+interface LancSupabase {
+  id: string;
+  nome_razao_social?: string;
+  descricao?: string;
+  evento?: string;
+  classificacao?: string;
+  situacao?: string;
+  valor: number;
+  data_vencimento?: string;
+  data_pagamento?: string;
+  rec_desp?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
+
+function useLancamentosFluxo(ano: string) {
+  const [fluxoSupabase, setFluxoSupabase] = React.useState<FluxoRow[]>([]);
+  const [porEvento, setPorEvento] = React.useState<EventoRow[]>([]);
+  const [totaisSupabase, setTotaisSupabase] = React.useState<FluxoTotais | null>(null);
+  const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
+
+  const fetchData = React.useCallback(() => {
+    const url = `/api/lancamentos/fluxo${ano ? `?ano=${encodeURIComponent(ano)}` : ""}`;
+    fetch(url, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: any) => {
+        if (!d) return;
+        setFluxoSupabase(d.fluxo_mensal?.length ? (d.fluxo_mensal as FluxoRow[]) : []);
+        setPorEvento(d.por_evento?.length ? (d.por_evento as EventoRow[]) : []);
+        if (d.totais) setTotaisSupabase(d.totais as FluxoTotais);
+      })
+      .catch(() => {});
+
+    fetch("/api/sync/sheets", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: any) => {
+        if (d?.last_sync?.finished_at) setUpdatedAt(d.last_sync.finished_at as string);
+      })
+      .catch(() => {});
+  }, [ano]);
+
+  React.useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 30_000);
+    window.addEventListener("portal:data-updated", fetchData);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("portal:data-updated", fetchData);
+    };
+  }, [fetchData]);
+
+  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt };
+}
+
+function useTotalCount(ano: string) {
+  const [count, setCount] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    const qs = ano ? `?ano=${encodeURIComponent(ano)}&limit=1` : "?limit=1";
+    fetch(`/api/lancamentos${qs}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: any) => { if (d?.total != null) setCount(Number(d.total)); })
+      .catch(() => {});
+  }, [ano]);
+  return count;
+}
+
+// ---------------------------------------------------------------------------
+// Year selector
+// ---------------------------------------------------------------------------
+
+function AnoSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      {(["", ...ANOS] as string[]).map((a) => (
+        <button
+          key={a || "todos"}
+          onClick={() => onChange(a)}
+          className={cn(
+            "px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors whitespace-nowrap",
+            value === a
+              ? "bg-foreground text-background"
+              : "bg-foreground/[0.06] hover:bg-foreground/[0.11] text-muted-foreground",
+          )}
+        >
+          {a || "Todos"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
 export default function FinanceiroPage() {
   const { state } = useAppState();
+  const [anoFiltro, setAnoFiltro] = React.useState<string>(() => String(new Date().getFullYear()));
+  const [activeTab, setActiveTab] = React.useState("overview");
+
+  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt } = useLancamentosFluxo(anoFiltro);
+  const totalCount = useTotalCount(anoFiltro);
 
   const totals = React.useMemo(() => computeTotals(state.financeiro), [state.financeiro]);
-  const fluxoMensal = React.useMemo(() => computeFluxoMensal(state.financeiro), [state.financeiro]);
+  const fluxoLocal = React.useMemo(() => computeFluxoMensal(state.financeiro), [state.financeiro]);
   const margens = React.useMemo(
     () => computeMargensPorEdicao(state.edicoes, state.financeiro),
     [state.edicoes, state.financeiro],
   );
 
+  const fluxoMensal: FluxoMensal[] = fluxoSupabase.length > 0 ? fluxoSupabase : fluxoLocal;
+
+  const displayTotals: Totals = totaisSupabase
+    ? {
+        saldoConferido: totaisSupabase.saldo_realizado,
+        aReceber: totaisSupabase.total_a_receber,
+        aReceberCount: 0,
+        aPagar: totaisSupabase.total_a_pagar,
+        aPagarCount: 0,
+        resultadoProjetado: totaisSupabase.resultado_projetado,
+        entradasPeriodo: totaisSupabase.total_receitas_pagas,
+        saidasPeriodo: totaisSupabase.total_despesas_pagas,
+      }
+    : totals;
+
   useRegisterPageState({
     module: "Financeiro",
     summary: [
-      { label: "A receber (em aberto)", value: formatCurrencyBRL(totals.aReceber) },
-      { label: "A pagar (em aberto)", value: formatCurrencyBRL(totals.aPagar) },
-      { label: "Saldo conferido", value: formatCurrencyBRL(totals.saldoConferido) },
-      { label: "Resultado projetado", value: formatCurrencyBRL(totals.resultadoProjetado) },
+      { label: "A receber (em aberto)", value: formatCurrencyBRL(displayTotals.aReceber) },
+      { label: "A pagar (em aberto)", value: formatCurrencyBRL(displayTotals.aPagar) },
+      { label: "Saldo conferido", value: formatCurrencyBRL(displayTotals.saldoConferido) },
+      { label: "Resultado projetado", value: formatCurrencyBRL(displayTotals.resultadoProjetado) },
     ],
   });
+
+  const relTime = (iso: string) => {
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 3600) return `${Math.floor(diff / 60)} min atrás`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} h atrás`;
+    return `${Math.floor(diff / 86400)} dias atrás`;
+  };
 
   return (
     <div className="space-y-5">
@@ -74,49 +243,60 @@ export default function FinanceiroPage() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        className="flex items-end justify-between flex-wrap gap-3"
+        className="flex items-start justify-between flex-wrap gap-3"
       >
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Financeiro</h1>
           <p className="text-xs text-muted-foreground">
-            Fluxo de caixa, contas a pagar e a receber, margem por edição e auto-conciliação bancária
+            {totalCount != null
+              ? `${totalCount.toLocaleString("pt-BR")} movimentações${anoFiltro ? ` em ${anoFiltro}` : ""}${updatedAt ? ` · atualizado ${relTime(updatedAt)}` : ""}`
+              : "Fluxo de caixa, contas a pagar e a receber, margem por edição"}
           </p>
         </div>
-        <AutoConciliacaoSheet />
+        <div className="flex items-center gap-3 flex-wrap">
+          <AnoSelector value={anoFiltro} onChange={(v) => { setAnoFiltro(v); setActiveTab("overview"); }} />
+          <AutoConciliacaoSheet />
+        </div>
       </motion.div>
 
-      <KpiGrid totals={totals} />
+      <KpiGrid totals={displayTotals} onVerDetalhes={setActiveTab} />
 
       <PortalFinanceiroTabs />
 
-      <Tabs defaultValue="overview">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="overview">Visão geral</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo de caixa</TabsTrigger>
           <TabsTrigger value="receber">Contas a receber</TabsTrigger>
           <TabsTrigger value="pagar">Contas a pagar</TabsTrigger>
           <TabsTrigger value="margem">Margem por evento</TabsTrigger>
-          <TabsTrigger value="egestor">e-Gestor</TabsTrigger>
+          <TabsTrigger value="egestor">Atualizar dados</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-2">
-          <OverviewTab totals={totals} fluxoMensal={fluxoMensal} margens={margens} />
+          <OverviewTab
+            totals={displayTotals}
+            fluxoMensal={fluxoMensal}
+            margens={margens}
+            porEvento={porEvento}
+            ano={anoFiltro}
+          />
         </TabsContent>
 
         <TabsContent value="fluxo" className="mt-2">
-          <FluxoTab fluxoMensal={fluxoMensal} totals={totals} />
+          <FluxoTab fluxoMensal={fluxoMensal} totals={displayTotals} />
         </TabsContent>
 
         <TabsContent value="receber" className="mt-2">
-          <LancamentosTab tipo="receita" />
+          <LancamentosSupabaseTab recDesp="Receitas" ano={anoFiltro} />
         </TabsContent>
 
         <TabsContent value="pagar" className="mt-2">
-          <LancamentosTab tipo="despesa" />
+          <LancamentosSupabaseTab recDesp="Despesas" ano={anoFiltro} />
         </TabsContent>
 
         <TabsContent value="margem" className="mt-2">
-          <MargemTab margens={margens} />
+          <MargemTab margens={margens} porEvento={porEvento} />
         </TabsContent>
 
         <TabsContent value="egestor" className="mt-2">
@@ -131,35 +311,45 @@ export default function FinanceiroPage() {
 // KPIs
 // ---------------------------------------------------------------------------
 
-function KpiGrid({ totals }: { totals: Totals }) {
+function KpiGrid({
+  totals,
+  onVerDetalhes,
+}: {
+  totals: Totals;
+  onVerDetalhes: (tab: string) => void;
+}) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KpiCard
         label="Saldo conferido"
         value={totals.saldoConferido}
-        hint="Recebimentos pagos − pagamentos efetuados"
+        hint="Recebimentos − pagamentos"
         icon={<Wallet className="h-3.5 w-3.5" />}
+        onDetalhes={() => onVerDetalhes("fluxo")}
       />
       <KpiCard
         label="A receber"
         value={totals.aReceber}
-        hint={`${totals.aReceberCount} lançamentos em aberto`}
+        hint="Pendente de recebimento"
         icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
         accent="emerald"
+        onDetalhes={() => onVerDetalhes("receber")}
       />
       <KpiCard
         label="A pagar"
         value={totals.aPagar}
-        hint={`${totals.aPagarCount} lançamentos em aberto`}
+        hint="Pendente de pagamento"
         icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
         accent="rose"
+        onDetalhes={() => onVerDetalhes("pagar")}
       />
       <KpiCard
         label="Resultado projetado"
         value={totals.resultadoProjetado}
-        hint="Saldo conferido + a receber − a pagar"
+        hint="Saldo + a receber − a pagar"
         icon={<Receipt className="h-3.5 w-3.5" />}
         accent={totals.resultadoProjetado >= 0 ? "emerald" : "rose"}
+        onDetalhes={() => onVerDetalhes("overview")}
       />
     </div>
   );
@@ -171,37 +361,50 @@ function KpiCard({
   hint,
   icon,
   accent,
+  onDetalhes,
 }: {
   label: string;
   value: number;
   hint?: string;
   icon?: React.ReactNode;
   accent?: "emerald" | "rose";
+  onDetalhes?: () => void;
 }) {
   return (
-    <Card className="p-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-[12px] font-medium text-muted-foreground tracking-tight">
+    <Card className="p-4 overflow-hidden flex flex-col gap-2">
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-medium text-muted-foreground tracking-tight leading-tight truncate">
             {label}
           </div>
-          {hint && <div className="text-[11px] text-muted-foreground/70 mt-0.5">{hint}</div>}
+          {hint && (
+            <div className="text-[10px] text-muted-foreground/60 mt-0.5 truncate">{hint}</div>
+          )}
         </div>
         {icon && (
-          <div className="h-7 w-7 rounded-lg bg-foreground/[0.05] dark:bg-white/[0.06] grid place-items-center text-muted-foreground">
+          <div className="h-7 w-7 shrink-0 rounded-lg bg-foreground/[0.05] dark:bg-white/[0.06] grid place-items-center text-muted-foreground">
             {icon}
           </div>
         )}
       </div>
       <div
         className={cn(
-          "mt-4 text-[24px] font-semibold tracking-tight tabular-nums leading-none",
+          "text-[22px] font-semibold tracking-tight tabular-nums leading-none truncate",
           accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
           accent === "rose" && "text-rose-600 dark:text-rose-400",
         )}
+        title={formatCurrencyBRL(value)}
       >
-        {formatCurrencyBRL(value)}
+        {fmtCompact(value)}
       </div>
+      {onDetalhes && (
+        <button
+          onClick={onDetalhes}
+          className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors self-start leading-none"
+        >
+          Ver detalhes →
+        </button>
+      )}
     </Card>
   );
 }
@@ -214,19 +417,35 @@ function OverviewTab({
   totals,
   fluxoMensal,
   margens,
+  porEvento,
+  ano,
 }: {
   totals: Totals;
   fluxoMensal: FluxoMensal[];
   margens: MargemEdicao[];
+  porEvento: EventoRow[];
+  ano: string;
 }) {
+  const barData =
+    porEvento.length > 0
+      ? porEvento
+      : margens.map((m) => ({
+          nome: m.edicao.nome,
+          Receita: m.receitaTotal,
+          Despesa: m.despesaTotal,
+          resultado: m.receitaTotal - m.despesaTotal,
+        }));
+
   return (
     <div className="space-y-4">
       <Card className="p-5">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <div>
-            <div className="text-sm font-semibold tracking-tight">Fluxo de caixa nos últimos meses</div>
+            <div className="text-sm font-semibold tracking-tight">
+              Fluxo de caixa{ano ? ` — ${ano}` : " — histórico"}
+            </div>
             <div className="text-[11px] text-muted-foreground">
-              Entradas, saídas e saldo do período · valores realizados
+              Entradas, saídas e saldo · movimentações realizadas
             </div>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
@@ -235,65 +454,102 @@ function OverviewTab({
             <Legend dot="bg-foreground" label="Saldo" />
           </div>
         </div>
-        <div className="h-[280px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={fluxoMensal} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="grad-entradas" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgb(16,185,129)" stopOpacity={0.45} />
-                  <stop offset="100%" stopColor="rgb(16,185,129)" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="grad-saidas" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="grad-saldo" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--foreground))" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="hsl(var(--foreground))" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/50" />
-              <XAxis dataKey="mes" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`} width={48} />
-              <Tooltip content={<MoneyTip />} cursor={{ stroke: "hsl(var(--border))" }} />
-              <Area type="monotone" dataKey="entradas" stroke="rgb(16,185,129)" strokeWidth={2} fill="url(#grad-entradas)" />
-              <Area type="monotone" dataKey="saidas" stroke="rgb(244,63,94)" strokeWidth={2} fill="url(#grad-saidas)" />
-              <Area type="monotone" dataKey="saldo" stroke="hsl(var(--foreground))" strokeWidth={2} fill="url(#grad-saldo)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        {fluxoMensal.length === 0 ? (
+          <div className="h-[280px] grid place-items-center text-xs text-muted-foreground">
+            Sem movimentações liquidadas no período selecionado.
+          </div>
+        ) : (
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={fluxoMensal} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="grad-entradas" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="rgb(16,185,129)" stopOpacity={0.45} />
+                    <stop offset="100%" stopColor="rgb(16,185,129)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="grad-saidas" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="grad-saldo" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="hsl(var(--foreground))" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="hsl(var(--foreground))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/50" />
+                <XAxis
+                  dataKey="mes"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`}
+                  width={48}
+                />
+                <Tooltip content={<MoneyTip />} cursor={{ stroke: "hsl(var(--border))" }} />
+                <Area type="monotone" dataKey="entradas" stroke="rgb(16,185,129)" strokeWidth={2} fill="url(#grad-entradas)" />
+                <Area type="monotone" dataKey="saidas" stroke="rgb(244,63,94)" strokeWidth={2} fill="url(#grad-saidas)" />
+                <Area type="monotone" dataKey="saldo" stroke="hsl(var(--foreground))" strokeWidth={2} fill="url(#grad-saldo)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3">
         <Card className="p-5">
-          <div className="text-sm font-semibold tracking-tight mb-1">Resultado por edição</div>
+          <div className="text-sm font-semibold tracking-tight mb-1">Resultado por evento</div>
           <div className="text-[11px] text-muted-foreground mb-3">
-            Receita total (ingressos + patrocínios) versus despesas alocadas
+            Receitas versus despesas · top {barData.length}
           </div>
-          <div className="h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={margens.map((m) => ({ nome: m.edicao.nome, Receita: m.receitaTotal, Despesa: m.despesaTotal }))}
-                margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="bar-receita-fin" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--brand-2))" stopOpacity={0.95} />
-                    <stop offset="100%" stopColor="hsl(var(--brand-1))" stopOpacity={0.6} />
-                  </linearGradient>
-                  <linearGradient id="bar-despesa-fin" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.6} />
-                    <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0.18} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/50" />
-                <XAxis dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false}
-                  tickFormatter={(v) => (String(v).length > 18 ? `${String(v).slice(0, 16)}…` : String(v))} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`} />
-                <Tooltip content={<MoneyTip />} cursor={{ fill: "hsl(var(--muted) / 0.3)" }} />
-                <Bar dataKey="Receita" fill="url(#bar-receita-fin)" radius={[8, 8, 4, 4]} />
-                <Bar dataKey="Despesa" fill="url(#bar-despesa-fin)" radius={[8, 8, 4, 4]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {barData.length === 0 ? (
+            <div className="h-[260px] grid place-items-center text-xs text-muted-foreground">
+              Sem eventos nas movimentações do período.
+            </div>
+          ) : (
+            <div className="h-[260px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={barData} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="bar-receita-fin" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--brand-2))" stopOpacity={0.95} />
+                      <stop offset="100%" stopColor="hsl(var(--brand-1))" stopOpacity={0.6} />
+                    </linearGradient>
+                    <linearGradient id="bar-despesa-fin" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.6} />
+                      <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0.18} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/50" />
+                  <XAxis
+                    dataKey="nome"
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => (String(v).length > 18 ? `${String(v).slice(0, 16)}…` : String(v))}
+                  />
+                  <YAxis
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    width={48}
+                    tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip content={<MoneyTip />} cursor={{ fill: "hsl(var(--muted) / 0.3)" }} />
+                  <Bar dataKey="Receita" fill="url(#bar-receita-fin)" radius={[8, 8, 4, 4]} />
+                  <Bar dataKey="Despesa" fill="url(#bar-despesa-fin)" radius={[8, 8, 4, 4]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </Card>
 
         <Card className="p-5">
@@ -332,7 +588,7 @@ function ProximosVencimentos() {
           >
             <span
               className={cn(
-                "h-2 w-2 rounded-full",
+                "h-2 w-2 shrink-0 rounded-full",
                 l.tipo === "receita" ? "bg-emerald-500" : "bg-rose-500",
               )}
             />
@@ -343,14 +599,20 @@ function ProximosVencimentos() {
                 {atrasado && <span className="ml-1.5 text-rose-500">· atrasado</span>}
               </div>
             </div>
-            <div className={cn("text-sm font-semibold tabular-nums shrink-0", l.tipo === "receita" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground/80")}>
-              {l.tipo === "receita" ? "+" : "−"}{formatCurrencyBRL(l.valor).replace("R$", "R$\u00a0")}
+            <div
+              className={cn(
+                "text-sm font-semibold tabular-nums shrink-0",
+                l.tipo === "receita"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-foreground/80",
+              )}
+            >
+              {l.tipo === "receita" ? "+" : "−"}{formatCurrencyBRL(l.valor).replace("R$", "R$ ")}
             </div>
             <button
               onClick={() => togglePago(l.id, true)}
               className="h-7 w-7 grid place-items-center rounded-lg text-muted-foreground hover:text-emerald-600 hover:bg-emerald-500/10"
               aria-label="Marcar como liquidado"
-              title="Marcar como liquidado"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
             </button>
@@ -369,9 +631,27 @@ function FluxoTab({ fluxoMensal, totals }: { fluxoMensal: FluxoMensal[]; totals:
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <KpiCard label="Total entradas (período)" value={totals.entradasPeriodo} hint="Recebimentos liquidados" icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />} accent="emerald" />
-        <KpiCard label="Total saídas (período)" value={totals.saidasPeriodo} hint="Pagamentos efetuados" icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />} accent="rose" />
-        <KpiCard label="Saldo do período" value={totals.entradasPeriodo - totals.saidasPeriodo} hint="Resultado realizado" icon={<Wallet className="h-3.5 w-3.5" />} />
+        <KpiCard
+          label="Total entradas"
+          value={totals.entradasPeriodo}
+          hint="Recebimentos liquidados"
+          icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
+          accent="emerald"
+        />
+        <KpiCard
+          label="Total saídas"
+          value={totals.saidasPeriodo}
+          hint="Pagamentos efetuados"
+          icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
+          accent="rose"
+        />
+        <KpiCard
+          label="Saldo do período"
+          value={totals.entradasPeriodo - totals.saidasPeriodo}
+          hint="Resultado realizado"
+          icon={<Wallet className="h-3.5 w-3.5" />}
+          accent={totals.entradasPeriodo - totals.saidasPeriodo >= 0 ? "emerald" : "rose"}
+        />
       </div>
 
       <Card className="p-5">
@@ -380,27 +660,39 @@ function FluxoTab({ fluxoMensal, totals }: { fluxoMensal: FluxoMensal[]; totals:
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="bg-foreground/[0.02] dark:bg-white/[0.02]">
-                <th className="text-left px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Mês</th>
-                <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Entradas</th>
-                <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Saídas</th>
-                <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Saldo do mês</th>
-                <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Saldo acumulado</th>
+                {["Mês", "Entradas", "Saídas", "Saldo do mês", "Saldo acumulado"].map((h, i) => (
+                  <th
+                    key={h}
+                    className={cn(
+                      "px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium",
+                      i === 0 ? "text-left" : "text-right",
+                    )}
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {fluxoMensal.map((row) => (
                 <tr key={row.mes} className="border-t border-border/50">
                   <td className="px-3 py-2 font-medium">{row.mes}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrencyBRL(row.entradas)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-rose-600 dark:text-rose-400">{formatCurrencyBRL(row.saidas)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {formatCurrencyBRL(row.entradas)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-rose-600 dark:text-rose-400">
+                    {formatCurrencyBRL(row.saidas)}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatCurrencyBRL(row.saldo)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold">{formatCurrencyBRL(row.acumulado)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                    {formatCurrencyBRL(row.acumulado)}
+                  </td>
                 </tr>
               ))}
               {fluxoMensal.length === 0 && (
                 <tr>
                   <td colSpan={5} className="text-center text-xs text-muted-foreground py-8">
-                    Sem movimentações registradas ainda.
+                    Sem movimentações no período selecionado.
                   </td>
                 </tr>
               )}
@@ -413,191 +705,222 @@ function FluxoTab({ fluxoMensal, totals }: { fluxoMensal: FluxoMensal[]; totals:
 }
 
 // ---------------------------------------------------------------------------
-// Lançamentos (a pagar / a receber)
+// Lançamentos do Supabase (paginado)
 // ---------------------------------------------------------------------------
 
-function LancamentosTab({ tipo }: { tipo: "receita" | "despesa" }) {
-  const { state, togglePago, removeLancamento } = useAppState();
-  const [busca, setBusca] = React.useState("");
-  const [statusFilter, setStatusFilter] = React.useState<LancStatusFilter>("todos");
-  const [edicaoFilter, setEdicaoFilter] = React.useState<string>("todas");
-  const [dialog, setDialog] = React.useState<
-    | { open: true; mode: "create" }
-    | { open: true; mode: "edit"; id: string }
-    | { open: false }
-  >({ open: false });
+function LancamentosSupabaseTab({
+  recDesp,
+  ano,
+}: {
+  recDesp: "Receitas" | "Despesas";
+  ano: string;
+}) {
+  const [page, setPage] = React.useState(1);
+  const [search, setSearch] = React.useState("");
+  const [situacao, setSituacao] = React.useState("");
+  const [lancamentos, setLancamentos] = React.useState<LancSupabase[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [pages, setPages] = React.useState(0);
+  const [loading, setLoading] = React.useState(false);
+  const limit = 50;
 
-  const lista = React.useMemo(() => {
-    return state.financeiro
-      .filter((f) => f.tipo === tipo)
-      .filter((f) => (statusFilter === "todos" ? true : statusFilter === "pago" ? !!f.pagamento : !f.pagamento))
-      .filter((f) => (edicaoFilter === "todas" ? true : edicaoFilter === "none" ? !f.edicaoSlug : f.edicaoSlug === edicaoFilter))
-      .filter((f) => (busca.trim() === "" ? true : `${f.descricao} ${f.categoria}`.toLowerCase().includes(busca.toLowerCase())))
-      .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
-  }, [state.financeiro, tipo, statusFilter, edicaoFilter, busca]);
+  const titulo = recDesp === "Receitas" ? "Contas a receber" : "Contas a pagar";
+  const cor = recDesp === "Receitas" ? "emerald" : "rose";
 
-  const totalAberto = lista.filter((l) => !l.pagamento).reduce((acc, l) => acc + l.valor, 0);
-  const totalPago = lista.filter((l) => !!l.pagamento).reduce((acc, l) => acc + l.valor, 0);
+  const fetchData = React.useCallback(() => {
+    setLoading(true);
+    const params = new URLSearchParams({
+      rec_desp: recDesp,
+      page: String(page),
+      limit: String(limit),
+    });
+    if (ano) params.set("ano", ano);
+    if (search.trim()) params.set("search", search.trim());
+    if (situacao) params.set("situacao", situacao);
 
-  const statusOptions: SelectOption[] = [
-    { value: "todos", label: "Todos os status" },
-    { value: "aberto", label: "Em aberto" },
-    { value: "pago", label: tipo === "receita" ? "Recebidos" : "Pagos" },
-  ];
+    fetch(`/api/lancamentos?${params.toString()}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: any) => {
+        if (!d) return;
+        setLancamentos((d.data ?? []) as LancSupabase[]);
+        setTotal(d.total ?? 0);
+        setPages(d.pages ?? 0);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [recDesp, page, ano, search, situacao]);
 
-  const edicaoOptions: SelectOption[] = [
-    { value: "todas", label: "Todas as edições" },
-    { value: "none", label: "Sem edição" },
-    ...state.edicoes.map((e) => ({ value: e.slug, label: e.nome })),
-  ];
+  React.useEffect(() => {
+    setPage(1);
+  }, [ano, search, situacao, recDesp]);
 
-  const cor = tipo === "receita" ? "emerald" : "rose";
-  const titulo = tipo === "receita" ? "Contas a receber" : "Contas a pagar";
-  const novoLabel = tipo === "receita" ? "Novo recebimento" : "Novo pagamento";
+  React.useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const statusOptions: SelectOption[] =
+    recDesp === "Receitas"
+      ? [
+          { value: "", label: "Todos os status" },
+          { value: "A receber", label: "A receber" },
+          { value: "Recebido", label: "Recebido" },
+        ]
+      : [
+          { value: "", label: "Todos os status" },
+          { value: "A pagar", label: "A pagar" },
+          { value: "Pago", label: "Pago" },
+        ];
 
   return (
     <div className="space-y-4">
       <Card className="p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
             <div className="text-sm font-semibold tracking-tight">{titulo}</div>
             <div className="text-[11px] text-muted-foreground">
-              {formatNumberBR(lista.length)} lançamentos · em aberto{" "}
-              <span className={cn("font-semibold", cor === "emerald" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>
-                {formatCurrencyBRL(totalAberto)}
-              </span>{" "}
-              · liquidados {formatCurrencyBRL(totalPago)}
+              {total.toLocaleString("pt-BR")} lançamentos
+              {ano ? ` em ${ano}` : " (todos os anos)"} · dados do e-Gestor
             </div>
           </div>
-          <Button onClick={() => setDialog({ open: true, mode: "create" })} className="gap-1.5">
-            <Plus className="h-4 w-4" /> {novoLabel}
-          </Button>
         </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por descrição ou categoria…" className="pl-8" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome, evento ou classificação…"
+              className="pl-8"
+            />
           </div>
-          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as LancStatusFilter)} options={statusOptions} triggerClassName="min-w-[170px]" />
-          <Select value={edicaoFilter} onValueChange={setEdicaoFilter} options={edicaoOptions} triggerClassName="min-w-[200px]" />
+          <Select
+            value={situacao}
+            onValueChange={setSituacao}
+            options={statusOptions}
+            triggerClassName="min-w-[160px]"
+          />
         </div>
       </Card>
 
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="bg-foreground/[0.02] dark:bg-white/[0.02]">
-                <th className="text-left px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Status</th>
-                <th className="text-left px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Descrição</th>
-                <th className="text-left px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Categoria</th>
-                <th className="text-left px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Edição</th>
-                <th className="text-left px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Vencimento</th>
-                <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Valor</th>
-                <th className="text-right px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Ações</th>
+                {[
+                  ["left", "Status"],
+                  ["left", "Nome / Descrição"],
+                  ["left", "Evento"],
+                  ["left", "Vencimento"],
+                  ["left", "Pagamento"],
+                  ["right", "Valor"],
+                ].map(([align, label]) => (
+                  <th
+                    key={label}
+                    className={cn(
+                      "px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium",
+                      `text-${align}`,
+                    )}
+                  >
+                    {label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {lista.length === 0 && (
+              {loading && (
                 <tr>
-                  <td colSpan={7} className="text-center text-xs text-muted-foreground py-10">
-                    Nenhum lançamento encontrado para os filtros selecionados.
+                  <td colSpan={6} className="text-center text-xs text-muted-foreground py-10">
+                    Carregando…
                   </td>
                 </tr>
               )}
-              {lista.map((l) => {
-                const edicao = l.edicaoSlug ? state.edicoes.find((e) => e.slug === l.edicaoSlug) : null;
-                const pago = !!l.pagamento;
-                const hoje = new Date().toISOString().slice(0, 10);
-                const atrasado = !pago && l.vencimento < hoje;
-                return (
-                  <tr key={l.id} className="border-t border-border/50">
-                    <td className="px-3 py-2.5">
-                      {pago ? (
-                        <Badge variant="success" className="gap-1">
-                          <CheckCircle2 className="h-3 w-3" /> {tipo === "receita" ? "Recebido" : "Pago"}
+              {!loading && lancamentos.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center text-xs text-muted-foreground py-10">
+                    Nenhum lançamento encontrado.
+                  </td>
+                </tr>
+              )}
+              {!loading &&
+                lancamentos.map((l) => {
+                  const pago = l.situacao === "Recebido" || l.situacao === "Pago";
+                  return (
+                    <tr key={l.id} className="border-t border-border/50">
+                      <td className="px-3 py-2.5">
+                        <Badge variant={pago ? "success" : "warning"} className="gap-1">
+                          <CircleDot className="h-3 w-3" />
+                          {l.situacao ?? "—"}
                         </Badge>
-                      ) : atrasado ? (
-                        <Badge variant="destructive" className="gap-1">
-                          <CircleDot className="h-3 w-3" /> Atrasado
-                        </Badge>
-                      ) : (
-                        <Badge variant="warning" className="gap-1">
-                          <CircleDot className="h-3 w-3" /> Em aberto
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 max-w-[280px]">
-                      <div className="text-sm font-medium truncate">{l.descricao}</div>
-                      {l.pagamento && (
-                        <div className="text-[10px] text-muted-foreground">Liquidado em {formatDateBR(l.pagamento)}</div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground">{l.categoria}</td>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                      {edicao ? (
-                        <span className="inline-flex items-center gap-1">
-                          <CalendarRange className="h-3 w-3" /> {edicao.nome}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground/70">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs">{formatDateBR(l.vencimento)}</td>
-                    <td className={cn("px-3 py-2.5 text-right font-semibold tabular-nums", cor === "emerald" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground/85")}>
-                      {tipo === "receita" ? "+" : "−"}{formatCurrencyBRL(l.valor).replace("R$", "R$\u00a0")}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <div className="inline-flex items-center gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8"
-                          onClick={() => togglePago(l.id, !pago)}
-                          aria-label={pago ? "Reabrir" : "Liquidar"}
-                          title={pago ? "Reabrir lançamento" : "Marcar como liquidado"}
-                        >
-                          <CheckCircle2 className={cn("h-3.5 w-3.5", pago ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground")} />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setDialog({ open: true, mode: "edit", id: l.id })} aria-label="Editar">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 text-rose-500 hover:bg-rose-500/10"
-                          onClick={() => {
-                            if (typeof window === "undefined") return;
-                            if (window.confirm(`Excluir "${l.descricao}"?`)) removeLancamento(l.id);
-                          }}
-                          aria-label="Excluir"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                      </td>
+                      <td className="px-3 py-2.5 max-w-[240px]">
+                        <div className="text-sm font-medium truncate">
+                          {l.nome_razao_social || l.descricao || "—"}
+                        </div>
+                        {l.classificacao && (
+                          <div className="text-[10px] text-muted-foreground truncate">
+                            {l.classificacao}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[160px]">
+                        <div className="truncate">{l.evento || "—"}</div>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs">
+                        {formatDateBR(l.data_vencimento ?? "")}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs">
+                        {l.data_pagamento ? (
+                          formatDateBR(l.data_pagamento)
+                        ) : (
+                          <span className="text-muted-foreground/50">—</span>
+                        )}
+                      </td>
+                      <td
+                        className={cn(
+                          "px-3 py-2.5 text-right font-semibold tabular-nums text-sm",
+                          cor === "emerald"
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-foreground/85",
+                        )}
+                      >
+                        {recDesp === "Receitas" ? "+" : "−"}
+                        {formatCurrencyBRL(Number(l.valor) || 0).replace("R$", "R$ ")}
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
       </Card>
 
-      {dialog.open && dialog.mode === "create" && (
-        <LancamentoFormDialog
-          open
-          onOpenChange={(v) => !v && setDialog({ open: false })}
-          mode={{ kind: "create", tipo }}
-        />
-      )}
-      {dialog.open && dialog.mode === "edit" && (
-        <LancamentoFormDialog
-          open
-          onOpenChange={(v) => !v && setDialog({ open: false })}
-          mode={{ kind: "edit", id: dialog.id }}
-        />
+      {pages > 1 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            Página {page} de {pages} · {total.toLocaleString("pt-BR")} registros
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => setPage((p) => Math.min(pages, p + 1))}
+              disabled={page === pages}
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -607,11 +930,46 @@ function LancamentosTab({ tipo }: { tipo: "receita" | "despesa" }) {
 // Margem por evento
 // ---------------------------------------------------------------------------
 
-function MargemTab({ margens }: { margens: MargemEdicao[] }) {
+function MargemTab({ margens, porEvento }: { margens: MargemEdicao[]; porEvento: EventoRow[] }) {
+  if (porEvento.length > 0) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {porEvento.map((ev) => {
+          const margemPct =
+            ev.Receita > 0 ? Math.round(((ev.Receita - ev.Despesa) / ev.Receita) * 100) : 0;
+          return (
+            <Card key={ev.nome} className="p-5">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold tracking-tight truncate">{ev.nome}</div>
+                </div>
+                <Badge
+                  variant={margemPct >= 30 ? "success" : margemPct >= 0 ? "warning" : "destructive"}
+                  className="tabular-nums shrink-0"
+                >
+                  Margem {margemPct}%
+                </Badge>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                <Stat label="Receitas" value={ev.Receita} accent="emerald" />
+                <Stat label="Despesas" value={ev.Despesa} accent="rose" />
+                <Stat
+                  label="Resultado"
+                  value={ev.resultado}
+                  accent={ev.resultado >= 0 ? "emerald" : "rose"}
+                />
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    );
+  }
+
   if (margens.length === 0) {
     return (
       <Card className="p-10 text-center text-sm text-muted-foreground">
-        Cadastre uma edição em Produção de eventos para ver a margem por evento.
+        Importe movimentações para ver a margem por evento automaticamente.
       </Card>
     );
   }
@@ -619,7 +977,10 @@ function MargemTab({ margens }: { margens: MargemEdicao[] }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
       {margens.map((m) => {
-        const margemPct = m.receitaTotal > 0 ? Math.round(((m.receitaTotal - m.despesaTotal) / m.receitaTotal) * 100) : 0;
+        const margemPct =
+          m.receitaTotal > 0
+            ? Math.round(((m.receitaTotal - m.despesaTotal) / m.receitaTotal) * 100)
+            : 0;
         const margemValor = m.receitaTotal - m.despesaTotal;
         return (
           <Card key={m.edicao.slug} className="p-5">
@@ -627,19 +988,23 @@ function MargemTab({ margens }: { margens: MargemEdicao[] }) {
               <div className="min-w-0">
                 <div className="text-sm font-semibold tracking-tight truncate">{m.edicao.nome}</div>
                 <div className="text-[11px] text-muted-foreground truncate">{m.edicao.cidade}</div>
-                <div className="text-[11px] text-muted-foreground/80">{m.edicao.data}</div>
               </div>
-              <Badge variant={margemPct >= 30 ? "success" : margemPct >= 0 ? "warning" : "destructive"} className="tabular-nums">
+              <Badge
+                variant={margemPct >= 30 ? "success" : margemPct >= 0 ? "warning" : "destructive"}
+                className="tabular-nums shrink-0"
+              >
                 Margem {margemPct}%
               </Badge>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <Stat label="Receita ingressos" value={m.receitaIngressos} accent="emerald" />
-              <Stat label="Patrocínios" value={m.edicao.patrocinio} accent="emerald" />
-              <Stat label="Receitas vinculadas" value={m.receitasVinculadas} accent="emerald" hint="Recebimentos lançados na edição" />
-              <Stat label="Despesas vinculadas" value={m.despesasVinculadas} accent="rose" hint="Pagamentos lançados na edição" />
+              <Stat label="Receitas vinculadas" value={m.receitasVinculadas} accent="emerald" />
+              <Stat label="Despesas vinculadas" value={m.despesasVinculadas} accent="rose" />
               <Stat label="Custo de produção" value={m.edicao.custoProducao} accent="rose" />
-              <Stat label="Resultado" value={margemValor} accent={margemValor >= 0 ? "emerald" : "rose"} />
+              <Stat
+                label="Resultado"
+                value={margemValor}
+                accent={margemValor >= 0 ? "emerald" : "rose"}
+              />
             </div>
           </Card>
         );
@@ -652,26 +1017,24 @@ function Stat({
   label,
   value,
   accent,
-  hint,
 }: {
   label: string;
   value: number;
   accent?: "emerald" | "rose";
-  hint?: string;
 }) {
   return (
-    <div className="rounded-lg bg-foreground/[0.03] dark:bg-white/[0.03] px-3 py-2">
-      <div className="text-[10px] text-muted-foreground">{label}</div>
+    <div className="rounded-lg bg-foreground/[0.03] dark:bg-white/[0.03] px-3 py-2 overflow-hidden">
+      <div className="text-[10px] text-muted-foreground truncate">{label}</div>
       <div
         className={cn(
-          "text-sm font-semibold tabular-nums",
+          "text-sm font-semibold tabular-nums truncate",
           accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
           accent === "rose" && "text-rose-600 dark:text-rose-400",
         )}
+        title={formatCurrencyBRL(value)}
       >
-        {formatCurrencyBRL(value)}
+        {fmtCompact(value)}
       </div>
-      {hint && <div className="text-[10px] text-muted-foreground/80">{hint}</div>}
     </div>
   );
 }
@@ -728,16 +1091,10 @@ function computeTotals(financeiro: FinanceLancamento[]): Totals {
   for (const f of financeiro) {
     if (f.tipo === "receita") {
       if (f.pagamento) entradas += f.valor;
-      else {
-        aReceber += f.valor;
-        aReceberCount += 1;
-      }
+      else { aReceber += f.valor; aReceberCount += 1; }
     } else {
       if (f.pagamento) saidas += f.valor;
-      else {
-        aPagar += f.valor;
-        aPagarCount += 1;
-      }
+      else { aPagar += f.valor; aPagarCount += 1; }
     }
   }
 
@@ -765,22 +1122,23 @@ function computeFluxoMensal(financeiro: FinanceLancamento[]): FluxoMensal[] {
   const map = new Map<string, { entradas: number; saidas: number }>();
   for (const f of financeiro) {
     if (!f.pagamento) continue;
-    const key = f.pagamento.slice(0, 7); // yyyy-mm
+    const key = f.pagamento.slice(0, 7);
     const cur = map.get(key) ?? { entradas: 0, saidas: 0 };
     if (f.tipo === "receita") cur.entradas += f.valor;
     else cur.saidas += f.valor;
     map.set(key, cur);
   }
-  const sortedKeys = Array.from(map.keys()).sort();
   let acumulado = 0;
-  return sortedKeys.map((k) => {
-    const { entradas, saidas } = map.get(k)!;
-    const saldo = entradas - saidas;
-    acumulado += saldo;
-    const [ano, mes] = k.split("-");
-    const label = `${MESES_PT[Number(mes) - 1] ?? mes}/${ano.slice(2)}`;
-    return { mes: label, entradas, saidas, saldo, acumulado };
-  });
+  return Array.from(map.keys())
+    .sort()
+    .map((k) => {
+      const { entradas, saidas } = map.get(k)!;
+      const saldo = entradas - saidas;
+      acumulado += saldo;
+      const [ano, mes] = k.split("-");
+      const label = `${MESES_PT[Number(mes) - 1] ?? mes}/${ano.slice(2)}`;
+      return { mes: label, entradas, saidas, saldo, acumulado };
+    });
 }
 
 type MargemEdicao = {
@@ -799,8 +1157,12 @@ function computeMargensPorEdicao(
   return edicoes.map((edicao) => {
     const m = metricasEdicao(edicao);
     const vinculadas = financeiro.filter((f) => f.edicaoSlug === edicao.slug);
-    const receitasVinculadas = vinculadas.filter((f) => f.tipo === "receita").reduce((a, f) => a + f.valor, 0);
-    const despesasVinculadas = vinculadas.filter((f) => f.tipo === "despesa").reduce((a, f) => a + f.valor, 0);
+    const receitasVinculadas = vinculadas
+      .filter((f) => f.tipo === "receita")
+      .reduce((a, f) => a + f.valor, 0);
+    const despesasVinculadas = vinculadas
+      .filter((f) => f.tipo === "despesa")
+      .reduce((a, f) => a + f.valor, 0);
     return {
       edicao,
       receitaIngressos: m.receitaIngressos,
