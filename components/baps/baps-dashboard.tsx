@@ -76,6 +76,15 @@ export function BapsDashboard({
   sector: PortalSector;
 }) {
   const [data, setData] = React.useState<BapsSnapshot>(initial);
+  const [lancTotais, setLancTotais] = React.useState<{
+    total_receitas_pagas: number;
+    total_despesas_pagas: number;
+    total_a_receber: number;
+    total_a_pagar: number;
+    saldo_realizado: number;
+    resultado_projetado: number;
+    count_total: number;
+  } | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -93,6 +102,14 @@ export function BapsDashboard({
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    if (sector !== "financeiro" && sector !== "contabil") return;
+    fetch("/api/lancamentos/resumo", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.totais?.[0] && setLancTotais(d.totais[0]))
+      .catch(() => {});
+  }, [sector]);
 
   const demandas = data.contratos.filter((c) => c.status !== "ativo");
   const ativos = data.contratos.filter((c) => c.status === "ativo");
@@ -195,27 +212,36 @@ export function BapsDashboard({
       >
         <div>
           <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground font-medium">
-            {sector === "executivo" ? "Painel da presidência" : sectorShortLabel(sector)}
+            {sectorShortLabel(sector)}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-            Painel da presidência
+            {sector === "executivo" ? "Painel da presidência" : `Painel ${sectorShortLabel(sector)}`}
           </h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground leading-relaxed">
             {sector === "executivo" ? (
               <>
-                Visão geral da organização · mês de referência:{" "}
-                <span className="tabular-nums font-medium text-foreground">
-                  {data.financeiro_resumo.referencia_mes}
-                </span>
+                Visão geral da organização
+                {data.financeiro_resumo.referencia_mes && (
+                  <>
+                    {" "}· mês de referência:{" "}
+                    <span className="tabular-nums font-medium text-foreground">
+                      {data.financeiro_resumo.referencia_mes}
+                    </span>
+                  </>
+                )}
               </>
             ) : (
               <>
-                Visão apenas do setor de <span className="font-medium text-foreground">{sectorShortLabel(sector)}</span>.
-                Referência financeira{" "}
-                <span className="tabular-nums font-medium text-foreground">
-                  {data.financeiro_resumo.referencia_mes}
-                </span>
-                .
+                Visão geral do setor de{" "}
+                <span className="font-medium text-foreground">{sectorShortLabel(sector)}</span>
+                {data.financeiro_resumo.referencia_mes && (
+                  <>
+                    {" "}· referência{" "}
+                    <span className="tabular-nums font-medium text-foreground">
+                      {data.financeiro_resumo.referencia_mes}
+                    </span>
+                  </>
+                )}
               </>
             )}
           </p>
@@ -285,28 +311,59 @@ export function BapsDashboard({
           variants={fade}
           className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-2"
         >
-          <Kpi
-            label="Saldo global"
-            value={formatCurrencyBRL(data.financeiro_resumo.saldo_global)}
-            hint="Posição líquida consolidada"
-          />
-          <Kpi
-            label="Déficit Q1"
-            value={formatCurrencyBRL(data.financeiro_resumo.deficit_q1)}
-            hint="Resultado parcial trimestral"
-            accent={data.financeiro_resumo.deficit_q1 < 0 ? "rose" : undefined}
-          />
-          <Kpi
-            label="Receitas (eventos)"
-            value={formatCurrencyBRL(totalReceitasEventos)}
-            hint="Soma dos eventos no painel"
-          />
-          <Kpi
-            label="Resultado (eventos)"
-            value={formatCurrencyBRL(resultadoEventos)}
-            hint="Receitas − despesas pagas"
-            accent={resultadoEventos < 0 ? "rose" : undefined}
-          />
+          {lancTotais ? (
+            <>
+              <Kpi
+                label="Receitas recebidas"
+                value={formatCurrencyBRL(lancTotais.total_receitas_pagas)}
+                hint={`${lancTotais.count_total.toLocaleString("pt-BR")} movimentações registradas`}
+                accent="emerald"
+              />
+              <Kpi
+                label="Despesas pagas"
+                value={formatCurrencyBRL(lancTotais.total_despesas_pagas)}
+                hint="Total de pagamentos realizados"
+                accent="rose"
+              />
+              <Kpi
+                label="Saldo realizado"
+                value={formatCurrencyBRL(lancTotais.saldo_realizado)}
+                hint="Receitas recebidas − despesas pagas"
+                accent={lancTotais.saldo_realizado < 0 ? "rose" : undefined}
+              />
+              <Kpi
+                label="Resultado projetado"
+                value={formatCurrencyBRL(lancTotais.resultado_projetado)}
+                hint="Saldo + a receber − a pagar"
+                accent={lancTotais.resultado_projetado < 0 ? "rose" : undefined}
+              />
+            </>
+          ) : (
+            <>
+              <Kpi
+                label="Saldo global"
+                value={formatCurrencyBRL(data.financeiro_resumo.saldo_global)}
+                hint="Posição líquida consolidada"
+              />
+              <Kpi
+                label="Déficit Q1"
+                value={formatCurrencyBRL(data.financeiro_resumo.deficit_q1)}
+                hint="Resultado parcial trimestral"
+                accent={data.financeiro_resumo.deficit_q1 < 0 ? "rose" : undefined}
+              />
+              <Kpi
+                label="Receitas (eventos)"
+                value={formatCurrencyBRL(totalReceitasEventos)}
+                hint="Soma dos eventos no painel"
+              />
+              <Kpi
+                label="Resultado (eventos)"
+                value={formatCurrencyBRL(resultadoEventos)}
+                hint="Receitas − despesas pagas"
+                accent={resultadoEventos < 0 ? "rose" : undefined}
+              />
+            </>
+          )}
         </motion.section>
       )}
 
@@ -791,7 +848,7 @@ function Kpi({
   label: string;
   value: string;
   hint?: string;
-  accent?: "rose";
+  accent?: "rose" | "emerald";
 }) {
   return (
     <Card className="p-5 rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm shadow-sm print:break-inside-avoid">
@@ -801,6 +858,7 @@ function Kpi({
         className={cn(
           "mt-3 text-xl font-semibold tracking-tight tabular-nums",
           accent === "rose" && "text-rose-600 dark:text-rose-400",
+          accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
         )}
       >
         {value}

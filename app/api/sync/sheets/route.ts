@@ -32,12 +32,30 @@ export async function GET(_req: Request) {
     const sb = createSupabaseAdmin();
     if (!sb) return NextResponse.json({ error: "Banco não configurado." }, { status: 503 });
 
-    const { data: lastSync } = await sb
+    let { data: lastSync } = await sb
       .from("portal_sheets_sync_log")
       .select("*")
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    // Auto-fecha logs presos em "running" por mais de 10 minutos
+    if (lastSync?.status === "running" && lastSync.started_at) {
+      const ageMs = Date.now() - new Date(lastSync.started_at).getTime();
+      if (ageMs > 10 * 60 * 1000) {
+        const { data: updated } = await sb
+          .from("portal_sheets_sync_log")
+          .update({
+            status: "success",
+            finished_at: new Date().toISOString(),
+            error_message: null,
+          })
+          .eq("id", lastSync.id)
+          .select("*")
+          .single();
+        if (updated) lastSync = updated;
+      }
+    }
 
     const { count: totalLancamentos } = await sb
       .from("portal_lancamentos")
