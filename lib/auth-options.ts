@@ -1,8 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
+import { createClient } from "@supabase/supabase-js";
 import { resolveAuthSecret } from "@/lib/auth-secret";
-import { PORTAL_LOGIN_EMAIL_SET } from "@/lib/portal-accounts";
 
 function displayNameFromEmail(email: string): string {
   const local = email.split("@")[0] ?? "";
@@ -13,29 +12,6 @@ function displayNameFromEmail(email: string): string {
     .filter(Boolean)
     .map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
-}
-
-function loadPasswordHashes(): Record<string, string> {
-  const b64 = process.env.PORTAL_PASSWORD_HASHES_B64?.trim();
-  const raw =
-    b64 && typeof Buffer !== "undefined"
-      ? Buffer.from(b64, "base64").toString("utf8")
-      : process.env.PORTAL_PASSWORD_HASHES;
-  if (!raw?.trim()) return {};
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .filter(([, v]) => typeof v === "string" && (v as string).startsWith("$2"))
-        .map(([k, v]) => [k.trim().toLowerCase(), v as string]),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function isProvisionedEmail(email: string): boolean {
-  return PORTAL_LOGIN_EMAIL_SET.has(email.trim().toLowerCase());
 }
 
 export const authOptions = {
@@ -61,12 +37,23 @@ export const authOptions = {
         const emailRaw = credentials?.email?.trim().toLowerCase();
         const password = credentials?.password;
         if (!emailRaw || typeof password !== "string" || !password) return null;
-        if (!isProvisionedEmail(emailRaw)) return null;
-        const hashes = loadPasswordHashes();
-        const hash = hashes[emailRaw];
-        if (!hash) return null;
-        const ok = await bcrypt.compare(password, hash);
-        if (!ok) return null;
+
+        const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY;
+        if (!rawUrl || !supabaseAnonKey) return null;
+        const supabaseUrl = rawUrl.replace(/\/(rest|auth)(\/.*)?$/, "").replace(/\/$/, "");
+
+        const supabase = createClient(supabaseUrl, supabaseAnonKey);
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: emailRaw,
+          password,
+        });
+        if (error) {
+          console.error("[auth] supabase signIn error:", error.message, error.status);
+          return null;
+        }
+        if (!data.user) return null;
+
         return {
           id: emailRaw,
           email: emailRaw,
