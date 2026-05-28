@@ -723,7 +723,7 @@ export function BapsDashboard({
         </>
       )}
 
-      {showZone(sector, "bloco_nps") && sector !== "executivo" && (
+      {showZone(sector, "bloco_nps") && (
         <motion.section initial="hidden" animate="show" custom={8} variants={fade}>
           <NpsComposedChart data={data} />
         </motion.section>

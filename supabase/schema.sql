@@ -306,3 +306,145 @@ create policy "portal_custos_service_all" on public.portal_custos_departamento f
 -- ---------------------------------------------------------------------------
 -- Todos os dados de seed foram removidos.
 -- O portal inicia sem dados demo — preencha via interface ou via entrada-dados.
+
+-- ---------------------------------------------------------------------------
+-- Google Sheets Sync — lançamentos importados do e-Gestor
+-- ---------------------------------------------------------------------------
+
+-- Tabela principal: espelho completo da aba "personalizadoFinanceiro (13)"
+-- Colunas mapeadas das 27 colunas (A→AA) da planilha real.
+create table if not exists public.portal_lancamentos (
+  id                    uuid primary key default gen_random_uuid(),
+
+  -- Col A: Identificador único do e-Gestor
+  cod                   text not null unique,
+
+  -- Col B: Descrição do lançamento
+  descricao             text,
+
+  -- Col C: Conta Caixa (ex: "CAIXA DE FUNDAÇÃO BAPS", "VIACREDI")
+  conta_caixa           text,
+
+  -- Col D: Plano de contas base do e-Gestor (ex: "SÓCIOS FUNDADORES")
+  plano_contas          text,
+
+  -- Col E/X: Nome/Razão Social (preferindo col X — nome limpo)
+  nome_razao_social     text,
+
+  -- Col G: Forma de pagamento (PIX, DINHEIRO, etc.)
+  forma_pagamento       text,
+
+  -- Col H: Situação (Recebido | Pago | A receber | A pagar)
+  situacao              text,
+
+  -- Col I: Valor absoluto (despesas chegam negativas no e-Gestor → abs)
+  valor                 numeric not null default 0,
+
+  -- Col K: Data de vencimento
+  data_vencimento       date,
+
+  -- Col L: Data de pagamento
+  data_pagamento        date,
+
+  -- Col M: Data de créd/déb (efetivação bancária)
+  data_cred_deb         date,
+
+  -- Col P: Plano Primário de Contas enriquecido
+  --        (ex: "DESPESAS OPERACIONAIS BAPS", "RECEITAS OPERACIONAIS BAPS")
+  plano_primario_contas text,
+
+  -- Col Q: Classificação de Contas
+  --        (ex: "DESPESAS COM SERVIÇOS PROFISSIONAIS DE APOIO OPERACIONAL")
+  classificacao         text,
+
+  -- Col R: Sub Classificação de Contas
+  --        (ex: "IMÓVEL - ALUGUEL", "PRESTAÇÃO DE SERVIÇOS DE CONTABILIDADE")
+  sub_classificacao     text,
+
+  -- Col S: Ent./Saída (Crédito | Débito)
+  ent_saida             text,
+
+  -- Col T: Rec./Des. (Receitas | Despesas)
+  rec_desp              text,
+
+  -- Col U: Tratativa (Empréstimos | Despesas | Receitas)
+  tratativa             text,
+
+  -- Col W: Tratativa Oculta de Nome/Razão Social
+  tratativa_oculta      text,
+
+  -- Col AA: Evento (ex: "OPERAÇÃO DE FUNDAÇÃO BAPS", "5º CONGRESSO BAPS")
+  evento                text,
+
+  -- Controle de sync
+  synced_at             timestamptz not null default now(),
+  created_at            timestamptz not null default now()
+);
+
+-- Índices para queries frequentes
+create index if not exists idx_lancamentos_evento           on public.portal_lancamentos (evento);
+create index if not exists idx_lancamentos_situacao         on public.portal_lancamentos (situacao);
+create index if not exists idx_lancamentos_rec_desp         on public.portal_lancamentos (rec_desp);
+create index if not exists idx_lancamentos_data_vencimento  on public.portal_lancamentos (data_vencimento);
+create index if not exists idx_lancamentos_data_pagamento   on public.portal_lancamentos (data_pagamento);
+create index if not exists idx_lancamentos_conta_caixa      on public.portal_lancamentos (conta_caixa);
+create index if not exists idx_lancamentos_plano_primario   on public.portal_lancamentos (plano_primario_contas);
+create index if not exists idx_lancamentos_classificacao    on public.portal_lancamentos (classificacao);
+create index if not exists idx_lancamentos_tratativa        on public.portal_lancamentos (tratativa);
+
+-- Log de sincronizações
+create table if not exists public.portal_sheets_sync_log (
+  id             uuid primary key default gen_random_uuid(),
+  started_at     timestamptz not null default now(),
+  finished_at    timestamptz,
+  status         text not null default 'running'
+                   check (status in ('running', 'success', 'error')),
+  rows_read      int default 0,
+  rows_upserted  int default 0,
+  error_message  text,
+  triggered_by   text
+);
+
+-- RLS
+alter table public.portal_lancamentos       enable row level security;
+alter table public.portal_sheets_sync_log   enable row level security;
+
+drop policy if exists "portal_lancamentos_service_all"     on public.portal_lancamentos;
+drop policy if exists "portal_sheets_sync_log_service_all" on public.portal_sheets_sync_log;
+
+create policy "portal_lancamentos_service_all"
+  on public.portal_lancamentos for all using (true) with check (true);
+
+create policy "portal_sheets_sync_log_service_all"
+  on public.portal_sheets_sync_log for all using (true) with check (true);
+
+-- ---------------------------------------------------------------------------
+-- Função RPC: totais agregados dos lançamentos (evita N+1 no cliente)
+-- ---------------------------------------------------------------------------
+create or replace function public.lancamentos_totais()
+returns table (
+  total_receitas_pagas    numeric,
+  total_despesas_pagas    numeric,
+  total_a_receber         numeric,
+  total_a_pagar           numeric,
+  saldo_realizado         numeric,
+  resultado_projetado     numeric,
+  count_total             bigint
+)
+language sql
+security definer
+as $$
+  select
+    coalesce(sum(valor) filter (where rec_desp = 'Receitas' and situacao = 'Recebido'), 0) as total_receitas_pagas,
+    coalesce(sum(valor) filter (where rec_desp = 'Despesas' and situacao = 'Pago'),     0) as total_despesas_pagas,
+    coalesce(sum(valor) filter (where situacao = 'A receber'),                           0) as total_a_receber,
+    coalesce(sum(valor) filter (where situacao = 'A pagar'),                             0) as total_a_pagar,
+    coalesce(sum(valor) filter (where rec_desp = 'Receitas' and situacao = 'Recebido'), 0)
+      - coalesce(sum(valor) filter (where rec_desp = 'Despesas' and situacao = 'Pago'), 0) as saldo_realizado,
+    coalesce(sum(valor) filter (where rec_desp = 'Receitas' and situacao = 'Recebido'), 0)
+      - coalesce(sum(valor) filter (where rec_desp = 'Despesas' and situacao = 'Pago'), 0)
+      + coalesce(sum(valor) filter (where situacao = 'A receber'), 0)
+      - coalesce(sum(valor) filter (where situacao = 'A pagar'),   0) as resultado_projetado,
+    count(*) as count_total
+  from public.portal_lancamentos;
+$$;
