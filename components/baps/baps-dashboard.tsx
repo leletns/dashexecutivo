@@ -204,10 +204,15 @@ export function BapsDashboard({
           <p className="mt-2 max-w-xl text-sm text-muted-foreground leading-relaxed">
             {sector === "executivo" ? (
               <>
-                Visão geral da organização · mês de referência:{" "}
-                <span className="tabular-nums font-medium text-foreground">
-                  {data.financeiro_resumo.referencia_mes}
-                </span>
+                Visão geral da organização
+                {data.financeiro_resumo.referencia_mes && (
+                  <>
+                    {" · "}
+                    <span className="tabular-nums font-medium text-foreground">
+                      {data.financeiro_resumo.referencia_mes}
+                    </span>
+                  </>
+                )}
               </>
             ) : (
               <>
@@ -751,36 +756,34 @@ export function BapsDashboard({
 }
 
 function CeoHelpCard() {
-  const items = [
-    {
-      q: 'O que é "Dinheiro em caixa"?',
-      a: "É o valor total disponível nas contas da organização agora. Clique no número para atualizar.",
-    },
-    {
-      q: 'O que é "Satisfação dos membros"?',
-      a: "É uma nota de 0 a 100 que mede o quanto os associados estão satisfeitos com a BAPS. Quanto maior, melhor. A meta é 70 ou mais.",
-    },
-    {
-      q: 'O que é "Total de associados"?',
-      a: "O número de pessoas ativas como membros da BAPS hoje. Clique no número para atualizar.",
-    },
-    {
-      q: "Como atualizar os outros dados?",
-      a: 'Use o botão "Inserir dados" no topo da página para atualizar finanças, eventos, jurídico e muito mais.',
-    },
-  ];
   return (
-    <Card className="p-5 sm:p-6 rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm shadow-sm print:break-inside-avoid">
-      <h2 className="text-sm font-semibold tracking-tight">Como usar este painel</h2>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        {items.map((item) => (
-          <div key={item.q} className="rounded-xl border border-border/40 bg-foreground/[0.02] px-4 py-3">
-            <p className="text-sm font-medium text-foreground leading-snug">{item.q}</p>
-            <p className="mt-1.5 text-[12px] text-muted-foreground leading-relaxed">{item.a}</p>
+    <section className="border-t border-border/30 pt-5 pb-3 print:hidden">
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="rounded-xl bg-foreground/[0.03] dark:bg-white/[0.04] px-4 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-3">Sobre os indicadores</p>
+          <div className="space-y-2.5">
+            <p className="text-[12.5px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground">Dinheiro em caixa</span> — total nas contas da organização. Clique no número para atualizar.
+            </p>
+            <p className="text-[12.5px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground">Satisfação dos membros</span> — nota de 0 a 100. Meta: 70 ou mais. Clique para ajustar.
+            </p>
+            <p className="text-[12.5px] text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground">Total de associados</span> — membros ativos hoje. Clique para atualizar.
+            </p>
           </div>
-        ))}
+        </div>
+        <div className="rounded-xl bg-violet-500/[0.06] border border-violet-500/[0.10] px-4 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-violet-500/80 mb-3">Suporte disponível</p>
+          <p className="text-[12.5px] text-muted-foreground leading-relaxed">
+            O suporte pode atualizar qualquer indicador, explicar os números, registrar lançamentos, buscar contratos e responder suas dúvidas.
+          </p>
+          <p className="mt-2.5 text-[12px] text-muted-foreground/60">
+            Use o botão no canto inferior direito da tela.
+          </p>
+        </div>
       </div>
-    </Card>
+    </section>
   );
 }
 

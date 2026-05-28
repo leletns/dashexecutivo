@@ -268,12 +268,8 @@ export function LoginPageClient({ callbackUrl, authError }: LoginPageClientProps
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <a href="#" className="hover:text-foreground transition-colors">
-              Termos de uso
-            </a>
-            <a href="#" className="hover:text-foreground transition-colors">
-              Política de privacidade
-            </a>
+            <span>Termos de uso</span>
+            <span>Política de privacidade</span>
             <span className="hidden sm:inline">v1.0 · RC</span>
           </div>
         </div>
