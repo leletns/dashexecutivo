@@ -139,7 +139,7 @@ export async function POST(req: Request) {
             finished_at: new Date().toISOString(),
             status: "error",
             error_message: msg,
-          }).eq("id", activeLogId).catch(() => {});
+          }).eq("id", activeLogId);
         }
         return NextResponse.json({ error: msg }, { status: 500 });
       }

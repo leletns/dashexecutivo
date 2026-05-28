@@ -132,7 +132,8 @@ export function SheetsSyncPanel() {
     if (!file) return;
     e.target.value = "";
 
-    const isXlsx = file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls");
+    const name = file.name.toLowerCase();
+    const isXlsx = name.endsWith(".xlsx") || name.endsWith(".xls");
 
     setUploading(true);
     setUploadProgress("Lendo arquivo…");
@@ -141,25 +142,29 @@ export function SheetsSyncPanel() {
       let allRows: string[][];
 
       if (isXlsx) {
-        // XLSX: envia via rota upload (server-side)
+        // XLSX: parseia no browser com a biblioteca xlsx
         setUploadProgress("Processando planilha…");
-        const form = new FormData();
-        form.append("file", file);
-        const res = await fetch("/api/sync/upload", { method: "POST", body: form });
-        const json = await res.json();
-        if (!res.ok) { toast.error(json.error ?? "Erro ao importar."); return; }
-        toast.success(`Importação concluída! ${json.rows_upserted?.toLocaleString("pt-BR") ?? "?"} lançamentos importados.`);
-        await fetchStatus();
-        setPage(1);
-        return;
-      }
+        const XLSX = await import("xlsx");
+        const ab = await file.arrayBuffer();
+        const wb = XLSX.read(ab, { type: "array", cellDates: false, raw: false });
 
-      // CSV: processa no browser para evitar limite de tamanho
-      const text = await file.text();
-      const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(Boolean);
-      const firstLine = lines[0] ?? "";
-      const sep = firstLine.split(";").length > firstLine.split(",").length ? ";" : ",";
-      allRows = lines.map((l) => splitLine(l, sep));
+        // Prioridade: aba personalizadoFinanceiro → primeira aba
+        const sheetName =
+          wb.SheetNames.find((n) => n === (process.env.NEXT_PUBLIC_SHEET_NAME ?? "personalizadoFinanceiro (13)")) ??
+          wb.SheetNames.find((n) => n.toLowerCase().includes("personalizadofinanceiro") || n.toLowerCase().includes("personalizado")) ??
+          wb.SheetNames[0];
+
+        if (!sheetName) { toast.error("Nenhuma aba encontrada no arquivo."); return; }
+        const ws = wb.Sheets[sheetName];
+        allRows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: "", raw: false }) as string[][];
+      } else {
+        // CSV: lê como texto
+        const text = await file.text();
+        const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(Boolean);
+        const firstLine = lines[0] ?? "";
+        const sep = firstLine.split(";").length > firstLine.split(",").length ? ";" : ",";
+        allRows = lines.map((l) => splitLine(l, sep));
+      }
 
       // detecta cabeçalho
       const keywords = ["cód", "cod", "valor", "situaç", "evento", "classific"];
