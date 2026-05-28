@@ -58,36 +58,95 @@ interface LancTotais {
   count_total: number;
 }
 
+interface FluxoRow {
+  mes: string;
+  entradas: number;
+  saidas: number;
+  saldo: number;
+  acumulado: number;
+}
+
+interface EventoRow {
+  nome: string;
+  Receita: number;
+  Despesa: number;
+  resultado: number;
+}
+
+function fetchResumo(setTotais: (t: LancTotais) => void, setUpdatedAt: (s: string) => void) {
+  fetch("/api/lancamentos/resumo", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => { if (d?.totais?.[0]) setTotais(d.totais[0] as LancTotais); })
+    .catch(() => {});
+  fetch("/api/sync/sheets", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => d?.last_sync?.finished_at && setUpdatedAt(d.last_sync.finished_at as string))
+    .catch(() => {});
+}
+
+function fetchFluxo(
+  setFluxo: (rows: FluxoRow[]) => void,
+  setPorEvento: (rows: EventoRow[]) => void,
+) {
+  fetch("/api/lancamentos/fluxo", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      if (d?.fluxo_mensal?.length) setFluxo(d.fluxo_mensal as FluxoRow[]);
+      if (d?.por_evento?.length) setPorEvento(d.por_evento as EventoRow[]);
+    })
+    .catch(() => {});
+}
+
 function useLancamentosResumo() {
   const [totais, setTotais] = React.useState<LancTotais | null>(null);
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    fetch("/api/lancamentos/resumo", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.totais?.[0]) setTotais(d.totais[0] as LancTotais);
-      })
-      .catch(() => {});
-    fetch("/api/sync/sheets", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d?.last_sync?.finished_at && setUpdatedAt(d.last_sync.finished_at as string))
-      .catch(() => {});
+    fetchResumo(setTotais, setUpdatedAt);
+    const interval = setInterval(() => fetchResumo(setTotais, setUpdatedAt), 30_000);
+    const onUpdate = () => fetchResumo(setTotais, setUpdatedAt);
+    window.addEventListener("portal:data-updated", onUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("portal:data-updated", onUpdate);
+    };
   }, []);
 
   return { totais, updatedAt };
 }
 
+function useLancamentosFluxo() {
+  const [fluxoSupabase, setFluxoSupabase] = React.useState<FluxoRow[]>([]);
+  const [porEvento, setPorEvento] = React.useState<EventoRow[]>([]);
+
+  React.useEffect(() => {
+    fetchFluxo(setFluxoSupabase, setPorEvento);
+    const interval = setInterval(() => fetchFluxo(setFluxoSupabase, setPorEvento), 30_000);
+    const onUpdate = () => fetchFluxo(setFluxoSupabase, setPorEvento);
+    window.addEventListener("portal:data-updated", onUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("portal:data-updated", onUpdate);
+    };
+  }, []);
+
+  return { fluxoSupabase, porEvento };
+}
+
 export default function FinanceiroPage() {
   const { state } = useAppState();
   const { totais: lancTotais, updatedAt } = useLancamentosResumo();
+  const { fluxoSupabase, porEvento } = useLancamentosFluxo();
 
   const totals = React.useMemo(() => computeTotals(state.financeiro), [state.financeiro]);
-  const fluxoMensal = React.useMemo(() => computeFluxoMensal(state.financeiro), [state.financeiro]);
+  const fluxoLocal = React.useMemo(() => computeFluxoMensal(state.financeiro), [state.financeiro]);
   const margens = React.useMemo(
     () => computeMargensPorEdicao(state.edicoes, state.financeiro),
     [state.edicoes, state.financeiro],
   );
+
+  // Usa dados reais do Supabase quando disponíveis
+  const fluxoMensal: FluxoMensal[] = fluxoSupabase.length > 0 ? fluxoSupabase : fluxoLocal;
 
   const displayTotals: Totals = lancTotais
     ? {
@@ -153,11 +212,11 @@ export default function FinanceiroPage() {
         </TabsList>
 
         <TabsContent value="overview" className="mt-2">
-          <OverviewTab totals={totals} fluxoMensal={fluxoMensal} margens={margens} />
+          <OverviewTab totals={displayTotals} fluxoMensal={fluxoMensal} margens={margens} porEvento={porEvento} />
         </TabsContent>
 
         <TabsContent value="fluxo" className="mt-2">
-          <FluxoTab fluxoMensal={fluxoMensal} totals={totals} />
+          <FluxoTab fluxoMensal={fluxoMensal} totals={displayTotals} />
         </TabsContent>
 
         <TabsContent value="receber" className="mt-2">
@@ -169,7 +228,7 @@ export default function FinanceiroPage() {
         </TabsContent>
 
         <TabsContent value="margem" className="mt-2">
-          <MargemTab margens={margens} />
+          <MargemTab margens={margens} porEvento={porEvento} />
         </TabsContent>
 
         <TabsContent value="egestor" className="mt-2">
@@ -267,19 +326,26 @@ function OverviewTab({
   totals,
   fluxoMensal,
   margens,
+  porEvento,
 }: {
   totals: Totals;
   fluxoMensal: FluxoMensal[];
   margens: MargemEdicao[];
+  porEvento: EventoRow[];
 }) {
+  // Usa dados reais do Supabase quando disponíveis, senão usa os dados locais
+  const barData = porEvento.length > 0
+    ? porEvento
+    : margens.map((m) => ({ nome: m.edicao.nome, Receita: m.receitaTotal, Despesa: m.despesaTotal, resultado: m.receitaTotal - m.despesaTotal }));
+
   return (
     <div className="space-y-4">
       <Card className="p-5">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <div>
-            <div className="text-sm font-semibold tracking-tight">Fluxo de caixa nos últimos meses</div>
+            <div className="text-sm font-semibold tracking-tight">Fluxo de caixa — histórico mensal</div>
             <div className="text-[11px] text-muted-foreground">
-              Entradas, saídas e saldo do período · valores realizados
+              Entradas, saídas e saldo · movimentações realizadas
             </div>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
@@ -288,65 +354,76 @@ function OverviewTab({
             <Legend dot="bg-foreground" label="Saldo" />
           </div>
         </div>
-        <div className="h-[280px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={fluxoMensal} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="grad-entradas" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgb(16,185,129)" stopOpacity={0.45} />
-                  <stop offset="100%" stopColor="rgb(16,185,129)" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="grad-saidas" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="grad-saldo" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--foreground))" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="hsl(var(--foreground))" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/50" />
-              <XAxis dataKey="mes" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`} width={48} />
-              <Tooltip content={<MoneyTip />} cursor={{ stroke: "hsl(var(--border))" }} />
-              <Area type="monotone" dataKey="entradas" stroke="rgb(16,185,129)" strokeWidth={2} fill="url(#grad-entradas)" />
-              <Area type="monotone" dataKey="saidas" stroke="rgb(244,63,94)" strokeWidth={2} fill="url(#grad-saidas)" />
-              <Area type="monotone" dataKey="saldo" stroke="hsl(var(--foreground))" strokeWidth={2} fill="url(#grad-saldo)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        {fluxoMensal.length === 0 ? (
+          <div className="h-[280px] grid place-items-center text-xs text-muted-foreground">
+            Nenhuma movimentação liquidada registrada ainda.
+          </div>
+        ) : (
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={fluxoMensal} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="grad-entradas" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="rgb(16,185,129)" stopOpacity={0.45} />
+                    <stop offset="100%" stopColor="rgb(16,185,129)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="grad-saidas" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="grad-saldo" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="hsl(var(--foreground))" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="hsl(var(--foreground))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/50" />
+                <XAxis dataKey="mes" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`} width={48} />
+                <Tooltip content={<MoneyTip />} cursor={{ stroke: "hsl(var(--border))" }} />
+                <Area type="monotone" dataKey="entradas" stroke="rgb(16,185,129)" strokeWidth={2} fill="url(#grad-entradas)" />
+                <Area type="monotone" dataKey="saidas" stroke="rgb(244,63,94)" strokeWidth={2} fill="url(#grad-saidas)" />
+                <Area type="monotone" dataKey="saldo" stroke="hsl(var(--foreground))" strokeWidth={2} fill="url(#grad-saldo)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3">
         <Card className="p-5">
-          <div className="text-sm font-semibold tracking-tight mb-1">Resultado por edição</div>
+          <div className="text-sm font-semibold tracking-tight mb-1">Resultado por evento</div>
           <div className="text-[11px] text-muted-foreground mb-3">
-            Receita total (ingressos + patrocínios) versus despesas alocadas
+            Receitas versus despesas por evento · top {barData.length}
           </div>
-          <div className="h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={margens.map((m) => ({ nome: m.edicao.nome, Receita: m.receitaTotal, Despesa: m.despesaTotal }))}
-                margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="bar-receita-fin" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--brand-2))" stopOpacity={0.95} />
-                    <stop offset="100%" stopColor="hsl(var(--brand-1))" stopOpacity={0.6} />
-                  </linearGradient>
-                  <linearGradient id="bar-despesa-fin" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.6} />
-                    <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0.18} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/50" />
-                <XAxis dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false}
-                  tickFormatter={(v) => (String(v).length > 18 ? `${String(v).slice(0, 16)}…` : String(v))} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`} />
-                <Tooltip content={<MoneyTip />} cursor={{ fill: "hsl(var(--muted) / 0.3)" }} />
-                <Bar dataKey="Receita" fill="url(#bar-receita-fin)" radius={[8, 8, 4, 4]} />
-                <Bar dataKey="Despesa" fill="url(#bar-despesa-fin)" radius={[8, 8, 4, 4]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {barData.length === 0 ? (
+            <div className="h-[260px] grid place-items-center text-xs text-muted-foreground">
+              Nenhum evento registrado nas movimentações.
+            </div>
+          ) : (
+            <div className="h-[260px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={barData} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="bar-receita-fin" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--brand-2))" stopOpacity={0.95} />
+                      <stop offset="100%" stopColor="hsl(var(--brand-1))" stopOpacity={0.6} />
+                    </linearGradient>
+                    <linearGradient id="bar-despesa-fin" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.6} />
+                      <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0.18} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/50" />
+                  <XAxis dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false}
+                    tickFormatter={(v) => (String(v).length > 18 ? `${String(v).slice(0, 16)}…` : String(v))} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`} />
+                  <Tooltip content={<MoneyTip />} cursor={{ fill: "hsl(var(--muted) / 0.3)" }} />
+                  <Bar dataKey="Receita" fill="url(#bar-receita-fin)" radius={[8, 8, 4, 4]} />
+                  <Bar dataKey="Despesa" fill="url(#bar-despesa-fin)" radius={[8, 8, 4, 4]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </Card>
 
         <Card className="p-5">
@@ -660,11 +737,39 @@ function LancamentosTab({ tipo }: { tipo: "receita" | "despesa" }) {
 // Margem por evento
 // ---------------------------------------------------------------------------
 
-function MargemTab({ margens }: { margens: MargemEdicao[] }) {
+function MargemTab({ margens, porEvento }: { margens: MargemEdicao[]; porEvento: EventoRow[] }) {
+  // Usa dados reais do Supabase quando disponíveis
+  if (porEvento.length > 0) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {porEvento.map((ev) => {
+          const margemPct = ev.Receita > 0 ? Math.round(((ev.Receita - ev.Despesa) / ev.Receita) * 100) : 0;
+          return (
+            <Card key={ev.nome} className="p-5">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold tracking-tight truncate">{ev.nome}</div>
+                </div>
+                <Badge variant={margemPct >= 30 ? "success" : margemPct >= 0 ? "warning" : "destructive"} className="tabular-nums">
+                  Margem {margemPct}%
+                </Badge>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <Stat label="Receitas" value={ev.Receita} accent="emerald" />
+                <Stat label="Despesas" value={ev.Despesa} accent="rose" />
+                <Stat label="Resultado" value={ev.resultado} accent={ev.resultado >= 0 ? "emerald" : "rose"} />
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    );
+  }
+
   if (margens.length === 0) {
     return (
       <Card className="p-10 text-center text-sm text-muted-foreground">
-        Cadastre uma edição em Produção de eventos para ver a margem por evento.
+        Importe movimentações para ver a margem por evento automaticamente.
       </Card>
     );
   }

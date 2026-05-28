@@ -105,10 +105,19 @@ export function BapsDashboard({
 
   React.useEffect(() => {
     if (sector !== "financeiro" && sector !== "contabil") return;
-    fetch("/api/lancamentos/resumo", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d?.totais?.[0] && setLancTotais(d.totais[0]))
-      .catch(() => {});
+    const load = () => {
+      fetch("/api/lancamentos/resumo", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => d?.totais?.[0] && setLancTotais(d.totais[0]))
+        .catch(() => {});
+    };
+    load();
+    const interval = setInterval(load, 30_000);
+    window.addEventListener("portal:data-updated", load);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("portal:data-updated", load);
+    };
   }, [sector]);
 
   const demandas = data.contratos.filter((c) => c.status !== "ativo");
@@ -946,19 +955,26 @@ function LancamentosKpiStrip() {
   const [totais, setTotais] = React.useState<LancTotais | null>(null);
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
+  const loadData = React.useCallback(() => {
     fetch("/api/lancamentos/resumo", { cache: "no-store" })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => {
-        if (!d?.totais?.[0]) return;
-        setTotais(d.totais[0]);
-      })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.totais?.[0]) setTotais(d.totais[0]); })
       .catch(() => {});
     fetch("/api/sync/sheets", { cache: "no-store" })
-      .then((r) => r.ok ? r.json() : null)
+      .then((r) => (r.ok ? r.json() : null))
       .then((d) => d?.last_sync?.finished_at && setUpdatedAt(d.last_sync.finished_at))
       .catch(() => {});
   }, []);
+
+  React.useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 30_000);
+    window.addEventListener("portal:data-updated", loadData);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("portal:data-updated", loadData);
+    };
+  }, [loadData]);
 
   if (!totais || !totais.count_total) return null;
 

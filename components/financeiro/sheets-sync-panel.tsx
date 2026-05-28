@@ -204,6 +204,7 @@ export function SheetsSyncPanel() {
       }
 
       toast.success(`Concluído! ${dataRows.length.toLocaleString("pt-BR")} movimentações atualizadas.`);
+      window.dispatchEvent(new CustomEvent("portal:data-updated"));
       await fetchStatus();
       setPage(1);
     } catch (err: any) {

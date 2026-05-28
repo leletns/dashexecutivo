@@ -80,6 +80,9 @@ async function mutate(
     const err = await res.json().catch(() => ({}));
     throw new Error((err as any).error ?? "Erro ao salvar.");
   }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("portal:data-updated"));
+  }
   return res.json();
 }
 
