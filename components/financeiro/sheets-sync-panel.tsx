@@ -97,6 +97,7 @@ export function SheetsSyncPanel() {
   const [loadingStatus, setLoadingStatus] = React.useState(true);
   const [syncing, setSyncing] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState<string>("");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Filtros / paginação
@@ -151,36 +152,95 @@ export function SheetsSyncPanel() {
       .finally(() => setLoadingRows(false));
   }, [status?.total_lancamentos, page, searchDebounced, situacaoFilter, recDespFilter]);
 
-  // ── Upload CSV/XLSX ───────────────────────────────────────────────────────
+  // ── Upload CSV — processa no browser, envia em lotes de 500 linhas ──────────
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Reset input so same file can be re-uploaded
     e.target.value = "";
 
     setUploading(true);
+    setUploadProgress("Lendo arquivo…");
+
     try {
-      const form = new FormData();
-      form.append("file", file);
+      // 1. Lê o arquivo como texto no browser
+      const text = await file.text();
 
-      const res = await fetch("/api/sync/upload", { method: "POST", body: form });
-      const json = await res.json();
+      // 2. Detecta separador e divide em linhas
+      const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(Boolean);
 
-      if (!res.ok) {
-        toast.error(`Upload falhou: ${json.error}`);
-      } else {
-        toast.success(
-          `Importação concluída! ${json.rows_upserted.toLocaleString("pt-BR")} lançamentos importados.`
-        );
-        await fetchStatus();
-        setPage(1);
+      // 3. Parseia cada linha como array de campos
+      const firstLine = lines[0] ?? "";
+      const sep = firstLine.split(";").length > firstLine.split(",").length ? ";" : ",";
+      const allRows = lines.map((l) => splitLine(l, sep));
+
+      // 4. Detecta linha do cabeçalho (pula lixo do e-Gestor)
+      const keywords = ["cód", "cod", "valor", "situaç", "evento", "classific"];
+      let headerIdx = 4;
+      for (let i = 0; i < Math.min(10, allRows.length); i++) {
+        const rowText = allRows[i].join(" ").toLowerCase();
+        if (keywords.filter((k) => rowText.includes(k)).length >= 3) { headerIdx = i; break; }
       }
-    } catch {
-      toast.error("Erro ao enviar arquivo.");
+
+      const headers = allRows[headerIdx] ?? [];
+      const dataRows = allRows.slice(headerIdx + 1);
+      const CHUNK = 500;
+      const totalChunks = Math.ceil(dataRows.length / CHUNK);
+
+      let logId: string | undefined;
+
+      // 5. Envia em lotes
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = dataRows.slice(i * CHUNK, (i + 1) * CHUNK);
+        const isFirst = i === 0;
+        const isLast = i === totalChunks - 1;
+
+        setUploadProgress(
+          `Importando… ${Math.min((i + 1) * CHUNK, dataRows.length).toLocaleString("pt-BR")} / ${dataRows.length.toLocaleString("pt-BR")} linhas`
+        );
+
+        const res = await fetch("/api/sync/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            headers,
+            rows: chunk,
+            is_first_batch: isFirst,
+            is_last_batch: isLast,
+            log_id: logId,
+            total_rows: dataRows.length,
+          }),
+        });
+
+        const json = await res.json();
+        if (!res.ok) { toast.error(`Erro no lote ${i + 1}: ${json.error}`); return; }
+        if (isFirst) logId = json.log_id;
+      }
+
+      toast.success(`Importação concluída! ${dataRows.length.toLocaleString("pt-BR")} lançamentos importados.`);
+      await fetchStatus();
+      setPage(1);
+    } catch (err: any) {
+      toast.error(`Erro: ${err?.message ?? "Falha ao processar arquivo."}`);
     } finally {
       setUploading(false);
+      setUploadProgress("");
     }
   };
+
+  // Parseia uma linha CSV respeitando aspas
+  function splitLine(line: string, sep: string): string[] {
+    const result: string[] = [];
+    let cur = "";
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === sep && !inQ) { result.push(cur.trim()); cur = ""; }
+      else { cur += ch; }
+    }
+    result.push(cur.trim());
+    return result;
+  }
 
   // ── Sync automático (Google Sheets) ──────────────────────────────────────
   const handleSync = async () => {
@@ -250,16 +310,21 @@ export function SheetsSyncPanel() {
               className="hidden"
               onChange={handleUpload}
             />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="gap-1.5"
-            >
-              <Upload className={cn("h-3.5 w-3.5", uploading && "animate-bounce")} />
-              {uploading ? "Importando…" : "Enviar CSV / XLSX"}
-            </Button>
+            <div className="flex flex-col gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="gap-1.5"
+              >
+                <Upload className={cn("h-3.5 w-3.5", uploading && "animate-bounce")} />
+                {uploading ? "Importando…" : "Enviar CSV / XLSX"}
+              </Button>
+              {uploadProgress && (
+                <span className="text-[11px] text-muted-foreground">{uploadProgress}</span>
+              )}
+            </div>
 
             {/* Sync automático — requer Google Sheets configurado */}
             {status.configured ? (
