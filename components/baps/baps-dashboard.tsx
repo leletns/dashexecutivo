@@ -86,6 +86,14 @@ export function BapsDashboard({
     count_total: number;
   } | null>(null);
 
+  function fmtCompactBRL(value: number): string {
+    const sign = value < 0 ? "-" : "";
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000) return `${sign}R$ ${(abs / 1_000_000).toFixed(1).replace(".", ",")}M`;
+    if (abs >= 1_000) return `${sign}R$ ${(abs / 1_000).toFixed(0)}k`;
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
+  }
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -106,9 +114,16 @@ export function BapsDashboard({
   React.useEffect(() => {
     if (sector !== "financeiro" && sector !== "contabil") return;
     const load = () => {
-      fetch("/api/lancamentos/resumo", { cache: "no-store" })
+      fetch("/api/lancamentos/fluxo", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => d?.totais?.[0] && setLancTotais(d.totais[0]))
+        .then((d) => {
+          if (!d?.totais) return;
+          // fetch count separately
+          fetch("/api/lancamentos?limit=1", { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((c) => setLancTotais({ ...d.totais, count_total: c?.total ?? 0 }))
+            .catch(() => setLancTotais({ ...d.totais, count_total: 0 }));
+        })
         .catch(() => {});
     };
     load();
@@ -324,53 +339,39 @@ export function BapsDashboard({
             <>
               <Kpi
                 label="Receitas recebidas"
-                value={formatCurrencyBRL(lancTotais.total_receitas_pagas)}
-                hint={`${lancTotais.count_total.toLocaleString("pt-BR")} movimentações registradas`}
+                value={fmtCompactBRL(lancTotais.total_receitas_pagas)}
+                fullValue={formatCurrencyBRL(lancTotais.total_receitas_pagas)}
+                hint={lancTotais.count_total > 0 ? `${lancTotais.count_total.toLocaleString("pt-BR")} movimentações` : "Total recebido no período"}
                 accent="emerald"
               />
               <Kpi
                 label="Despesas pagas"
-                value={formatCurrencyBRL(lancTotais.total_despesas_pagas)}
+                value={fmtCompactBRL(lancTotais.total_despesas_pagas)}
+                fullValue={formatCurrencyBRL(lancTotais.total_despesas_pagas)}
                 hint="Total de pagamentos realizados"
                 accent="rose"
               />
               <Kpi
                 label="Saldo realizado"
-                value={formatCurrencyBRL(lancTotais.saldo_realizado)}
-                hint="Receitas recebidas − despesas pagas"
-                accent={lancTotais.saldo_realizado < 0 ? "rose" : undefined}
+                value={fmtCompactBRL(lancTotais.saldo_realizado)}
+                fullValue={formatCurrencyBRL(lancTotais.saldo_realizado)}
+                hint="Receitas − despesas pagas"
+                accent={lancTotais.saldo_realizado < 0 ? "rose" : "emerald"}
               />
               <Kpi
                 label="Resultado projetado"
-                value={formatCurrencyBRL(lancTotais.resultado_projetado)}
+                value={fmtCompactBRL(lancTotais.resultado_projetado)}
+                fullValue={formatCurrencyBRL(lancTotais.resultado_projetado)}
                 hint="Saldo + a receber − a pagar"
-                accent={lancTotais.resultado_projetado < 0 ? "rose" : undefined}
+                accent={lancTotais.resultado_projetado < 0 ? "rose" : "emerald"}
               />
             </>
           ) : (
             <>
-              <Kpi
-                label="Saldo global"
-                value={formatCurrencyBRL(data.financeiro_resumo.saldo_global)}
-                hint="Posição líquida consolidada"
-              />
-              <Kpi
-                label="Déficit Q1"
-                value={formatCurrencyBRL(data.financeiro_resumo.deficit_q1)}
-                hint="Resultado parcial trimestral"
-                accent={data.financeiro_resumo.deficit_q1 < 0 ? "rose" : undefined}
-              />
-              <Kpi
-                label="Receitas (eventos)"
-                value={formatCurrencyBRL(totalReceitasEventos)}
-                hint="Soma dos eventos no painel"
-              />
-              <Kpi
-                label="Resultado (eventos)"
-                value={formatCurrencyBRL(resultadoEventos)}
-                hint="Receitas − despesas pagas"
-                accent={resultadoEventos < 0 ? "rose" : undefined}
-              />
+              <Kpi label="Receitas recebidas" value="—" hint="Carregando dados do e-Gestor…" />
+              <Kpi label="Despesas pagas" value="—" hint="Carregando dados do e-Gestor…" />
+              <Kpi label="Saldo realizado" value="—" hint="Aguardando…" />
+              <Kpi label="Resultado projetado" value="—" hint="Aguardando…" />
             </>
           )}
         </motion.section>
@@ -853,22 +854,25 @@ function Kpi({
   value,
   hint,
   accent,
+  fullValue,
 }: {
   label: string;
   value: string;
   hint?: string;
   accent?: "rose" | "emerald";
+  fullValue?: string;
 }) {
   return (
-    <Card className="p-5 rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm shadow-sm print:break-inside-avoid">
-      <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
-      {hint && <div className="text-[11px] text-muted-foreground/80 mt-1">{hint}</div>}
+    <Card className="p-5 rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm shadow-sm print:break-inside-avoid overflow-hidden">
+      <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground truncate">{label}</div>
+      {hint && <div className="text-[11px] text-muted-foreground/80 mt-1 truncate">{hint}</div>}
       <div
         className={cn(
-          "mt-3 text-xl font-semibold tracking-tight tabular-nums",
+          "mt-3 text-xl font-semibold tracking-tight tabular-nums truncate",
           accent === "rose" && "text-rose-600 dark:text-rose-400",
           accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
         )}
+        title={fullValue ?? value}
       >
         {value}
       </div>
