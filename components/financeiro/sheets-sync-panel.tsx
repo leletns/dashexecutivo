@@ -1,15 +1,5 @@
 "use client";
 
-/**
- * SheetsSyncPanel — aba "e-Gestor" dentro do módulo Financeiro.
- *
- * Funcionalidades:
- *  - Status da última sincronização
- *  - Botão "Sincronizar agora"
- *  - KPIs calculados dos lançamentos sincronizados
- *  - Tabela paginada e filtrável dos 49 k registros
- */
-
 import * as React from "react";
 import {
   AlertCircle,
@@ -18,10 +8,7 @@ import {
   ChevronRight,
   RefreshCw,
   Search,
-  Sheet,
   Upload,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -95,34 +82,25 @@ function formatRelative(iso: string): string {
 export function SheetsSyncPanel() {
   const [status, setStatus] = React.useState<SyncStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = React.useState(true);
-  const [syncing, setSyncing] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState<string>("");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Filtros / paginação
   const [search, setSearch] = React.useState("");
   const [searchDebounced, setSearchDebounced] = React.useState("");
   const [situacaoFilter, setSituacaoFilter] = React.useState("");
   const [recDespFilter, setRecDespFilter] = React.useState("");
   const [page, setPage] = React.useState(1);
-
   const LIMIT = 50;
 
-  // Dados paginados
   const [lancamentos, setLancamentos] = React.useState<LancamentosPage | null>(null);
   const [loadingRows, setLoadingRows] = React.useState(false);
 
-  // ── Debounce search ────────────────────────────────────────────────────────
   React.useEffect(() => {
-    const t = setTimeout(() => {
-      setSearchDebounced(search);
-      setPage(1);
-    }, 400);
+    const t = setTimeout(() => { setSearchDebounced(search); setPage(1); }, 400);
     return () => clearTimeout(t);
   }, [search]);
 
-  // ── Fetch status ──────────────────────────────────────────────────────────
   const fetchStatus = React.useCallback(async () => {
     try {
       const res = await fetch("/api/sync/sheets", { cache: "no-store" });
@@ -132,14 +110,10 @@ export function SheetsSyncPanel() {
     }
   }, []);
 
-  React.useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+  React.useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
-  // ── Fetch lancamentos ──────────────────────────────────────────────────────
   React.useEffect(() => {
     if (!status?.total_lancamentos) return;
-
     const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
     if (searchDebounced) params.set("search", searchDebounced);
     if (situacaoFilter) params.set("situacao", situacaoFilter);
@@ -152,28 +126,42 @@ export function SheetsSyncPanel() {
       .finally(() => setLoadingRows(false));
   }, [status?.total_lancamentos, page, searchDebounced, situacaoFilter, recDespFilter]);
 
-  // ── Upload CSV — processa no browser, envia em lotes de 500 linhas ──────────
+  // ── Upload — lê no browser, envia em lotes de 500 linhas ──────────────────
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
 
+    const isXlsx = file.name.toLowerCase().endsWith(".xlsx") || file.name.toLowerCase().endsWith(".xls");
+
     setUploading(true);
     setUploadProgress("Lendo arquivo…");
 
     try {
-      // 1. Lê o arquivo como texto no browser
+      let allRows: string[][];
+
+      if (isXlsx) {
+        // XLSX: envia via rota upload (server-side)
+        setUploadProgress("Processando planilha…");
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/sync/upload", { method: "POST", body: form });
+        const json = await res.json();
+        if (!res.ok) { toast.error(json.error ?? "Erro ao importar."); return; }
+        toast.success(`Importação concluída! ${json.rows_upserted?.toLocaleString("pt-BR") ?? "?"} lançamentos importados.`);
+        await fetchStatus();
+        setPage(1);
+        return;
+      }
+
+      // CSV: processa no browser para evitar limite de tamanho
       const text = await file.text();
-
-      // 2. Detecta separador e divide em linhas
       const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(Boolean);
-
-      // 3. Parseia cada linha como array de campos
       const firstLine = lines[0] ?? "";
       const sep = firstLine.split(";").length > firstLine.split(",").length ? ";" : ",";
-      const allRows = lines.map((l) => splitLine(l, sep));
+      allRows = lines.map((l) => splitLine(l, sep));
 
-      // 4. Detecta linha do cabeçalho (pula lixo do e-Gestor)
+      // detecta cabeçalho
       const keywords = ["cód", "cod", "valor", "situaç", "evento", "classific"];
       let headerIdx = 4;
       for (let i = 0; i < Math.min(10, allRows.length); i++) {
@@ -185,17 +173,12 @@ export function SheetsSyncPanel() {
       const dataRows = allRows.slice(headerIdx + 1);
       const CHUNK = 500;
       const totalChunks = Math.ceil(dataRows.length / CHUNK);
-
       let logId: string | undefined;
 
-      // 5. Envia em lotes
       for (let i = 0; i < totalChunks; i++) {
         const chunk = dataRows.slice(i * CHUNK, (i + 1) * CHUNK);
-        const isFirst = i === 0;
-        const isLast = i === totalChunks - 1;
-
         setUploadProgress(
-          `Importando… ${Math.min((i + 1) * CHUNK, dataRows.length).toLocaleString("pt-BR")} / ${dataRows.length.toLocaleString("pt-BR")} linhas`
+          `Importando… ${Math.min((i + 1) * CHUNK, dataRows.length).toLocaleString("pt-BR")} / ${dataRows.length.toLocaleString("pt-BR")} lançamentos`
         );
 
         const res = await fetch("/api/sync/batch", {
@@ -204,30 +187,29 @@ export function SheetsSyncPanel() {
           body: JSON.stringify({
             headers,
             rows: chunk,
-            is_first_batch: isFirst,
-            is_last_batch: isLast,
+            is_first_batch: i === 0,
+            is_last_batch: i === totalChunks - 1,
             log_id: logId,
             total_rows: dataRows.length,
           }),
         });
 
         const json = await res.json();
-        if (!res.ok) { toast.error(`Erro no lote ${i + 1}: ${json.error}`); return; }
-        if (isFirst) logId = json.log_id;
+        if (!res.ok) { toast.error(`Erro: ${json.error}`); return; }
+        if (i === 0) logId = json.log_id;
       }
 
-      toast.success(`Importação concluída! ${dataRows.length.toLocaleString("pt-BR")} lançamentos importados.`);
+      toast.success(`Concluído! ${dataRows.length.toLocaleString("pt-BR")} lançamentos atualizados.`);
       await fetchStatus();
       setPage(1);
     } catch (err: any) {
-      toast.error(`Erro: ${err?.message ?? "Falha ao processar arquivo."}`);
+      toast.error(err?.message ?? "Falha ao processar arquivo.");
     } finally {
       setUploading(false);
       setUploadProgress("");
     }
   };
 
-  // Parseia uma linha CSV respeitando aspas
   function splitLine(line: string, sep: string): string[] {
     const result: string[] = [];
     let cur = "";
@@ -242,67 +224,29 @@ export function SheetsSyncPanel() {
     return result;
   }
 
-  // ── Sync automático (Google Sheets) ──────────────────────────────────────
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const res = await fetch("/api/sync/sheets", { method: "POST" });
-      const json = await res.json();
-      if (!res.ok) {
-        toast.error(`Sync falhou: ${json.error}`);
-      } else {
-        toast.success(
-          `Sync concluído! ${json.rows_upserted.toLocaleString("pt-BR")} lançamentos atualizados.`
-        );
-        await fetchStatus();
-        setPage(1);
-      }
-    } catch {
-      toast.error("Erro ao conectar com o servidor.");
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   if (loadingStatus) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-        <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Carregando status…
+        <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Carregando…
       </div>
-    );
-  }
-
-  if (!status) {
-    return (
-      <Card className="p-6 text-center text-sm text-muted-foreground">
-        Não foi possível carregar o status do sync.
-      </Card>
     );
   }
 
   return (
     <div className="space-y-4">
-      {/* ── Status card ─────────────────────────────────────────────────────── */}
+      {/* ── Upload card ─────────────────────────────────────────────────────── */}
       <Card className="p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="h-9 w-9 rounded-xl bg-emerald-500/10 grid place-items-center shrink-0">
-              <Sheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            </div>
-            <div>
-              <div className="text-sm font-semibold tracking-tight">
-                Google Sheets — e-Gestor Sync
-              </div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">
-                Sincronização automática da planilha <code className="font-mono text-[10px] bg-foreground/[0.06] px-1 rounded">personalizadoFinanceiro (13)</code>
-              </div>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold tracking-tight">Lançamentos do e-Gestor</div>
+            <div className="text-[12px] text-muted-foreground mt-0.5">
+              Envie o arquivo exportado do e-Gestor para atualizar os dados para todos os usuários.
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Upload manual — funciona sem configuração */}
+          <div className="flex flex-col items-end gap-1">
             <input
               ref={fileInputRef}
               type="file"
@@ -310,67 +254,44 @@ export function SheetsSyncPanel() {
               className="hidden"
               onChange={handleUpload}
             />
-            <div className="flex flex-col gap-1">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="gap-1.5"
-              >
-                <Upload className={cn("h-3.5 w-3.5", uploading && "animate-bounce")} />
-                {uploading ? "Importando…" : "Enviar CSV / XLSX"}
-              </Button>
-              {uploadProgress && (
-                <span className="text-[11px] text-muted-foreground">{uploadProgress}</span>
-              )}
-            </div>
-
-            {/* Sync automático — requer Google Sheets configurado */}
-            {status.configured ? (
-              <Button
-                size="sm"
-                onClick={handleSync}
-                disabled={syncing}
-                className="gap-1.5"
-              >
-                <RefreshCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} />
-                {syncing ? "Sincronizando…" : "Sync Google Sheets"}
-              </Button>
-            ) : (
-              <Badge variant="warning" className="gap-1 text-[11px]">
-                <WifiOff className="h-3 w-3" /> Sheets não configurado
-              </Badge>
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="gap-2"
+            >
+              <Upload className={cn("h-4 w-4", uploading && "animate-bounce")} />
+              {uploading ? "Importando…" : "Enviar arquivo CSV ou XLSX"}
+            </Button>
+            {uploadProgress && (
+              <span className="text-[11px] text-muted-foreground">{uploadProgress}</span>
             )}
           </div>
         </div>
 
-        {/* Status da última sync */}
-        {status.last_sync && (
+        {/* Status */}
+        {status?.last_sync && (
           <div className="mt-4 rounded-xl border border-border/60 bg-foreground/[0.02] dark:bg-white/[0.02] p-3">
             <div className="flex flex-wrap items-center gap-3 text-[12px]">
               {status.last_sync.status === "success" ? (
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
               ) : status.last_sync.status === "error" ? (
-                <AlertCircle className="h-3.5 w-3.5 text-rose-500" />
+                <AlertCircle className="h-3.5 w-3.5 text-rose-500 shrink-0" />
               ) : (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />
               )}
               <span className="font-medium">
                 {status.last_sync.status === "success"
-                  ? "Último sync concluído"
+                  ? "Última importação concluída"
                   : status.last_sync.status === "error"
-                    ? "Último sync falhou"
-                    : "Sync em andamento…"}
+                    ? "Última importação falhou"
+                    : "Importação em andamento…"}
               </span>
-              <span className="text-muted-foreground">
-                {formatRelative(status.last_sync.started_at)}
-              </span>
+              <span className="text-muted-foreground">{formatRelative(status.last_sync.started_at)}</span>
               {status.last_sync.status === "success" && (
                 <>
                   <span className="text-muted-foreground">·</span>
                   <span className="text-muted-foreground">
-                    {status.last_sync.rows_upserted.toLocaleString("pt-BR")} linhas
+                    {status.last_sync.rows_upserted.toLocaleString("pt-BR")} lançamentos
                   </span>
                 </>
               )}
@@ -381,47 +302,30 @@ export function SheetsSyncPanel() {
           </div>
         )}
 
-        {/* Config guide se não configurado */}
-        {!status.configured && (
-          <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-[12px] space-y-2">
-            <div className="font-semibold text-amber-600 dark:text-amber-400">
-              ⚙️ Como configurar (5 minutos)
-            </div>
-            <ol className="list-decimal list-inside space-y-1.5 text-muted-foreground">
-              <li>Abra a planilha no Google Drive (ou converta via OneDrive → "Abrir com Google Planilhas")</li>
-              <li>Acesse <strong>console.cloud.google.com</strong> → crie um projeto → ative "Google Sheets API"</li>
-              <li>Crie uma <strong>Conta de Serviço</strong> → gere uma chave JSON → encode em Base64</li>
-              <li>Compartilhe a planilha com o e-mail da conta de serviço (somente leitura)</li>
-              <li>Adicione na Vercel: <code className="font-mono bg-foreground/[0.08] px-1 rounded">GOOGLE_SERVICE_ACCOUNT_KEY_B64</code> e <code className="font-mono bg-foreground/[0.08] px-1 rounded">GOOGLE_SHEETS_SPREADSHEET_ID</code></li>
-            </ol>
-          </div>
-        )}
-
-        {/* KPI rápida */}
-        {status.total_lancamentos > 0 && (
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {status?.total_lancamentos ? (
+          <div className="mt-4 grid grid-cols-2 gap-3">
             <StatMini
-              label="Total de lançamentos"
+              label="Total de lançamentos no banco"
               value={status.total_lancamentos.toLocaleString("pt-BR")}
             />
             <StatMini
-              label="Última sincronização"
+              label="Última atualização"
               value={
                 status.last_sync?.finished_at
                   ? formatRelative(status.last_sync.finished_at)
                   : "—"
               }
             />
-            <StatMini
-              label="Por"
-              value={status.last_sync?.triggered_by ?? "—"}
-            />
           </div>
-        )}
+        ) : !uploading ? (
+          <div className="mt-4 rounded-xl border border-dashed border-border/60 p-6 text-center text-[12px] text-muted-foreground">
+            Nenhum lançamento importado ainda. Clique em <strong>Enviar arquivo</strong> para começar.
+          </div>
+        ) : null}
       </Card>
 
-      {/* ── Tabela de lançamentos ─────────────────────────────────────────────── */}
-      {status.total_lancamentos > 0 && (
+      {/* ── Tabela ────────────────────────────────────────────────────────────── */}
+      {(status?.total_lancamentos ?? 0) > 0 && (
         <Card className="p-5 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[220px]">
@@ -457,21 +361,11 @@ export function SheetsSyncPanel() {
             </select>
           </div>
 
-          {/* Tabela */}
           <div className="overflow-x-auto rounded-xl border border-border/60">
             <table className="w-full min-w-[960px] text-sm">
               <thead>
                 <tr className="bg-foreground/[0.02] dark:bg-white/[0.02]">
-                  {[
-                    "Cód.",
-                    "Descrição",
-                    "Nome / Razão Social",
-                    "Plano Primário",
-                    "Evento",
-                    "Situação",
-                    "Valor",
-                    "Conta",
-                  ].map((h) => (
+                  {["Cód.", "Descrição", "Nome / Razão Social", "Plano Primário", "Evento", "Situação", "Valor", "Conta"].map((h) => (
                     <th
                       key={h}
                       className="text-left px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium whitespace-nowrap"
@@ -493,65 +387,52 @@ export function SheetsSyncPanel() {
                 {!loadingRows && lancamentos?.data.length === 0 && (
                   <tr>
                     <td colSpan={8} className="text-center py-10 text-xs text-muted-foreground">
-                      Nenhum lançamento encontrado para os filtros selecionados.
+                      Nenhum lançamento para os filtros selecionados.
                     </td>
                   </tr>
                 )}
-                {!loadingRows &&
-                  lancamentos?.data.map((l) => (
-                    <tr key={l.id} className="border-t border-border/50 hover:bg-foreground/[0.015]">
-                      <td className="px-3 py-2 text-xs font-mono text-muted-foreground shrink-0">
-                        {l.cod}
-                      </td>
-                      <td className="px-3 py-2 max-w-[240px]">
-                        <div className="text-xs font-medium truncate" title={l.descricao ?? ""}>
-                          {l.descricao ?? <span className="text-muted-foreground">—</span>}
-                        </div>
-                        {l.data_vencimento && (
-                          <div className="text-[10px] text-muted-foreground">
-                            Venc. {formatDateBR(l.data_vencimento)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 max-w-[180px]">
-                        <div className="text-xs truncate text-muted-foreground" title={l.nome_razao_social ?? ""}>
-                          {l.nome_razao_social ?? <span className="opacity-40">—</span>}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 max-w-[160px]">
-                        <div className="text-xs truncate text-muted-foreground" title={l.plano_primario_contas ?? ""}>
-                          {l.plano_primario_contas ?? <span className="opacity-40">—</span>}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 max-w-[160px]">
-                        <div className="text-xs truncate text-muted-foreground" title={l.evento ?? ""}>
-                          {l.evento ?? <span className="opacity-40">—</span>}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <SituacaoBadge value={l.situacao} />
-                      </td>
-                      <td
-                        className={cn(
-                          "px-3 py-2 text-right font-semibold tabular-nums text-sm whitespace-nowrap",
-                          l.rec_desp === "Receitas"
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-rose-600 dark:text-rose-400"
-                        )}
-                      >
-                        {l.rec_desp === "Receitas" ? "+" : "−"}
-                        {formatCurrencyBRL(l.valor)}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-                        {l.conta_caixa ?? "—"}
-                      </td>
-                    </tr>
-                  ))}
+                {!loadingRows && lancamentos?.data.map((l) => (
+                  <tr key={l.id} className="border-t border-border/50 hover:bg-foreground/[0.015]">
+                    <td className="px-3 py-2 text-xs font-mono text-muted-foreground">{l.cod}</td>
+                    <td className="px-3 py-2 max-w-[240px]">
+                      <div className="text-xs font-medium truncate" title={l.descricao ?? ""}>
+                        {l.descricao ?? <span className="text-muted-foreground">—</span>}
+                      </div>
+                      {l.data_vencimento && (
+                        <div className="text-[10px] text-muted-foreground">Venc. {formatDateBR(l.data_vencimento)}</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 max-w-[180px]">
+                      <div className="text-xs truncate text-muted-foreground" title={l.nome_razao_social ?? ""}>
+                        {l.nome_razao_social ?? <span className="opacity-40">—</span>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 max-w-[160px]">
+                      <div className="text-xs truncate text-muted-foreground" title={l.plano_primario_contas ?? ""}>
+                        {l.plano_primario_contas ?? <span className="opacity-40">—</span>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 max-w-[160px]">
+                      <div className="text-xs truncate text-muted-foreground" title={l.evento ?? ""}>
+                        {l.evento ?? <span className="opacity-40">—</span>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2"><SituacaoBadge value={l.situacao} /></td>
+                    <td className={cn(
+                      "px-3 py-2 text-right font-semibold tabular-nums text-sm whitespace-nowrap",
+                      l.rec_desp === "Receitas" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                    )}>
+                      {l.rec_desp === "Receitas" ? "+" : "−"}{formatCurrencyBRL(l.valor)}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                      {l.conta_caixa ?? "—"}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
 
-          {/* Paginação */}
           {lancamentos && lancamentos.pages > 1 && (
             <div className="flex items-center justify-between text-[12px] text-muted-foreground">
               <span>
@@ -560,41 +441,16 @@ export function SheetsSyncPanel() {
                 {lancamentos.total.toLocaleString("pt-BR")} lançamentos
               </span>
               <div className="flex items-center gap-1">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  disabled={page === 1}
-                  onClick={() => setPage((p) => p - 1)}
-                >
+                <Button size="icon" variant="ghost" className="h-7 w-7" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="px-2">
-                  Pág. {lancamentos.page} / {lancamentos.pages}
-                </span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  disabled={page >= lancamentos.pages}
-                  onClick={() => setPage((p) => p + 1)}
-                >
+                <span className="px-2">Pág. {lancamentos.page} / {lancamentos.pages}</span>
+                <Button size="icon" variant="ghost" className="h-7 w-7" disabled={page >= lancamentos.pages} onClick={() => setPage((p) => p + 1)}>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
           )}
-        </Card>
-      )}
-
-      {/* Instrução quando não tem dados ainda */}
-      {status.configured && status.total_lancamentos === 0 && !status.last_sync && (
-        <Card className="p-10 text-center space-y-3">
-          <Sheet className="h-10 w-10 mx-auto text-muted-foreground/40" />
-          <div className="text-sm font-semibold">Nenhum lançamento sincronizado ainda</div>
-          <div className="text-xs text-muted-foreground">
-            Clique em <strong>Sincronizar agora</strong> para importar os dados do e-Gestor.
-          </div>
         </Card>
       )}
     </div>
@@ -623,11 +479,7 @@ function SituacaoBadge({ value }: { value: string | null }) {
     );
   }
   if (v.includes("receber") || v.includes("pagar")) {
-    return (
-      <Badge variant="warning" className="text-[10px]">
-        {value}
-      </Badge>
-    );
+    return <Badge variant="warning" className="text-[10px]">{value}</Badge>;
   }
   return <Badge className="text-[10px]">{value}</Badge>;
 }

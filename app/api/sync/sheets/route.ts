@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { getPortalSectorFromEmail } from "@/lib/portal-sector";
 import {
   readSheetValues,
   findHeaderRowIndex,
@@ -63,7 +64,7 @@ export async function POST(_req: Request) {
     const portal = await requirePortalSession();
     if (!portal) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
 
-    const sector = (portal as any).sector ?? "";
+    const sector = getPortalSectorFromEmail((portal as any).email ?? "");
     if (!WRITE_SECTORS.has(sector)) {
       return NextResponse.json({ error: "Sem permissão para sincronização." }, { status: 403 });
     }
