@@ -1,9 +1,11 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export function createSupabaseAdmin(): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
+  if (!rawUrl || !key) return null;
+  // Remove sufixos /rest/v1 ou /auth que o usuário pode ter colado por engano
+  const url = rawUrl.replace(/\/(rest|auth)(\/.*)?$/, "").replace(/\/$/, "");
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });

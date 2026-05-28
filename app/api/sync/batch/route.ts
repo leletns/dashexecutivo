@@ -34,7 +34,9 @@ export async function POST(req: Request) {
     }
 
     const sb = createSupabaseAdmin();
-    if (!sb) return NextResponse.json({ error: "Banco não configurado." }, { status: 503 });
+    if (!sb) return NextResponse.json({
+      error: "Banco de dados não configurado. Verifique as variáveis NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY na Vercel."
+    }, { status: 503 });
 
     const body = await req.json() as {
       headers: string[];       // linha do cabeçalho (já detectada no cliente)
@@ -129,14 +131,17 @@ export async function POST(req: Request) {
         .upsert(records, { onConflict: "cod" });
 
       if (error) {
+        const msg = error.code === "42P01"
+          ? "Tabela portal_lancamentos não existe. Execute o arquivo supabase/schema.sql no banco de dados."
+          : error.message;
         if (activeLogId) {
           await sb.from("portal_sheets_sync_log").update({
             finished_at: new Date().toISOString(),
             status: "error",
-            error_message: error.message,
-          }).eq("id", activeLogId);
+            error_message: msg,
+          }).eq("id", activeLogId).catch(() => {});
         }
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: msg }, { status: 500 });
       }
     }
 
