@@ -115,6 +115,8 @@ function useLancamentosFluxo(ano: string) {
   const [porEvento, setPorEvento] = React.useState<EventoRow[]>([]);
   const [totaisSupabase, setTotaisSupabase] = React.useState<FluxoTotais | null>(null);
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
+  // Once Supabase responds (even empty), stop falling back to localStorage
+  const [sbLoaded, setSbLoaded] = React.useState(false);
 
   const fetchData = React.useCallback(() => {
     const url = `/api/lancamentos/fluxo${ano ? `?ano=${encodeURIComponent(ano)}` : ""}`;
@@ -122,9 +124,10 @@ function useLancamentosFluxo(ano: string) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
         if (!d) return;
-        setFluxoSupabase(d.fluxo_mensal?.length ? (d.fluxo_mensal as FluxoRow[]) : []);
-        setPorEvento(d.por_evento?.length ? (d.por_evento as EventoRow[]) : []);
+        setFluxoSupabase((d.fluxo_mensal ?? []) as FluxoRow[]);
+        setPorEvento((d.por_evento ?? []) as EventoRow[]);
         if (d.totais) setTotaisSupabase(d.totais as FluxoTotais);
+        setSbLoaded(true);
       })
       .catch(() => {});
 
@@ -146,7 +149,7 @@ function useLancamentosFluxo(ano: string) {
     };
   }, [fetchData]);
 
-  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt };
+  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt, sbLoaded };
 }
 
 function useTotalCount(ano: string) {
@@ -192,10 +195,11 @@ function AnoSelector({ value, onChange }: { value: string; onChange: (v: string)
 
 export default function FinanceiroPage() {
   const { state } = useAppState();
-  const [anoFiltro, setAnoFiltro] = React.useState<string>(() => String(new Date().getFullYear()));
+  // Default: todos os anos (string vazia = sem filtro de ano)
+  const [anoFiltro, setAnoFiltro] = React.useState<string>("");
   const [activeTab, setActiveTab] = React.useState("overview");
 
-  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt } = useLancamentosFluxo(anoFiltro);
+  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt, sbLoaded } = useLancamentosFluxo(anoFiltro);
   const totalCount = useTotalCount(anoFiltro);
 
   const totals = React.useMemo(() => computeTotals(state.financeiro), [state.financeiro]);
@@ -205,7 +209,8 @@ export default function FinanceiroPage() {
     [state.edicoes, state.financeiro],
   );
 
-  const fluxoMensal: FluxoMensal[] = fluxoSupabase.length > 0 ? fluxoSupabase : fluxoLocal;
+  // Após Supabase responder, sempre usar dado do Supabase (mesmo que vazio)
+  const fluxoMensal: FluxoMensal[] = sbLoaded ? fluxoSupabase : (fluxoSupabase.length > 0 ? fluxoSupabase : fluxoLocal);
 
   const displayTotals: Totals = totaisSupabase
     ? {
@@ -254,7 +259,7 @@ export default function FinanceiroPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <AnoSelector value={anoFiltro} onChange={(v) => { setAnoFiltro(v); setActiveTab("overview"); }} />
+          <AnoSelector value={anoFiltro} onChange={setAnoFiltro} />
           <AutoConciliacaoSheet />
         </div>
       </motion.div>
