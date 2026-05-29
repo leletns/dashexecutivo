@@ -121,6 +121,27 @@ export function PortalFinanceiroTabs() {
   const [mes, setMes] = React.useState(nowMes());
   const { data, loading, reload } = usePortalFinanceiro(mes);
 
+  // Lancamentos data from e-Gestor for Análise tab fallback calculations
+  const [lancData, setLancData] = React.useState<{
+    totais: LancTotaisAnalise | null;
+    fluxo_mensal: FluxoMesAnalise[];
+  }>({ totais: null, fluxo_mensal: [] });
+
+  React.useEffect(() => {
+    const load = () => {
+      fetch("/api/lancamentos/fluxo", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: any) => {
+          if (!d) return;
+          setLancData({ totais: d.totais ?? null, fluxo_mensal: d.fluxo_mensal ?? [] });
+        })
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener("portal:data-updated", load);
+    return () => window.removeEventListener("portal:data-updated", load);
+  }, []);
+
   const mesOptions = React.useMemo(() => {
     const options = [];
     for (let m = 1; m <= 12; m++) {
@@ -209,7 +230,12 @@ export function PortalFinanceiroTabs() {
               onSave={reload}
             />
           ) : (
-            <AnaliseTab data={data} />
+            <AnaliseTab
+              data={data}
+              canEdit={canEdit}
+              lancTotais={lancData.totais}
+              fluxoMensal={lancData.fluxo_mensal}
+            />
           )}
         </motion.div>
       </AnimatePresence>
@@ -859,99 +885,354 @@ function DepartamentosTab({
   );
 }
 
+// ─── Tipos auxiliares para AnaliseTab ─────────────────────────────────────────
+
+type LancTotaisAnalise = {
+  total_receitas_pagas: number;
+  total_despesas_pagas: number;
+  saldo_realizado: number;
+  resultado_projetado: number;
+  total_a_receber: number;
+  total_a_pagar: number;
+};
+
+type FluxoMesAnalise = {
+  mes: string;
+  entradas: number;
+  saidas: number;
+};
+
+const OV_KEY = "analise_overrides_v1";
+
 // ─── Análise automática ───────────────────────────────────────────────────────
 
-function AnaliseTab({ data }: { data: PortalFinanceiroSnapshot }) {
-  const saldoTotal = data.contas_bancarias.reduce((s, c) => s + c.saldo, 0);
+function AnaliseTab({
+  data,
+  canEdit,
+  lancTotais,
+  fluxoMensal,
+}: {
+  data: PortalFinanceiroSnapshot;
+  canEdit: boolean;
+  lancTotais: LancTotaisAnalise | null;
+  fluxoMensal: FluxoMesAnalise[];
+}) {
+  // ── Auto-calculated from real e-Gestor data when manual tables are empty ──
+  const saldoFromContas = data.contas_bancarias.reduce((s, c) => s + c.saldo, 0);
+  const hasContas = data.contas_bancarias.length > 0;
+  const autoSaldo = hasContas ? saldoFromContas : (lancTotais?.saldo_realizado ?? 0);
 
-  const totalCustosMensais = data.custos_departamento.reduce((s, d) => s + d.valor_mensal, 0);
+  const custoFromDept = data.custos_departamento.reduce((s, d) => s + d.valor_mensal, 0);
+  const hasDept = data.custos_departamento.length > 0;
+  const last3 = fluxoMensal.slice(-3);
+  const avg3Custo = last3.length > 0
+    ? last3.reduce((s, r) => s + r.saidas, 0) / last3.length
+    : 0;
+  const autoCusto = hasDept ? custoFromDept : avg3Custo;
 
   const ultimoMensal = data.associados_mensal.at(-1);
-  const totalAtivos = ultimoMensal?.total_inicio_mes ?? 0;
+  const autoAtivos = ultimoMensal?.total_inicio_mes ?? 0;
+
+  const numMeses = fluxoMensal.length;
+  const receitaMediaMensal = numMeses > 0 ? (lancTotais?.total_receitas_pagas ?? 0) / numMeses : 0;
+  const autoMensalidade = autoAtivos > 0 && receitaMediaMensal > 0
+    ? receitaMediaMensal / autoAtivos
+    : 0;
+
+  // ── Override states (localStorage) ────────────────────────────────────────
+  const [ovSaldo, setOvSaldo] = React.useState<number | null>(null);
+  const [ovCusto, setOvCusto] = React.useState<number | null>(null);
+  const [ovAtivos, setOvAtivos] = React.useState<number | null>(null);
+  const [ovMensalidade, setOvMensalidade] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(OV_KEY);
+      if (raw) {
+        const ov = JSON.parse(raw) as Record<string, number | null>;
+        if (ov.saldo != null) setOvSaldo(ov.saldo);
+        if (ov.custo != null) setOvCusto(ov.custo);
+        if (ov.ativos != null) setOvAtivos(ov.ativos);
+        if (ov.mensalidade != null) setOvMensalidade(ov.mensalidade);
+      }
+    } catch {}
+  }, []);
+
+  const persistOv = (patch: Record<string, number | null>) => {
+    try {
+      const raw = localStorage.getItem(OV_KEY);
+      const cur = raw ? (JSON.parse(raw) as Record<string, number | null>) : {};
+      localStorage.setItem(OV_KEY, JSON.stringify({ ...cur, ...patch }));
+    } catch {}
+  };
+
+  // ── Final computed values ──────────────────────────────────────────────────
+  const saldoTotal = ovSaldo ?? autoSaldo;
+  const totalCustosMensais = ovCusto ?? autoCusto;
+  const totalAtivos = ovAtivos ?? autoAtivos;
+  const mensalidadeMedia = ovMensalidade ?? autoMensalidade;
 
   const custoPorAssociado = totalAtivos > 0 ? totalCustosMensais / totalAtivos : 0;
-
   const runway = totalCustosMensais > 0 ? saldoTotal / totalCustosMensais : null;
+  const breakEven = mensalidadeMedia > 0 ? totalCustosMensais / mensalidadeMedia : null;
 
-  const breakEven24 = custoPorAssociado > 0 ? (totalCustosMensais * 24) / custoPorAssociado / 24 : null;
+  const previsto = data.previsao_mensal
+    ? data.previsao_mensal.total_entradas_previstas - data.previsao_mensal.total_despesas_previstas
+    : lancTotais?.resultado_projetado ?? null;
 
-  const items = [
-    {
-      label: "Caixa atual cobre despesas até quando?",
-      value:
-        runway !== null
-          ? runway < 0
-            ? "Saldo negativo"
-            : `${runway.toFixed(1).replace(".", ",")} meses`
-          : "—",
-      hint: `Saldo total: ${formatCurrencyBRL(saldoTotal)} ÷ Custo mensal: ${formatCurrencyBRL(totalCustosMensais)}`,
-      icon: Landmark,
-      color: runway !== null && runway < 6 ? "text-red-600 dark:text-red-400" : "text-foreground",
-    },
-    {
-      label: "Ponto de equilíbrio para 24 meses",
-      value: breakEven24 !== null ? `${Math.ceil(breakEven24).toLocaleString("pt-BR")} associados` : "—",
-      hint: "Número de associados necessário para cobrir custos por 24 meses",
-      icon: Users,
-      color: "text-foreground",
-    },
-    {
-      label: "Custo por associado / mês",
-      value: custoPorAssociado > 0 ? formatCurrencyBRL(custoPorAssociado) : "—",
-      hint: `Total custos: ${formatCurrencyBRL(totalCustosMensais)} ÷ ${totalAtivos} associados ativos`,
-      icon: CalendarDays,
-      color: "text-foreground",
-    },
-    {
-      label: "Resultado previsto do mês",
-      value: data.previsao_mensal
-        ? formatCurrencyBRL(
-            data.previsao_mensal.total_entradas_previstas -
-              data.previsao_mensal.total_despesas_previstas,
-          )
-        : "—",
-      hint: "Entradas previstas − Despesas previstas (aba Previsão)",
-      icon: data.previsao_mensal &&
-        data.previsao_mensal.total_entradas_previstas >= data.previsao_mensal.total_despesas_previstas
-        ? TrendingUp
-        : TrendingDown,
-      color:
-        data.previsao_mensal &&
-        data.previsao_mensal.total_entradas_previstas >=
-          data.previsao_mensal.total_despesas_previstas
-          ? "text-emerald-600 dark:text-emerald-400"
-          : "text-red-600 dark:text-red-400",
-    },
-  ];
+  // ── Inline edit state ──────────────────────────────────────────────────────
+  const [editingSaldo, setEditingSaldo] = React.useState(false);
+  const [draftSaldo, setDraftSaldo] = React.useState("");
+  const [editingCusto, setEditingCusto] = React.useState(false);
+  const [draftCusto, setDraftCusto] = React.useState("");
+  const [editingAtivos, setEditingAtivos] = React.useState(false);
+  const [draftAtivos, setDraftAtivos] = React.useState("");
+  const [editingMensalidade, setEditingMensalidade] = React.useState(false);
+  const [draftMensalidade, setDraftMensalidade] = React.useState("");
+
+  const commitSaldo = () => {
+    const n = parseFloat(draftSaldo.replace(",", "."));
+    if (!isNaN(n)) { setOvSaldo(n); persistOv({ saldo: n }); }
+    setEditingSaldo(false);
+  };
+  const commitCusto = () => {
+    const n = parseFloat(draftCusto.replace(",", "."));
+    if (!isNaN(n)) { setOvCusto(n); persistOv({ custo: n }); }
+    setEditingCusto(false);
+  };
+  const commitAtivos = () => {
+    const n = parseInt(draftAtivos, 10);
+    if (!isNaN(n)) { setOvAtivos(n); persistOv({ ativos: n }); }
+    setEditingAtivos(false);
+  };
+  const commitMensalidade = () => {
+    const n = parseFloat(draftMensalidade.replace(",", "."));
+    if (!isNaN(n)) { setOvMensalidade(n); persistOv({ mensalidade: n }); }
+    setEditingMensalidade(false);
+  };
+
+  const saldoSource = ovSaldo != null ? "editado manualmente"
+    : hasContas ? "soma das contas bancárias"
+    : lancTotais ? "saldo realizado e-Gestor" : "aguardando dados…";
+  const custoSource = ovCusto != null ? "editado manualmente"
+    : hasDept ? "soma dos departamentos"
+    : last3.length > 0 ? `média últimos ${last3.length} meses (e-Gestor)` : "aguardando dados…";
+
+  const inputCls = "w-full text-sm font-semibold border border-border/60 rounded px-2 py-0.5 bg-background outline-none focus:ring-1 focus:ring-ring tabular-nums";
+  const pencilBtn = (onClick: () => void) => (
+    <button onClick={onClick} className="flex-shrink-0 p-1 rounded hover:bg-muted/50 text-muted-foreground/30 hover:text-muted-foreground transition-colors">
+      <PencilLine className="h-3 w-3" />
+    </button>
+  );
+  const resetBtn = (onClick: () => void, auto: string) => (
+    <button onClick={onClick} className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline">
+      Restaurar automático ({auto})
+    </button>
+  );
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {items.map((item, i) => {
-        const Icon = item.icon;
-        return (
-          <motion.div
-            key={item.label}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05, duration: 0.3, type: "spring", stiffness: 400, damping: 30 }}
-          >
-            <Card className="p-5">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex-shrink-0 h-7 w-7 rounded-lg bg-muted/50 grid place-items-center">
-                  <Icon className="h-3.5 w-3.5 text-muted-foreground/70" />
+    <div className="space-y-5">
+      {/* ── Valores base editáveis ── */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50 mb-2.5">
+          Valores base — clique no lápis para editar
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/* Caixa disponível */}
+          <Card className="p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                <div className="mt-0.5 h-6 w-6 rounded-md bg-muted/50 grid place-items-center flex-shrink-0">
+                  <Landmark className="h-3 w-3 text-muted-foreground/70" />
                 </div>
-                <div className="space-y-1 min-w-0">
-                  <p className="text-[11px] text-muted-foreground leading-snug">{item.label}</p>
-                  <p className={cn("text-lg font-semibold tabular-nums leading-none", item.color)}>
-                    {item.value}
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="text-[11px] text-muted-foreground">Caixa disponível</p>
+                  {editingSaldo ? (
+                    <input autoFocus type="number" value={draftSaldo} onChange={(e) => setDraftSaldo(e.target.value)}
+                      onBlur={commitSaldo} onKeyDown={(e) => { if (e.key === "Enter") commitSaldo(); if (e.key === "Escape") setEditingSaldo(false); }}
+                      className={inputCls} />
+                  ) : (
+                    <p className="text-base font-semibold tabular-nums">{formatCurrencyBRL(saldoTotal)}</p>
+                  )}
+                  <p className="text-[9px] text-muted-foreground/50">Fonte: {saldoSource}</p>
+                  {ovSaldo != null && resetBtn(() => { setOvSaldo(null); persistOv({ saldo: null }); }, formatCurrencyBRL(autoSaldo))}
+                </div>
+              </div>
+              {canEdit && !editingSaldo && pencilBtn(() => { setDraftSaldo(String(saldoTotal)); setEditingSaldo(true); })}
+            </div>
+          </Card>
+
+          {/* Custo mensal */}
+          <Card className="p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                <div className="mt-0.5 h-6 w-6 rounded-md bg-muted/50 grid place-items-center flex-shrink-0">
+                  <TrendingDown className="h-3 w-3 text-muted-foreground/70" />
+                </div>
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="text-[11px] text-muted-foreground">Custo mensal médio</p>
+                  {editingCusto ? (
+                    <input autoFocus type="number" value={draftCusto} onChange={(e) => setDraftCusto(e.target.value)}
+                      onBlur={commitCusto} onKeyDown={(e) => { if (e.key === "Enter") commitCusto(); if (e.key === "Escape") setEditingCusto(false); }}
+                      className={inputCls} />
+                  ) : (
+                    <p className="text-base font-semibold tabular-nums">{formatCurrencyBRL(totalCustosMensais)}</p>
+                  )}
+                  <p className="text-[9px] text-muted-foreground/50">Fonte: {custoSource}</p>
+                  {ovCusto != null && resetBtn(() => { setOvCusto(null); persistOv({ custo: null }); }, formatCurrencyBRL(autoCusto))}
+                </div>
+              </div>
+              {canEdit && !editingCusto && pencilBtn(() => { setDraftCusto(String(totalCustosMensais)); setEditingCusto(true); })}
+            </div>
+          </Card>
+
+          {/* Associados ativos */}
+          <Card className="p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                <div className="mt-0.5 h-6 w-6 rounded-md bg-muted/50 grid place-items-center flex-shrink-0">
+                  <Users className="h-3 w-3 text-muted-foreground/70" />
+                </div>
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="text-[11px] text-muted-foreground">Associados ativos</p>
+                  {editingAtivos ? (
+                    <input autoFocus type="number" value={draftAtivos} onChange={(e) => setDraftAtivos(e.target.value)}
+                      onBlur={commitAtivos} onKeyDown={(e) => { if (e.key === "Enter") commitAtivos(); if (e.key === "Escape") setEditingAtivos(false); }}
+                      className={inputCls} />
+                  ) : (
+                    <p className="text-base font-semibold tabular-nums">
+                      {totalAtivos > 0 ? totalAtivos.toLocaleString("pt-BR") : "—"}
+                    </p>
+                  )}
+                  <p className="text-[9px] text-muted-foreground/50">
+                    {ovAtivos != null ? "editado manualmente" : "aba Associados"}
                   </p>
-                  <p className="text-[10px] text-muted-foreground/60 leading-snug">{item.hint}</p>
+                  {ovAtivos != null && resetBtn(() => { setOvAtivos(null); persistOv({ ativos: null }); }, autoAtivos.toLocaleString("pt-BR"))}
+                </div>
+              </div>
+              {canEdit && !editingAtivos && pencilBtn(() => { setDraftAtivos(String(totalAtivos)); setEditingAtivos(true); })}
+            </div>
+          </Card>
+
+          {/* Mensalidade média */}
+          <Card className="p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                <div className="mt-0.5 h-6 w-6 rounded-md bg-muted/50 grid place-items-center flex-shrink-0">
+                  <TrendingUp className="h-3 w-3 text-muted-foreground/70" />
+                </div>
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="text-[11px] text-muted-foreground">Mensalidade média por assoc.</p>
+                  {editingMensalidade ? (
+                    <input autoFocus type="number" value={draftMensalidade} onChange={(e) => setDraftMensalidade(e.target.value)}
+                      onBlur={commitMensalidade} onKeyDown={(e) => { if (e.key === "Enter") commitMensalidade(); if (e.key === "Escape") setEditingMensalidade(false); }}
+                      className={inputCls} />
+                  ) : (
+                    <p className="text-base font-semibold tabular-nums">
+                      {mensalidadeMedia > 0 ? formatCurrencyBRL(mensalidadeMedia) : "—"}
+                    </p>
+                  )}
+                  <p className="text-[9px] text-muted-foreground/50">
+                    {ovMensalidade != null ? "editado manualmente" : "receita média ÷ associados (e-Gestor)"}
+                  </p>
+                  {ovMensalidade != null && resetBtn(() => { setOvMensalidade(null); persistOv({ mensalidade: null }); }, formatCurrencyBRL(autoMensalidade))}
+                </div>
+              </div>
+              {canEdit && !editingMensalidade && pencilBtn(() => { setDraftMensalidade(String(mensalidadeMedia)); setEditingMensalidade(true); })}
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* ── Indicadores calculados ── */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50 mb-2.5">
+          Indicadores calculados automaticamente
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0, duration: 0.3, type: "spring", stiffness: 400, damping: 30 }}>
+            <Card className="p-4">
+              <div className="flex items-start gap-2.5">
+                <div className="mt-0.5 h-6 w-6 rounded-md bg-muted/50 grid place-items-center flex-shrink-0">
+                  <Landmark className="h-3 w-3 text-muted-foreground/70" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[11px] text-muted-foreground">Caixa cobre despesas até quando?</p>
+                  <p className={cn("text-base font-semibold tabular-nums",
+                    runway !== null && runway < 6 ? "text-red-600 dark:text-red-400" : "text-foreground")}>
+                    {runway !== null ? (runway < 0 ? "Saldo negativo" : `${runway.toFixed(1).replace(".", ",")} meses`) : "—"}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground/50">
+                    {formatCurrencyBRL(saldoTotal)} ÷ {formatCurrencyBRL(totalCustosMensais)}/mês
+                  </p>
                 </div>
               </div>
             </Card>
           </motion.div>
-        );
-      })}
+
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05, duration: 0.3, type: "spring", stiffness: 400, damping: 30 }}>
+            <Card className="p-4">
+              <div className="flex items-start gap-2.5">
+                <div className="mt-0.5 h-6 w-6 rounded-md bg-muted/50 grid place-items-center flex-shrink-0">
+                  <Users className="h-3 w-3 text-muted-foreground/70" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[11px] text-muted-foreground">Ponto de equilíbrio</p>
+                  <p className="text-base font-semibold tabular-nums">
+                    {breakEven !== null ? `${Math.ceil(breakEven).toLocaleString("pt-BR")} assoc.` : "—"}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground/50">
+                    Custo mensal ÷ mensalidade média
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.3, type: "spring", stiffness: 400, damping: 30 }}>
+            <Card className="p-4">
+              <div className="flex items-start gap-2.5">
+                <div className="mt-0.5 h-6 w-6 rounded-md bg-muted/50 grid place-items-center flex-shrink-0">
+                  <CalendarDays className="h-3 w-3 text-muted-foreground/70" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[11px] text-muted-foreground">Custo por associado / mês</p>
+                  <p className="text-base font-semibold tabular-nums">
+                    {custoPorAssociado > 0 ? formatCurrencyBRL(custoPorAssociado) : "—"}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground/50">
+                    {formatCurrencyBRL(totalCustosMensais)} ÷ {totalAtivos > 0 ? totalAtivos.toLocaleString("pt-BR") : "?"} assoc.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, duration: 0.3, type: "spring", stiffness: 400, damping: 30 }}>
+            <Card className="p-4">
+              <div className="flex items-start gap-2.5">
+                <div className="mt-0.5 h-6 w-6 rounded-md bg-muted/50 grid place-items-center flex-shrink-0">
+                  {previsto != null && previsto >= 0
+                    ? <TrendingUp className="h-3 w-3 text-emerald-500" />
+                    : <TrendingDown className="h-3 w-3 text-red-500" />}
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[11px] text-muted-foreground">Resultado previsto</p>
+                  <p className={cn("text-base font-semibold tabular-nums",
+                    previsto != null
+                      ? previsto >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+                      : "text-foreground")}>
+                    {previsto != null ? formatCurrencyBRL(previsto) : "—"}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground/50">
+                    {data.previsao_mensal ? "Previsão manual (aba Previsão)" : "A receber − A pagar (e-Gestor)"}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+        </div>
+      </div>
     </div>
   );
 }
