@@ -25,13 +25,15 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const ano = searchParams.get("ano")?.trim() ?? "";
+    const today = new Date().toISOString().slice(0, 10);
 
-    // Fluxo mensal — lançamentos liquidados, opcionalmente filtrados por ano
+    // Fluxo mensal — só pagamentos já realizados até hoje (nunca meses futuros)
     let fluxoQuery = sb
       .from("portal_lancamentos")
       .select("rec_desp, situacao, valor, data_pagamento")
       .not("data_pagamento", "is", null)
-      .in("situacao", ["Recebido", "Pago"]);
+      .in("situacao", ["Recebido", "Pago"])
+      .lte("data_pagamento", today);
     if (ano) {
       fluxoQuery = fluxoQuery
         .gte("data_pagamento", `${ano}-01-01`)
