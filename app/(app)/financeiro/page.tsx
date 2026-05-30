@@ -16,13 +16,20 @@ import {
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDot,
+  FileSpreadsheet,
+  PencilLine,
+  Plus,
   Receipt,
   Search,
+  Upload,
   Wallet,
+  X,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -53,11 +60,11 @@ function fmtCompact(value: number): string {
   const abs = Math.abs(value);
   if (abs >= 1_000_000) {
     const s = (abs / 1_000_000).toFixed(1).replace(".", ",");
-    return `${sign}R$ ${s}M`;
+    return `${sign}R$ ${s}M`;
   }
   if (abs >= 1_000) {
     const s = (abs / 1_000).toFixed(0);
-    return `${sign}R$ ${s}k`;
+    return `${sign}R$ ${s}k`;
   }
   return formatCurrencyBRL(value);
 }
@@ -190,6 +197,334 @@ function AnoSelector({ value, onChange }: { value: string; onChange: (v: string)
 }
 
 // ---------------------------------------------------------------------------
+// XLSX Import Panel
+// ---------------------------------------------------------------------------
+
+interface ImportRow {
+  chave: string;
+  entradas: number;
+  saidas: number;
+}
+
+function ImportarPlanilhaPanel({
+  onImport,
+  onReset,
+}: {
+  onImport: (rows: ImportRow[]) => void;
+  onReset: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [sheets, setSheets] = React.useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = React.useState("");
+  const [allRows, setAllRows] = React.useState<any[][]>([]);
+  const [headers, setHeaders] = React.useState<string[]>([]);
+  const [previewRows, setPreviewRows] = React.useState<any[][]>([]);
+  const [colMes, setColMes] = React.useState("");
+  const [colEntradas, setColEntradas] = React.useState("");
+  const [colSaidas, setColSaidas] = React.useState("");
+  const [aggregated, setAggregated] = React.useState<ImportRow[]>([]);
+  const [imported, setImported] = React.useState(false);
+  const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const parseNumber = (v: any): number => {
+    if (v == null || v === "") return 0;
+    const n = parseFloat(String(v).replace(/[^\d.,-]/g, "").replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  };
+
+  const toMonthKey = (v: any): string => {
+    const s = String(v ?? "").trim();
+    // Already YYYY-MM
+    if (/^\d{4}-\d{2}$/.test(s)) return s;
+    // Try to parse as date
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      return `${y}-${m}`;
+    }
+    // DD/MM/YYYY or MM/YYYY
+    const parts = s.split(/[/\-\.]/);
+    if (parts.length === 3) {
+      // assume DD/MM/YYYY or YYYY/MM/DD
+      const [a, b, c] = parts;
+      if (a.length === 4) return `${a}-${b.padStart(2, "0")}`;
+      return `${c}-${b.padStart(2, "0")}`;
+    }
+    if (parts.length === 2 && parts[1].length === 4) {
+      return `${parts[1]}-${parts[0].padStart(2, "0")}`;
+    }
+    return s;
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset state
+    setSheets([]);
+    setSelectedSheet("");
+    setAllRows([]);
+    setHeaders([]);
+    setPreviewRows([]);
+    setColMes("");
+    setColEntradas("");
+    setColSaidas("");
+    setAggregated([]);
+    setImported(false);
+
+    const XLSX = await import("xlsx");
+    const isCsv = file.name.toLowerCase().endsWith(".csv");
+    let wb: any;
+
+    if (isCsv) {
+      const text = await file.text();
+      wb = XLSX.read(text, { type: "string" });
+    } else {
+      const buf = await file.arrayBuffer();
+      wb = XLSX.read(buf, { type: "array" });
+    }
+
+    const sheetNames: string[] = wb.SheetNames;
+    setSheets(sheetNames);
+    const first = sheetNames[0] ?? "";
+    setSelectedSheet(first);
+    loadSheet(XLSX, wb, first);
+  };
+
+  const loadSheet = (XLSX: any, wb: any, sheetName: string) => {
+    const ws = wb.Sheets[sheetName];
+    if (!ws) return;
+    const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+    const hdrs: string[] = (data[0] ?? []).map(String);
+    const rows = data.slice(1).filter((r: any[]) => r.some((c) => c !== ""));
+    setHeaders(hdrs);
+    setAllRows(rows);
+    setPreviewRows(rows.slice(0, 3));
+    // Auto-detect columns by header name hints
+    const lower = hdrs.map((h) => h.toLowerCase());
+    const guessIdx = (keywords: string[]) => {
+      for (const kw of keywords) {
+        const i = lower.findIndex((h) => h.includes(kw));
+        if (i >= 0) return hdrs[i];
+      }
+      return "";
+    };
+    setColMes(guessIdx(["mês", "mes", "data", "month", "período", "periodo"]));
+    setColEntradas(guessIdx(["entrada", "receita", "crédito", "credito", "income", "credit"]));
+    setColSaidas(guessIdx(["saída", "saida", "despesa", "débito", "debito", "expense", "debit"]));
+  };
+
+  // Re-aggregate when column mapping changes
+  React.useEffect(() => {
+    if (!colMes || !allRows.length) { setAggregated([]); return; }
+    const mesIdx = headers.indexOf(colMes);
+    const entIdx = headers.indexOf(colEntradas);
+    const saiIdx = headers.indexOf(colSaidas);
+
+    const map = new Map<string, { entradas: number; saidas: number }>();
+    for (const row of allRows) {
+      const key = toMonthKey(row[mesIdx]);
+      if (!key || key.length < 4) continue;
+      const cur = map.get(key) ?? { entradas: 0, saidas: 0 };
+      if (entIdx >= 0) cur.entradas += parseNumber(row[entIdx]);
+      if (saiIdx >= 0) cur.saidas += parseNumber(row[saiIdx]);
+      map.set(key, cur);
+    }
+    const result: ImportRow[] = Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([chave, { entradas, saidas }]) => ({ chave, entradas, saidas }));
+    setAggregated(result);
+  }, [colMes, colEntradas, colSaidas, allRows, headers]);
+
+  const handleImport = () => {
+    onImport(aggregated);
+    setImported(true);
+    setOpen(false);
+  };
+
+  const handleReset = () => {
+    onReset();
+    setImported(false);
+    setSheets([]);
+    setAllRows([]);
+    setHeaders([]);
+    setPreviewRows([]);
+    setAggregated([]);
+  };
+
+  const colOptions: SelectOption[] = [
+    { value: "", label: "— selecione —" },
+    ...headers.map((h) => ({ value: h, label: h })),
+  ];
+
+  const sheetOptions: SelectOption[] = sheets.map((s) => ({ value: s, label: s }));
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-foreground/[0.01] dark:bg-white/[0.01] overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-foreground/[0.03] transition-colors"
+      >
+        <div className="flex items-center gap-2.5">
+          <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Importar planilha</span>
+          {imported && (
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+              · dados importados
+            </span>
+          )}
+        </div>
+        <ChevronDown
+          className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")}
+        />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-4 border-t border-border/40">
+          {/* File picker */}
+          <div className="pt-4 flex items-center gap-3 flex-wrap">
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={handleFile}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => fileRef.current?.click()}
+              className="gap-2"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Selecionar arquivo (.xlsx, .csv)
+            </Button>
+            {imported && (
+              <button
+                onClick={handleReset}
+                className="text-xs text-muted-foreground hover:text-rose-500 transition-colors flex items-center gap-1"
+              >
+                <X className="h-3 w-3" />
+                Limpar dados importados
+              </button>
+            )}
+          </div>
+
+          {/* Sheet selector (if multiple sheets) */}
+          {sheets.length > 1 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Aba:</span>
+              <Select
+                value={selectedSheet}
+                onValueChange={async (v) => {
+                  setSelectedSheet(v);
+                  const XLSX = await import("xlsx");
+                  // We need to re-read the workbook — store it in a ref
+                }}
+                options={sheetOptions}
+                triggerClassName="min-w-[160px] h-8 text-xs"
+              />
+            </div>
+          )}
+
+          {/* Preview table */}
+          {headers.length > 0 && (
+            <div className="space-y-3">
+              <div className="text-xs font-medium text-muted-foreground">
+                Primeiras linhas da planilha:
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-border/50">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-foreground/[0.03]">
+                      {headers.map((h) => (
+                        <th key={h} className="px-2 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, ri) => (
+                      <tr key={ri} className="border-t border-border/30">
+                        {headers.map((_, ci) => (
+                          <td key={ci} className="px-2 py-1.5 text-muted-foreground whitespace-nowrap max-w-[140px] truncate">
+                            {String(row[ci] ?? "")}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Column mapping */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] text-muted-foreground">Mês / Data</label>
+                  <Select value={colMes} onValueChange={setColMes} options={colOptions} triggerClassName="h-8 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-muted-foreground">Entradas (Receita)</label>
+                  <Select value={colEntradas} onValueChange={setColEntradas} options={colOptions} triggerClassName="h-8 text-xs" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-muted-foreground">Saídas (Despesa)</label>
+                  <Select value={colSaidas} onValueChange={setColSaidas} options={colOptions} triggerClassName="h-8 text-xs" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Aggregated preview */}
+          {aggregated.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">
+                Resultado agregado por mês ({aggregated.length} meses):
+              </div>
+              <div className="max-h-[200px] overflow-y-auto rounded-lg border border-border/50">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-background">
+                    <tr className="bg-foreground/[0.03]">
+                      {["Mês", "Entradas", "Saídas", "Saldo"].map((h, i) => (
+                        <th key={h} className={cn("px-2 py-1.5 font-medium text-muted-foreground", i === 0 ? "text-left" : "text-right")}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aggregated.map((r) => (
+                      <tr key={r.chave} className="border-t border-border/30">
+                        <td className="px-2 py-1 font-medium">{r.chave}</td>
+                        <td className="px-2 py-1 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                          {fmtCompact(r.entradas)}
+                        </td>
+                        <td className="px-2 py-1 text-right tabular-nums text-rose-600 dark:text-rose-400">
+                          {fmtCompact(r.saidas)}
+                        </td>
+                        <td className={cn("px-2 py-1 text-right tabular-nums font-semibold", r.entradas - r.saidas >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>
+                          {fmtCompact(r.entradas - r.saidas)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Button size="sm" onClick={handleImport} className="gap-2">
+                <Check className="h-3.5 w-3.5" />
+                Importar {aggregated.length} meses
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -209,21 +544,112 @@ export default function FinanceiroPage() {
     [state.edicoes, state.financeiro],
   );
 
-  // Após Supabase responder, sempre usar dado do Supabase (mesmo que vazio)
-  const fluxoMensal: FluxoMensal[] = sbLoaded ? fluxoSupabase : (fluxoSupabase.length > 0 ? fluxoSupabase : fluxoLocal);
+  // ---------------------------------------------------------------------------
+  // Fluxo overrides (manual edits + imports) — persisted in localStorage
+  // ---------------------------------------------------------------------------
+  const FLUXO_OV_KEY = "fin_fluxo_ov_v2";
+  const [fluxoOv, setFluxoOv] = React.useState<Record<string, { entradas: number; saidas: number }>>({});
 
-  const displayTotals: Totals = totaisSupabase
-    ? {
-        saldoConferido: totaisSupabase.saldo_realizado,
-        aReceber: totaisSupabase.total_a_receber,
-        aReceberCount: 0,
-        aPagar: totaisSupabase.total_a_pagar,
-        aPagarCount: 0,
-        resultadoProjetado: totaisSupabase.resultado_projetado,
-        entradasPeriodo: totaisSupabase.total_receitas_pagas,
-        saidasPeriodo: totaisSupabase.total_despesas_pagas,
+  React.useEffect(() => {
+    try {
+      const r = localStorage.getItem(FLUXO_OV_KEY);
+      if (r) setFluxoOv(JSON.parse(r));
+    } catch {}
+  }, []);
+
+  const setMonthOv = (chave: string, entradas: number, saidas: number) => {
+    setFluxoOv((prev) => {
+      const next = { ...prev, [chave]: { entradas, saidas } };
+      try { localStorage.setItem(FLUXO_OV_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const bulkImportFluxo = (rows: ImportRow[]) => {
+    setFluxoOv((prev) => {
+      const next = { ...prev };
+      rows.forEach((r) => { next[r.chave] = { entradas: r.entradas, saidas: r.saidas }; });
+      try { localStorage.setItem(FLUXO_OV_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const resetFluxoOv = () => {
+    setFluxoOv({});
+    try { localStorage.removeItem(FLUXO_OV_KEY); } catch {}
+  };
+
+  // ---------------------------------------------------------------------------
+  // KPI overrides — persisted in localStorage
+  // ---------------------------------------------------------------------------
+  const KPI_OV_KEY = "fin_kpi_ov_v2";
+  const [kpiOv, setKpiOv] = React.useState<Partial<Totals>>({});
+
+  React.useEffect(() => {
+    try {
+      const r = localStorage.getItem(KPI_OV_KEY);
+      if (r) setKpiOv(JSON.parse(r));
+    } catch {}
+  }, []);
+
+  const saveKpiOv = (patch: Partial<Totals>) => {
+    setKpiOv((prev) => {
+      const next = { ...prev, ...patch };
+      try { localStorage.setItem(KPI_OV_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  // ---------------------------------------------------------------------------
+  // Merged fluxo = Supabase base + local overrides
+  // ---------------------------------------------------------------------------
+  const fluxoMensal: FluxoMensal[] = React.useMemo(() => {
+    const base: FluxoRow[] = sbLoaded ? fluxoSupabase : (fluxoSupabase.length > 0 ? fluxoSupabase : fluxoLocal);
+
+    const keysFromSb = base.map((r) => r.chave ?? r.mes);
+    const keysFromOv = Object.keys(fluxoOv);
+    const allKeys = Array.from(new Set([...keysFromSb, ...keysFromOv])).sort();
+
+    let acumulado = 0;
+    return allKeys.map((key) => {
+      const sbRow = base.find((r) => (r.chave ?? r.mes) === key);
+      const ov = fluxoOv[key];
+      const entradas = ov?.entradas ?? sbRow?.entradas ?? 0;
+      const saidas = ov?.saidas ?? sbRow?.saidas ?? 0;
+      const saldo = entradas - saidas;
+      acumulado += saldo;
+
+      let mes = sbRow?.mes ?? "";
+      if (!mes && key.match(/^\d{4}-\d{2}$/)) {
+        const [y, m] = key.split("-");
+        mes = `${MESES_PT[Number(m) - 1] ?? m}/${y.slice(2)}`;
       }
-    : totals;
+
+      return { mes, chave: key, entradas, saidas, saldo, acumulado };
+    });
+  }, [sbLoaded, fluxoSupabase, fluxoLocal, fluxoOv]);
+
+  // ---------------------------------------------------------------------------
+  // Auto totals from merged fluxo
+  // ---------------------------------------------------------------------------
+  const autoTotais = React.useMemo(() => ({
+    entradasPeriodo: fluxoMensal.reduce((s, r) => s + r.entradas, 0),
+    saidasPeriodo: fluxoMensal.reduce((s, r) => s + r.saidas, 0),
+  }), [fluxoMensal]);
+
+  // ---------------------------------------------------------------------------
+  // Display totals: KPI overrides > Supabase > local
+  // ---------------------------------------------------------------------------
+  const displayTotals: Totals = {
+    saldoConferido: kpiOv.saldoConferido ?? (totaisSupabase?.saldo_realizado ?? autoTotais.entradasPeriodo - autoTotais.saidasPeriodo),
+    aReceber: kpiOv.aReceber ?? (totaisSupabase?.total_a_receber ?? totals.aReceber),
+    aReceberCount: totals.aReceberCount,
+    aPagar: kpiOv.aPagar ?? (totaisSupabase?.total_a_pagar ?? totals.aPagar),
+    aPagarCount: totals.aPagarCount,
+    resultadoProjetado: kpiOv.resultadoProjetado ?? (totaisSupabase?.resultado_projetado ?? totals.resultadoProjetado),
+    entradasPeriodo: kpiOv.entradasPeriodo ?? autoTotais.entradasPeriodo,
+    saidasPeriodo: kpiOv.saidasPeriodo ?? autoTotais.saidasPeriodo,
+  };
 
   useRegisterPageState({
     module: "Financeiro",
@@ -240,6 +666,18 @@ export default function FinanceiroPage() {
     if (diff < 3600) return `${Math.floor(diff / 60)} min atrás`;
     if (diff < 86400) return `${Math.floor(diff / 3600)} h atrás`;
     return `${Math.floor(diff / 86400)} dias atrás`;
+  };
+
+  // Auto-value for KPI cards (what would be computed without overrides)
+  const autoKpiValues: Totals = {
+    saldoConferido: totaisSupabase?.saldo_realizado ?? autoTotais.entradasPeriodo - autoTotais.saidasPeriodo,
+    aReceber: totaisSupabase?.total_a_receber ?? totals.aReceber,
+    aReceberCount: totals.aReceberCount,
+    aPagar: totaisSupabase?.total_a_pagar ?? totals.aPagar,
+    aPagarCount: totals.aPagarCount,
+    resultadoProjetado: totaisSupabase?.resultado_projetado ?? totals.resultadoProjetado,
+    entradasPeriodo: autoTotais.entradasPeriodo,
+    saidasPeriodo: autoTotais.saidasPeriodo,
   };
 
   return (
@@ -264,7 +702,15 @@ export default function FinanceiroPage() {
         </div>
       </motion.div>
 
-      <KpiGrid totals={displayTotals} onVerDetalhes={setActiveTab} />
+      <KpiGrid
+        totals={displayTotals}
+        autoValues={autoKpiValues}
+        kpiOv={kpiOv}
+        onSaveKpi={saveKpiOv}
+        onVerDetalhes={setActiveTab}
+      />
+
+      <ImportarPlanilhaPanel onImport={bulkImportFluxo} onReset={resetFluxoOv} />
 
       <PortalFinanceiroTabs />
 
@@ -289,7 +735,12 @@ export default function FinanceiroPage() {
         </TabsContent>
 
         <TabsContent value="fluxo" className="mt-2">
-          <FluxoTab fluxoMensal={fluxoMensal} totals={displayTotals} />
+          <FluxoTab
+            fluxoMensal={fluxoMensal}
+            totals={displayTotals}
+            fluxoOv={fluxoOv}
+            setMonthOv={setMonthOv}
+          />
         </TabsContent>
 
         <TabsContent value="receber" className="mt-2">
@@ -318,9 +769,15 @@ export default function FinanceiroPage() {
 
 function KpiGrid({
   totals,
+  autoValues,
+  kpiOv,
+  onSaveKpi,
   onVerDetalhes,
 }: {
   totals: Totals;
+  autoValues: Totals;
+  kpiOv: Partial<Totals>;
+  onSaveKpi: (patch: Partial<Totals>) => void;
   onVerDetalhes: (tab: string) => void;
 }) {
   return (
@@ -331,6 +788,14 @@ function KpiGrid({
         hint="Recebimentos − pagamentos"
         icon={<Wallet className="h-3.5 w-3.5" />}
         onDetalhes={() => onVerDetalhes("fluxo")}
+        canEdit
+        autoValue={autoValues.saldoConferido}
+        onSave={(v) => onSaveKpi({ saldoConferido: v })}
+        hasOverride={"saldoConferido" in kpiOv}
+        onRestore={() => {
+          const { saldoConferido: _, ...rest } = kpiOv as any;
+          onSaveKpi(rest);
+        }}
       />
       <KpiCard
         label="A receber"
@@ -339,6 +804,14 @@ function KpiGrid({
         icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
         accent="emerald"
         onDetalhes={() => onVerDetalhes("receber")}
+        canEdit
+        autoValue={autoValues.aReceber}
+        onSave={(v) => onSaveKpi({ aReceber: v })}
+        hasOverride={"aReceber" in kpiOv}
+        onRestore={() => {
+          const { aReceber: _, ...rest } = kpiOv as any;
+          onSaveKpi(rest);
+        }}
       />
       <KpiCard
         label="A pagar"
@@ -347,6 +820,14 @@ function KpiGrid({
         icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
         accent="rose"
         onDetalhes={() => onVerDetalhes("pagar")}
+        canEdit
+        autoValue={autoValues.aPagar}
+        onSave={(v) => onSaveKpi({ aPagar: v })}
+        hasOverride={"aPagar" in kpiOv}
+        onRestore={() => {
+          const { aPagar: _, ...rest } = kpiOv as any;
+          onSaveKpi(rest);
+        }}
       />
       <KpiCard
         label="Resultado projetado"
@@ -355,6 +836,14 @@ function KpiGrid({
         icon={<Receipt className="h-3.5 w-3.5" />}
         accent={totals.resultadoProjetado >= 0 ? "emerald" : "rose"}
         onDetalhes={() => onVerDetalhes("overview")}
+        canEdit
+        autoValue={autoValues.resultadoProjetado}
+        onSave={(v) => onSaveKpi({ resultadoProjetado: v })}
+        hasOverride={"resultadoProjetado" in kpiOv}
+        onRestore={() => {
+          const { resultadoProjetado: _, ...rest } = kpiOv as any;
+          onSaveKpi(rest);
+        }}
       />
     </div>
   );
@@ -367,6 +856,11 @@ function KpiCard({
   icon,
   accent,
   onDetalhes,
+  canEdit,
+  autoValue,
+  onSave,
+  hasOverride,
+  onRestore,
 }: {
   label: string;
   value: number;
@@ -374,9 +868,33 @@ function KpiCard({
   icon?: React.ReactNode;
   accent?: "emerald" | "rose";
   onDetalhes?: () => void;
+  canEdit?: boolean;
+  autoValue?: number;
+  onSave?: (v: number) => void;
+  hasOverride?: boolean;
+  onRestore?: () => void;
 }) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState("");
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const startEdit = () => {
+    setDraft(String(value));
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+
+  const commitEdit = () => {
+    const raw = draft.replace(/[^\d.,-]/g, "").replace(",", ".");
+    const n = parseFloat(raw);
+    if (!isNaN(n) && onSave) onSave(n);
+    setEditing(false);
+  };
+
+  const cancelEdit = () => setEditing(false);
+
   return (
-    <Card className="p-4 overflow-hidden flex flex-col gap-2">
+    <Card className="p-4 overflow-hidden flex flex-col gap-2 group">
       <div className="flex items-start justify-between gap-2 min-w-0">
         <div className="min-w-0 flex-1">
           <div className="text-[11px] font-medium text-muted-foreground tracking-tight leading-tight truncate">
@@ -386,30 +904,75 @@ function KpiCard({
             <div className="text-[10px] text-muted-foreground/60 mt-0.5 truncate">{hint}</div>
           )}
         </div>
-        {icon && (
-          <div className="h-7 w-7 shrink-0 rounded-lg bg-foreground/[0.05] dark:bg-white/[0.06] grid place-items-center text-muted-foreground">
-            {icon}
-          </div>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {canEdit && !editing && (
+            <button
+              onClick={startEdit}
+              className="opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5 grid place-items-center rounded text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.06]"
+              aria-label="Editar valor"
+            >
+              <PencilLine className="h-3 w-3" />
+            </button>
+          )}
+          {icon && (
+            <div className="h-7 w-7 rounded-lg bg-foreground/[0.05] dark:bg-white/[0.06] grid place-items-center text-muted-foreground">
+              {icon}
+            </div>
+          )}
+        </div>
       </div>
-      <div
-        className={cn(
-          "text-[22px] font-semibold tracking-tight tabular-nums leading-none truncate",
-          accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
-          accent === "rose" && "text-rose-600 dark:text-rose-400",
-        )}
-        title={formatCurrencyBRL(value)}
-      >
-        {fmtCompact(value)}
-      </div>
-      {onDetalhes && (
-        <button
-          onClick={onDetalhes}
-          className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors self-start leading-none"
+
+      {editing ? (
+        <div className="flex items-center gap-1">
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitEdit();
+              if (e.key === "Escape") cancelEdit();
+            }}
+            className={cn(
+              "flex-1 text-[22px] font-semibold tracking-tight tabular-nums leading-none bg-transparent border-b border-dashed border-foreground/40 focus:outline-none focus:border-foreground/80 min-w-0 w-full",
+              accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
+              accent === "rose" && "text-rose-600 dark:text-rose-400",
+            )}
+            autoFocus
+          />
+        </div>
+      ) : (
+        <div
+          className={cn(
+            "text-[22px] font-semibold tracking-tight tabular-nums leading-none truncate",
+            accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
+            accent === "rose" && "text-rose-600 dark:text-rose-400",
+          )}
+          title={formatCurrencyBRL(value)}
         >
-          Ver detalhes →
-        </button>
+          {fmtCompact(value)}
+        </div>
       )}
+
+      <div className="flex items-center justify-between min-h-[14px]">
+        {onDetalhes && !hasOverride && (
+          <button
+            onClick={onDetalhes}
+            className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors leading-none"
+          >
+            Ver detalhes →
+          </button>
+        )}
+        {hasOverride && onRestore && (
+          <button
+            onClick={onRestore}
+            className="text-[10px] text-muted-foreground/50 hover:text-foreground transition-colors leading-none"
+          >
+            restaurar automático
+          </button>
+        )}
+        {!onDetalhes && !hasOverride && <span />}
+      </div>
     </Card>
   );
 }
@@ -612,7 +1175,7 @@ function ProximosVencimentos() {
                   : "text-foreground/80",
               )}
             >
-              {l.tipo === "receita" ? "+" : "−"}{formatCurrencyBRL(l.valor).replace("R$", "R$ ")}
+              {l.tipo === "receita" ? "+" : "−"}{formatCurrencyBRL(l.valor).replace("R$", "R$ ")}
             </div>
             <button
               onClick={() => togglePago(l.id, true)}
@@ -629,10 +1192,92 @@ function ProximosVencimentos() {
 }
 
 // ---------------------------------------------------------------------------
-// Fluxo de caixa
+// Fluxo de caixa — editable table
 // ---------------------------------------------------------------------------
 
-function FluxoTab({ fluxoMensal, totals }: { fluxoMensal: FluxoMensal[]; totals: Totals }) {
+interface EditableFluxoRow extends FluxoMensal {
+  chave: string;
+}
+
+function FluxoTab({
+  fluxoMensal,
+  totals,
+  fluxoOv,
+  setMonthOv,
+}: {
+  fluxoMensal: FluxoMensal[];
+  totals: Totals;
+  fluxoOv: Record<string, { entradas: number; saidas: number }>;
+  setMonthOv: (chave: string, entradas: number, saidas: number) => void;
+}) {
+  const [editMode, setEditMode] = React.useState(false);
+  // Local draft state for the table rows while editing
+  const [drafts, setDrafts] = React.useState<Record<string, { entradas: string; saidas: string }>>({});
+  // New row being added
+  const [addingRow, setAddingRow] = React.useState(false);
+  const [newChave, setNewChave] = React.useState("");
+  const [newEntradas, setNewEntradas] = React.useState("");
+  const [newSaidas, setNewSaidas] = React.useState("");
+
+  // Sync drafts when entering edit mode
+  React.useEffect(() => {
+    if (editMode) {
+      const init: Record<string, { entradas: string; saidas: string }> = {};
+      for (const r of fluxoMensal) {
+        const key = (r as any).chave ?? r.mes;
+        init[key] = {
+          entradas: String(r.entradas),
+          saidas: String(r.saidas),
+        };
+      }
+      setDrafts(init);
+    }
+  }, [editMode, fluxoMensal]);
+
+  const parseNum = (s: string) => {
+    const n = parseFloat(s.replace(/[^\d.,-]/g, "").replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  };
+
+  // Compute derived values from current drafts
+  const computedRows = React.useMemo(() => {
+    let acumulado = 0;
+    return fluxoMensal.map((r) => {
+      const key = (r as any).chave ?? r.mes;
+      const d = drafts[key];
+      const entradas = editMode ? parseNum(d?.entradas ?? String(r.entradas)) : r.entradas;
+      const saidas = editMode ? parseNum(d?.saidas ?? String(r.saidas)) : r.saidas;
+      const saldo = entradas - saidas;
+      acumulado += saldo;
+      return { ...r, chave: key, entradas, saidas, saldo, acumulado };
+    });
+  }, [fluxoMensal, drafts, editMode]);
+
+  const handleSaveAll = () => {
+    for (const r of computedRows) {
+      setMonthOv(r.chave, r.entradas, r.saidas);
+    }
+    setEditMode(false);
+    setAddingRow(false);
+  };
+
+  const handleAddRow = () => {
+    const chave = newChave.trim();
+    if (!chave.match(/^\d{4}-\d{2}$/)) return;
+    setMonthOv(chave, parseNum(newEntradas), parseNum(newSaidas));
+    setNewChave("");
+    setNewEntradas("");
+    setNewSaidas("");
+    setAddingRow(false);
+  };
+
+  const updateDraft = (key: string, field: "entradas" | "saidas", value: string) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] ?? { entradas: "0", saidas: "0" }), [field]: value },
+    }));
+  };
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -660,7 +1305,40 @@ function FluxoTab({ fluxoMensal, totals }: { fluxoMensal: FluxoMensal[]; totals:
       </div>
 
       <Card className="p-5">
-        <div className="text-sm font-semibold tracking-tight mb-3">Fluxo mês a mês</div>
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+          <div className="text-sm font-semibold tracking-tight">Fluxo mês a mês</div>
+          <div className="flex items-center gap-2">
+            {editMode && (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => { setEditMode(false); setAddingRow(false); }}
+                  className="h-7 text-xs gap-1"
+                >
+                  <X className="h-3 w-3" />
+                  Cancelar
+                </Button>
+                <Button size="sm" onClick={handleSaveAll} className="h-7 text-xs gap-1">
+                  <Check className="h-3 w-3" />
+                  Salvar
+                </Button>
+              </>
+            )}
+            {!editMode && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditMode(true)}
+                className="h-7 text-xs gap-1"
+              >
+                <PencilLine className="h-3 w-3" />
+                Editar dados
+              </Button>
+            )}
+          </div>
+        </div>
+
         <div className="overflow-x-auto rounded-xl border border-border/60">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
@@ -679,22 +1357,103 @@ function FluxoTab({ fluxoMensal, totals }: { fluxoMensal: FluxoMensal[]; totals:
               </tr>
             </thead>
             <tbody>
-              {fluxoMensal.map((row) => (
-                <tr key={row.mes} className="border-t border-border/50">
-                  <td className="px-3 py-2 font-medium">{row.mes}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
-                    {formatCurrencyBRL(row.entradas)}
+              {computedRows.map((row) => {
+                const key = row.chave;
+                const isOv = key in fluxoOv;
+                return (
+                  <tr key={key} className={cn("border-t border-border/50", isOv && !editMode && "bg-emerald-500/[0.03]")}>
+                    <td className="px-3 py-2 font-medium">
+                      {row.mes || key}
+                      {isOv && !editMode && (
+                        <span className="ml-1.5 text-[9px] text-muted-foreground/50">editado</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {editMode ? (
+                        <input
+                          type="text"
+                          value={drafts[key]?.entradas ?? String(row.entradas)}
+                          onChange={(e) => updateDraft(key, "entradas", e.target.value)}
+                          className="w-28 text-right bg-transparent border-b border-dashed border-emerald-500/50 focus:border-emerald-500 focus:outline-none tabular-nums"
+                        />
+                      ) : (
+                        formatCurrencyBRL(row.entradas)
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-rose-600 dark:text-rose-400">
+                      {editMode ? (
+                        <input
+                          type="text"
+                          value={drafts[key]?.saidas ?? String(row.saidas)}
+                          onChange={(e) => updateDraft(key, "saidas", e.target.value)}
+                          className="w-28 text-right bg-transparent border-b border-dashed border-rose-500/50 focus:border-rose-500 focus:outline-none tabular-nums"
+                        />
+                      ) : (
+                        formatCurrencyBRL(row.saidas)
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrencyBRL(row.saldo)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                      {formatCurrencyBRL(row.acumulado)}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {/* New row form */}
+              {addingRow && (
+                <tr className="border-t border-border/50 bg-foreground/[0.02]">
+                  <td className="px-3 py-2">
+                    <input
+                      type="text"
+                      placeholder="YYYY-MM"
+                      value={newChave}
+                      onChange={(e) => setNewChave(e.target.value)}
+                      className="w-24 bg-transparent border-b border-dashed border-foreground/30 focus:border-foreground/80 focus:outline-none text-sm font-medium"
+                    />
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-rose-600 dark:text-rose-400">
-                    {formatCurrencyBRL(row.saidas)}
+                  <td className="px-3 py-2 text-right">
+                    <input
+                      type="text"
+                      placeholder="0"
+                      value={newEntradas}
+                      onChange={(e) => setNewEntradas(e.target.value)}
+                      className="w-28 text-right bg-transparent border-b border-dashed border-emerald-500/50 focus:border-emerald-500 focus:outline-none tabular-nums text-emerald-600 dark:text-emerald-400"
+                    />
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{formatCurrencyBRL(row.saldo)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold">
-                    {formatCurrencyBRL(row.acumulado)}
+                  <td className="px-3 py-2 text-right">
+                    <input
+                      type="text"
+                      placeholder="0"
+                      value={newSaidas}
+                      onChange={(e) => setNewSaidas(e.target.value)}
+                      className="w-28 text-right bg-transparent border-b border-dashed border-rose-500/50 focus:border-rose-500 focus:outline-none tabular-nums text-rose-600 dark:text-rose-400"
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground text-xs">
+                    {formatCurrencyBRL(parseNum(newEntradas) - parseNum(newSaidas))}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={handleAddRow}
+                        disabled={!newChave.match(/^\d{4}-\d{2}$/)}
+                        className="h-6 w-6 grid place-items-center rounded text-emerald-600 hover:bg-emerald-500/10 disabled:opacity-30"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => { setAddingRow(false); setNewChave(""); setNewEntradas(""); setNewSaidas(""); }}
+                        className="h-6 w-6 grid place-items-center rounded text-muted-foreground hover:bg-foreground/[0.06]"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
-              ))}
-              {fluxoMensal.length === 0 && (
+              )}
+
+              {computedRows.length === 0 && !addingRow && (
                 <tr>
                   <td colSpan={5} className="text-center text-xs text-muted-foreground py-8">
                     Sem movimentações no período selecionado.
@@ -704,6 +1463,15 @@ function FluxoTab({ fluxoMensal, totals }: { fluxoMensal: FluxoMensal[]; totals:
             </tbody>
           </table>
         </div>
+
+        {/* Add month button */}
+        <button
+          onClick={() => { setAddingRow(true); setEditMode(false); }}
+          className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Adicionar mês
+        </button>
       </Card>
     </div>
   );
@@ -890,7 +1658,7 @@ function LancamentosSupabaseTab({
                         )}
                       >
                         {recDesp === "Receitas" ? "+" : "−"}
-                        {formatCurrencyBRL(Number(l.valor) || 0).replace("R$", "R$ ")}
+                        {formatCurrencyBRL(Number(l.valor) || 0).replace("R$", "R$ ")}
                       </td>
                     </tr>
                   );
@@ -1117,6 +1885,7 @@ function computeTotals(financeiro: FinanceLancamento[]): Totals {
 
 type FluxoMensal = {
   mes: string;
+  chave?: string;
   entradas: number;
   saidas: number;
   saldo: number;
@@ -1142,7 +1911,7 @@ function computeFluxoMensal(financeiro: FinanceLancamento[]): FluxoMensal[] {
       acumulado += saldo;
       const [ano, mes] = k.split("-");
       const label = `${MESES_PT[Number(mes) - 1] ?? mes}/${ano.slice(2)}`;
-      return { mes: label, entradas, saidas, saldo, acumulado };
+      return { mes: label, chave: k, entradas, saidas, saldo, acumulado };
     });
 }
 
