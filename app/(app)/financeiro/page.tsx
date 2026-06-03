@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue, useTransform, animate } from "framer-motion";
 import {
   Area,
   AreaChart,
@@ -12,6 +12,7 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  ReferenceLine,
 } from "recharts";
 import {
   ArrowDownRight,
@@ -21,14 +22,21 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CircleDot,
-  FileSpreadsheet,
-  PencilLine,
-  Plus,
-  Receipt,
+  Clock,
+  AlertTriangle,
   Search,
-  Upload,
+  TrendingUp,
+  TrendingDown,
   Wallet,
+  Receipt,
+  Activity,
+  Wifi,
+  WifiOff,
+  FileSpreadsheet,
+  Upload,
+  Plus,
+  PencilLine,
+  CircleDot,
   X,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -54,7 +62,7 @@ const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set",
 const ANOS = ["2022", "2023", "2024", "2025", "2026"];
 
 // ---------------------------------------------------------------------------
-// Compact BRL — prevents number overflow inside KPI cards
+// Compact BRL
 // ---------------------------------------------------------------------------
 
 function fmtCompact(value: number): string {
@@ -124,6 +132,7 @@ function useLancamentosFluxo(ano: string) {
   const [porEvento, setPorEvento] = React.useState<EventoRow[]>([]);
   const [totaisSupabase, setTotaisSupabase] = React.useState<FluxoTotais | null>(null);
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
+  const [realtimeConnected, setRealtimeConnected] = React.useState(false);
 
   const fetchData = React.useCallback(() => {
     const url = `/api/lancamentos/fluxo${ano ? `?ano=${encodeURIComponent(ano)}` : ""}`;
@@ -142,21 +151,23 @@ function useLancamentosFluxo(ano: string) {
   React.useEffect(() => {
     fetchData();
 
-    // Supabase Realtime — atualiza automaticamente quando dados mudam no banco
     const sb = getSupabaseBrowser();
     const channel = sb
       ?.channel("lancamentos-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "portal_lancamentos" }, fetchData)
-      .subscribe();
+      .subscribe((status) => {
+        setRealtimeConnected(status === "SUBSCRIBED");
+      });
 
     window.addEventListener("portal:data-updated", fetchData);
     return () => {
       channel?.unsubscribe();
+      setRealtimeConnected(false);
       window.removeEventListener("portal:data-updated", fetchData);
     };
   }, [fetchData]);
 
-  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt };
+  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected };
 }
 
 function useTotalCount(ano: string) {
@@ -172,6 +183,150 @@ function useTotalCount(ano: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Animated counter
+// ---------------------------------------------------------------------------
+
+function AnimatedNumber({ value, format = "currency" }: { value: number; format?: "currency" | "compact" }) {
+  const motionVal = useMotionValue(value);
+  const [display, setDisplay] = React.useState(value);
+
+  React.useEffect(() => {
+    const controls = animate(motionVal, value, {
+      duration: 0.6,
+      ease: [0.22, 1, 0.36, 1],
+    });
+    const unsub = motionVal.on("change", (v) => setDisplay(v));
+    return () => { controls.stop(); unsub(); };
+  }, [value, motionVal]);
+
+  return <>{format === "compact" ? fmtCompact(display) : formatCurrencyBRL(display)}</>;
+}
+
+// ---------------------------------------------------------------------------
+// Status pill — Monday-style
+// ---------------------------------------------------------------------------
+
+type StatusKind = "received" | "pending-in" | "pending-out" | "overdue" | "paid";
+
+function getStatusKind(situacao: string | undefined, recDesp: "Receitas" | "Despesas", dataVencimento?: string): StatusKind {
+  const hoje = todayBrasilia();
+  if (!situacao) return recDesp === "Receitas" ? "pending-in" : "pending-out";
+  if (situacao === "Recebido") return "received";
+  if (situacao === "Pago") return "paid";
+  if ((situacao === "A receber" || situacao === "A pagar") && dataVencimento && dataVencimento < hoje) return "overdue";
+  if (situacao === "A receber") return "pending-in";
+  return "pending-out";
+}
+
+const STATUS_CONFIG: Record<StatusKind, { label: string; bg: string; text: string; dot: string; pulse?: boolean }> = {
+  received: {
+    label: "Recebido",
+    bg: "bg-emerald-500/10 dark:bg-emerald-400/10",
+    text: "text-emerald-700 dark:text-emerald-300",
+    dot: "bg-emerald-500",
+  },
+  paid: {
+    label: "Pago",
+    bg: "bg-emerald-500/10 dark:bg-emerald-400/10",
+    text: "text-emerald-700 dark:text-emerald-300",
+    dot: "bg-emerald-500",
+  },
+  "pending-in": {
+    label: "A receber",
+    bg: "bg-amber-500/10 dark:bg-amber-400/10",
+    text: "text-amber-700 dark:text-amber-300",
+    dot: "bg-amber-500",
+  },
+  "pending-out": {
+    label: "A pagar",
+    bg: "bg-blue-500/10 dark:bg-blue-400/10",
+    text: "text-blue-700 dark:text-blue-300",
+    dot: "bg-blue-500",
+  },
+  overdue: {
+    label: "Vencido",
+    bg: "bg-rose-500/10 dark:bg-rose-400/10",
+    text: "text-rose-700 dark:text-rose-300",
+    dot: "bg-rose-500",
+    pulse: true,
+  },
+};
+
+const ROW_BORDER: Record<StatusKind, string> = {
+  received: "border-l-2 border-l-emerald-500",
+  paid: "border-l-2 border-l-emerald-500",
+  "pending-in": "border-l-2 border-l-amber-500",
+  "pending-out": "border-l-2 border-l-blue-400",
+  overdue: "border-l-2 border-l-rose-500",
+};
+
+function StatusPill({ situacao, recDesp, dataVencimento }: { situacao?: string; recDesp: "Receitas" | "Despesas"; dataVencimento?: string }) {
+  const kind = getStatusKind(situacao, recDesp, dataVencimento);
+  const cfg = STATUS_CONFIG[kind];
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium", cfg.bg, cfg.text)}>
+      <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", cfg.dot, cfg.pulse && "animate-pulse")} />
+      {situacao ?? cfg.label}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Skeleton
+// ---------------------------------------------------------------------------
+
+function SkeletonRow({ cols }: { cols: number }) {
+  return (
+    <tr className="border-t border-border/30 animate-pulse">
+      {Array.from({ length: cols }).map((_, i) => (
+        <td key={i} className="px-3 py-3">
+          <div className={cn("h-3 rounded bg-foreground/[0.06]", i === 0 ? "w-16" : i === 1 ? "w-32" : "w-20")} />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+function SkeletonKpi() {
+  return (
+    <Card className="p-4 animate-pulse">
+      <div className="h-3 w-24 bg-foreground/[0.06] rounded mb-3" />
+      <div className="h-7 w-28 bg-foreground/[0.06] rounded mb-2" />
+      <div className="h-2 w-16 bg-foreground/[0.04] rounded" />
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Live indicator
+// ---------------------------------------------------------------------------
+
+function LiveDot({ connected }: { connected: boolean }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors",
+      connected
+        ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10"
+        : "text-muted-foreground bg-foreground/[0.04]"
+    )}>
+      {connected ? (
+        <>
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          </span>
+          Ao vivo
+        </>
+      ) : (
+        <>
+          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+          Offline
+        </>
+      )}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Year selector
 // ---------------------------------------------------------------------------
 
@@ -183,9 +338,9 @@ function AnoSelector({ value, onChange }: { value: string; onChange: (v: string)
           key={a || "todos"}
           onClick={() => onChange(a)}
           className={cn(
-            "px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors whitespace-nowrap",
+            "px-2.5 py-1 rounded-full text-[11px] font-medium transition-all whitespace-nowrap",
             value === a
-              ? "bg-foreground text-background"
+              ? "bg-foreground text-background shadow-sm"
               : "bg-foreground/[0.06] hover:bg-foreground/[0.11] text-muted-foreground",
           )}
         >
@@ -234,19 +389,15 @@ function ImportarPlanilhaPanel({
 
   const toMonthKey = (v: any): string => {
     const s = String(v ?? "").trim();
-    // Already YYYY-MM
     if (/^\d{4}-\d{2}$/.test(s)) return s;
-    // Try to parse as date
     const d = new Date(s);
     if (!isNaN(d.getTime())) {
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, "0");
       return `${y}-${m}`;
     }
-    // DD/MM/YYYY or MM/YYYY
     const parts = s.split(/[/\-\.]/);
     if (parts.length === 3) {
-      // assume DD/MM/YYYY or YYYY/MM/DD
       const [a, b, c] = parts;
       if (a.length === 4) return `${a}-${b.padStart(2, "0")}`;
       return `${c}-${b.padStart(2, "0")}`;
@@ -261,7 +412,6 @@ function ImportarPlanilhaPanel({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Reset state
     setSheets([]);
     setSelectedSheet("");
     setAllRows([]);
@@ -277,65 +427,61 @@ function ImportarPlanilhaPanel({
     const isCsv = file.name.toLowerCase().endsWith(".csv");
     let wb: any;
 
-    if (isCsv) {
-      const text = await file.text();
-      wb = XLSX.read(text, { type: "string" });
-    } else {
-      const buf = await file.arrayBuffer();
-      wb = XLSX.read(buf, { type: "array" });
-    }
+    const buf = await file.arrayBuffer();
+    wb = XLSX.read(buf, { type: "array", cellDates: true });
 
-    const sheetNames: string[] = wb.SheetNames;
+    const sheetNames = wb.SheetNames as string[];
     setSheets(sheetNames);
-    const first = sheetNames[0] ?? "";
-    setSelectedSheet(first);
-    loadSheet(XLSX, wb, first);
+    loadSheet(wb, sheetNames[0] ?? "");
+    setSelectedSheet(sheetNames[0] ?? "");
+
+    function loadSheet(workbook: any, name: string) {
+      const ws = workbook.Sheets[name];
+      if (!ws) return;
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[][];
+      const hdrs = (raw[0] ?? []).map(String);
+      setHeaders(hdrs);
+      setAllRows(raw.slice(1));
+      setPreviewRows(raw.slice(1, 6));
+    }
   };
 
-  const loadSheet = (XLSX: any, wb: any, sheetName: string) => {
-    const ws = wb.Sheets[sheetName];
+  const handleSheetChange = async (name: string) => {
+    setSelectedSheet(name);
+    const XLSX = await import("xlsx");
+    const fileEl = fileRef.current;
+    if (!fileEl?.files?.[0]) return;
+    const buf = await fileEl.files[0].arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array", cellDates: true });
+    const ws = wb.Sheets[name];
     if (!ws) return;
-    const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-    const hdrs: string[] = (data[0] ?? []).map(String);
-    const rows = data.slice(1).filter((r: any[]) => r.some((c) => c !== ""));
-    setHeaders(hdrs);
-    setAllRows(rows);
-    setPreviewRows(rows.slice(0, 3));
-    // Auto-detect columns by header name hints
-    const lower = hdrs.map((h) => h.toLowerCase());
-    const guessIdx = (keywords: string[]) => {
-      for (const kw of keywords) {
-        const i = lower.findIndex((h) => h.includes(kw));
-        if (i >= 0) return hdrs[i];
-      }
-      return "";
-    };
-    setColMes(guessIdx(["mês", "mes", "data", "month", "período", "periodo"]));
-    setColEntradas(guessIdx(["entrada", "receita", "crédito", "credito", "income", "credit"]));
-    setColSaidas(guessIdx(["saída", "saida", "despesa", "débito", "debito", "expense", "debit"]));
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[][];
+    setHeaders((raw[0] ?? []).map(String));
+    setAllRows(raw.slice(1));
+    setPreviewRows(raw.slice(1, 6));
   };
 
-  // Re-aggregate when column mapping changes
-  React.useEffect(() => {
-    if (!colMes || !allRows.length) { setAggregated([]); return; }
+  const handleAggregate = () => {
+    if (!colMes || !colEntradas) return;
     const mesIdx = headers.indexOf(colMes);
     const entIdx = headers.indexOf(colEntradas);
-    const saiIdx = headers.indexOf(colSaidas);
+    const saidIdx = colSaidas ? headers.indexOf(colSaidas) : -1;
 
     const map = new Map<string, { entradas: number; saidas: number }>();
     for (const row of allRows) {
       const key = toMonthKey(row[mesIdx]);
-      if (!key || key.length < 4) continue;
+      if (!key) continue;
       const cur = map.get(key) ?? { entradas: 0, saidas: 0 };
-      if (entIdx >= 0) cur.entradas += parseNumber(row[entIdx]);
-      if (saiIdx >= 0) cur.saidas += parseNumber(row[saiIdx]);
+      cur.entradas += parseNumber(row[entIdx]);
+      if (saidIdx >= 0) cur.saidas += parseNumber(row[saidIdx]);
       map.set(key, cur);
     }
-    const result: ImportRow[] = Array.from(map.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([chave, { entradas, saidas }]) => ({ chave, entradas, saidas }));
-    setAggregated(result);
-  }, [colMes, colEntradas, colSaidas, allRows, headers]);
+    setAggregated(
+      Array.from(map.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([chave, { entradas, saidas }]) => ({ chave, entradas, saidas })),
+    );
+  };
 
   const handleImport = () => {
     onImport(aggregated);
@@ -343,100 +489,55 @@ function ImportarPlanilhaPanel({
     setOpen(false);
   };
 
-  const handleReset = () => {
-    onReset();
-    setImported(false);
-    setSheets([]);
-    setAllRows([]);
-    setHeaders([]);
-    setPreviewRows([]);
-    setAggregated([]);
-  };
-
   const colOptions: SelectOption[] = [
-    { value: "", label: "— selecione —" },
+    { value: "", label: "— selecionar —" },
     ...headers.map((h) => ({ value: h, label: h })),
   ];
 
-  const sheetOptions: SelectOption[] = sheets.map((s) => ({ value: s, label: s }));
-
   return (
-    <div className="rounded-xl border border-border/60 bg-foreground/[0.01] dark:bg-white/[0.01] overflow-hidden">
+    <div className="rounded-xl border border-border/60 overflow-hidden">
       <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-foreground/[0.03] transition-colors"
+        onClick={() => setOpen((p) => !p)}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-foreground/[0.02] transition-colors"
       >
-        <div className="flex items-center gap-2.5">
+        <span className="flex items-center gap-2 font-medium">
           <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Importar planilha</span>
+          Importar planilha XLSX / CSV
           {imported && (
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-              · dados importados
-            </span>
+            <Badge variant="success" className="text-[10px]">Importado</Badge>
           )}
-        </div>
-        <ChevronDown
-          className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")}
-        />
+        </span>
+        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
-        <div className="px-4 pb-4 space-y-4 border-t border-border/40">
-          {/* File picker */}
-          <div className="pt-4 flex items-center gap-3 flex-wrap">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="hidden"
-              onChange={handleFile}
-            />
-            <Button
-              size="sm"
-              variant="outline"
+        <div className="border-t border-border/60 px-4 py-4 space-y-4">
+          <div>
+            <label className="text-[11px] text-muted-foreground block mb-1.5">Arquivo</label>
+            <div
               onClick={() => fileRef.current?.click()}
-              className="gap-2"
+              className="flex items-center gap-3 border-2 border-dashed border-border/60 rounded-xl px-4 py-4 cursor-pointer hover:border-border hover:bg-foreground/[0.02] transition-all"
             >
-              <Upload className="h-3.5 w-3.5" />
-              Selecionar arquivo (.xlsx, .csv)
-            </Button>
-            {imported && (
-              <button
-                onClick={handleReset}
-                className="text-xs text-muted-foreground hover:text-rose-500 transition-colors flex items-center gap-1"
-              >
-                <X className="h-3 w-3" />
-                Limpar dados importados
-              </button>
-            )}
+              <Upload className="h-5 w-5 text-muted-foreground shrink-0" />
+              <span className="text-xs text-muted-foreground">Clique ou arraste um arquivo XLSX ou CSV</span>
+            </div>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
           </div>
 
-          {/* Sheet selector (if multiple sheets) */}
           {sheets.length > 1 && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Aba:</span>
-              <Select
-                value={selectedSheet}
-                onValueChange={async (v) => {
-                  setSelectedSheet(v);
-                  const XLSX = await import("xlsx");
-                  // We need to re-read the workbook — store it in a ref
-                }}
-                options={sheetOptions}
-                triggerClassName="min-w-[160px] h-8 text-xs"
-              />
-            </div>
+            <Select
+              value={selectedSheet}
+              onValueChange={handleSheetChange}
+              options={sheets.map((s) => ({ value: s, label: s }))}
+              triggerClassName="h-8 text-xs"
+            />
           )}
 
-          {/* Preview table */}
           {headers.length > 0 && (
             <div className="space-y-3">
-              <div className="text-xs font-medium text-muted-foreground">
-                Primeiras linhas da planilha:
-              </div>
-              <div className="overflow-x-auto rounded-lg border border-border/50">
+              <div className="overflow-x-auto rounded-lg border border-border/50 max-h-[200px]">
                 <table className="w-full text-xs">
-                  <thead>
+                  <thead className="sticky top-0 bg-background">
                     <tr className="bg-foreground/[0.03]">
                       {headers.map((h) => (
                         <th key={h} className="px-2 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap">
@@ -459,7 +560,6 @@ function ImportarPlanilhaPanel({
                 </table>
               </div>
 
-              {/* Column mapping */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="text-[11px] text-muted-foreground">Mês / Data</label>
@@ -474,14 +574,18 @@ function ImportarPlanilhaPanel({
                   <Select value={colSaidas} onValueChange={setColSaidas} options={colOptions} triggerClassName="h-8 text-xs" />
                 </div>
               </div>
+
+              <Button size="sm" variant="outline" onClick={handleAggregate} disabled={!colMes || !colEntradas} className="gap-2">
+                <Activity className="h-3.5 w-3.5" />
+                Pré-visualizar dados
+              </Button>
             </div>
           )}
 
-          {/* Aggregated preview */}
           {aggregated.length > 0 && (
             <div className="space-y-2">
               <div className="text-xs font-medium text-muted-foreground">
-                Resultado agregado por mês ({aggregated.length} meses):
+                {aggregated.length} meses detectados:
               </div>
               <div className="max-h-[200px] overflow-y-auto rounded-lg border border-border/50">
                 <table className="w-full text-xs">
@@ -504,7 +608,9 @@ function ImportarPlanilhaPanel({
                         <td className="px-2 py-1 text-right tabular-nums text-rose-600 dark:text-rose-400">
                           {fmtCompact(r.saidas)}
                         </td>
-                        <td className={cn("px-2 py-1 text-right tabular-nums font-semibold", r.entradas - r.saidas >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>
+                        <td className={cn("px-2 py-1 text-right tabular-nums font-semibold",
+                          r.entradas - r.saidas >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                        )}>
                           {fmtCompact(r.entradas - r.saidas)}
                         </td>
                       </tr>
@@ -533,7 +639,7 @@ export default function FinanceiroPage() {
   const [anoFiltro, setAnoFiltro] = React.useState<string>("");
   const [activeTab, setActiveTab] = React.useState("overview");
 
-  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt } = useLancamentosFluxo(anoFiltro);
+  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected } = useLancamentosFluxo(anoFiltro);
   const totalCount = useTotalCount(anoFiltro);
 
   const totals = React.useMemo(() => computeTotals(state.financeiro), [state.financeiro]);
@@ -542,7 +648,6 @@ export default function FinanceiroPage() {
     [state.edicoes, state.financeiro],
   );
 
-  // Fluxo mensal vem direto do Supabase (sem override localStorage)
   const fluxoMensal: FluxoMensal[] = React.useMemo(() => {
     let acumulado = 0;
     return [...fluxoSupabase]
@@ -559,7 +664,6 @@ export default function FinanceiroPage() {
     saidasPeriodo: fluxoMensal.reduce((s, r) => s + r.saidas, 0),
   }), [fluxoMensal]);
 
-  // Totais vêm do Supabase diretamente
   const displayTotals: Totals = {
     saldoConferido: totaisSupabase?.saldo_realizado ?? autoTotais.entradasPeriodo - autoTotais.saidasPeriodo,
     aReceber: totaisSupabase?.total_a_receber ?? totals.aReceber,
@@ -606,6 +710,7 @@ export default function FinanceiroPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <LiveDot connected={realtimeConnected} />
           <AnoSelector value={anoFiltro} onChange={setAnoFiltro} />
           <AutoConciliacaoSheet />
         </div>
@@ -614,6 +719,7 @@ export default function FinanceiroPage() {
       <KpiGrid
         totals={displayTotals}
         onVerDetalhes={setActiveTab}
+        loading={totaisSupabase === null && updatedAt === null}
       />
 
       <PortalFinanceiroTabs />
@@ -628,38 +734,48 @@ export default function FinanceiroPage() {
           <TabsTrigger value="egestor">Atualizar dados</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="mt-2">
-          <OverviewTab
-            totals={displayTotals}
-            fluxoMensal={fluxoMensal}
-            margens={margens}
-            porEvento={porEvento}
-            ano={anoFiltro}
-          />
-        </TabsContent>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <TabsContent value="overview" className="mt-2">
+              <OverviewTab
+                totals={displayTotals}
+                fluxoMensal={fluxoMensal}
+                margens={margens}
+                porEvento={porEvento}
+                ano={anoFiltro}
+              />
+            </TabsContent>
 
-        <TabsContent value="fluxo" className="mt-2">
-          <FluxoTab
-            fluxoMensal={fluxoMensal}
-            totals={displayTotals}
-          />
-        </TabsContent>
+            <TabsContent value="fluxo" className="mt-2">
+              <FluxoTab
+                fluxoMensal={fluxoMensal}
+                totals={displayTotals}
+              />
+            </TabsContent>
 
-        <TabsContent value="receber" className="mt-2">
-          <LancamentosSupabaseTab recDesp="Receitas" ano={anoFiltro} />
-        </TabsContent>
+            <TabsContent value="receber" className="mt-2">
+              <LancamentosSupabaseTab recDesp="Receitas" ano={anoFiltro} />
+            </TabsContent>
 
-        <TabsContent value="pagar" className="mt-2">
-          <LancamentosSupabaseTab recDesp="Despesas" ano={anoFiltro} />
-        </TabsContent>
+            <TabsContent value="pagar" className="mt-2">
+              <LancamentosSupabaseTab recDesp="Despesas" ano={anoFiltro} />
+            </TabsContent>
 
-        <TabsContent value="margem" className="mt-2">
-          <MargemTab margens={margens} porEvento={porEvento} />
-        </TabsContent>
+            <TabsContent value="margem" className="mt-2">
+              <MargemTab margens={margens} porEvento={porEvento} />
+            </TabsContent>
 
-        <TabsContent value="egestor" className="mt-2">
-          <SheetsSyncPanel />
-        </TabsContent>
+            <TabsContent value="egestor" className="mt-2">
+              <SheetsSyncPanel />
+            </TabsContent>
+          </motion.div>
+        </AnimatePresence>
       </Tabs>
     </div>
   );
@@ -672,10 +788,19 @@ export default function FinanceiroPage() {
 function KpiGrid({
   totals,
   onVerDetalhes,
+  loading,
 }: {
   totals: Totals;
   onVerDetalhes: (tab: string) => void;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[0, 1, 2, 3].map((i) => <SkeletonKpi key={i} />)}
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KpiCard
@@ -683,22 +808,27 @@ function KpiGrid({
         value={totals.saldoConferido}
         hint="Recebimentos − pagamentos realizados"
         icon={<Wallet className="h-3.5 w-3.5" />}
+        accentColor="border-t-violet-500"
         onDetalhes={() => onVerDetalhes("fluxo")}
       />
       <KpiCard
         label="A receber"
         value={totals.aReceber}
         hint="Pendente de recebimento"
-        icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
+        count={totals.aReceberCount > 0 ? totals.aReceberCount : undefined}
+        icon={<ArrowDownRight className="h-3.5 w-3.5" />}
         accent="emerald"
+        accentColor="border-t-emerald-500"
         onDetalhes={() => onVerDetalhes("receber")}
       />
       <KpiCard
         label="A pagar"
         value={totals.aPagar}
         hint="Pendente de pagamento"
-        icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
+        count={totals.aPagarCount > 0 ? totals.aPagarCount : undefined}
+        icon={<ArrowUpRight className="h-3.5 w-3.5" />}
         accent="rose"
+        accentColor="border-t-rose-500"
         onDetalhes={() => onVerDetalhes("pagar")}
       />
       <KpiCard
@@ -707,6 +837,8 @@ function KpiGrid({
         hint="Saldo + a receber − a pagar"
         icon={<Receipt className="h-3.5 w-3.5" />}
         accent={totals.resultadoProjetado >= 0 ? "emerald" : "rose"}
+        accentColor={totals.resultadoProjetado >= 0 ? "border-t-emerald-500" : "border-t-rose-500"}
+        trend={totals.resultadoProjetado >= 0 ? "up" : "down"}
         onDetalhes={() => onVerDetalhes("overview")}
       />
     </div>
@@ -719,6 +851,9 @@ function KpiCard({
   hint,
   icon,
   accent,
+  accentColor,
+  count,
+  trend,
   onDetalhes,
 }: {
   label: string;
@@ -726,46 +861,80 @@ function KpiCard({
   hint?: string;
   icon?: React.ReactNode;
   accent?: "emerald" | "rose";
+  accentColor?: string;
+  count?: number;
+  trend?: "up" | "down";
   onDetalhes?: () => void;
 }) {
   return (
-    <Card className="p-4 overflow-hidden flex flex-col gap-2">
-      <div className="flex items-start justify-between gap-2 min-w-0">
-        <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-medium text-muted-foreground tracking-tight leading-tight truncate">
-            {label}
+    <motion.div whileHover={{ y: -2 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
+      <Card
+        className={cn(
+          "p-4 overflow-hidden flex flex-col gap-2 border-t-2 cursor-default transition-shadow hover:shadow-md",
+          accentColor ?? "border-t-border",
+        )}
+      >
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] font-medium text-muted-foreground tracking-tight leading-tight truncate">
+              {label}
+            </div>
+            {hint && (
+              <div className="text-[10px] text-muted-foreground/55 mt-0.5 truncate">{hint}</div>
+            )}
           </div>
-          {hint && (
-            <div className="text-[10px] text-muted-foreground/60 mt-0.5 truncate">{hint}</div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {count != null && (
+              <span className="text-[10px] font-semibold bg-foreground/[0.07] text-muted-foreground px-1.5 py-0.5 rounded-full">
+                {count}
+              </span>
+            )}
+            {icon && (
+              <div className={cn(
+                "h-7 w-7 rounded-lg grid place-items-center shrink-0",
+                accent === "emerald" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" :
+                accent === "rose" ? "bg-rose-500/10 text-rose-600 dark:text-rose-400" :
+                "bg-foreground/[0.05] text-muted-foreground"
+              )}>
+                {icon}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-end justify-between gap-1">
+          <div
+            className={cn(
+              "text-[22px] font-semibold tracking-tight tabular-nums leading-none truncate",
+              accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
+              accent === "rose" && "text-rose-600 dark:text-rose-400",
+            )}
+            title={formatCurrencyBRL(value)}
+          >
+            <AnimatedNumber value={value} format="compact" />
+          </div>
+          {trend && (
+            <span className={cn("shrink-0 mb-0.5",
+              trend === "up" ? "text-emerald-500" : "text-rose-500"
+            )}>
+              {trend === "up"
+                ? <TrendingUp className="h-3.5 w-3.5" />
+                : <TrendingDown className="h-3.5 w-3.5" />
+              }
+            </span>
           )}
         </div>
-        {icon && (
-          <div className="h-7 w-7 rounded-lg bg-foreground/[0.05] dark:bg-white/[0.06] grid place-items-center text-muted-foreground shrink-0">
-            {icon}
-          </div>
-        )}
-      </div>
 
-      <div
-        className={cn(
-          "text-[22px] font-semibold tracking-tight tabular-nums leading-none truncate",
-          accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
-          accent === "rose" && "text-rose-600 dark:text-rose-400",
+        {onDetalhes && (
+          <button
+            onClick={onDetalhes}
+            className="text-[10px] text-muted-foreground/55 hover:text-foreground transition-colors leading-none text-left mt-0.5"
+          >
+            Ver detalhes →
+          </button>
         )}
-        title={formatCurrencyBRL(value)}
-      >
-        {fmtCompact(value)}
-      </div>
-
-      {onDetalhes && (
-        <button
-          onClick={onDetalhes}
-          className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors leading-none text-left"
-        >
-          Ver detalhes →
-        </button>
-      )}
-    </Card>
+      </Card>
+    </motion.div>
   );
 }
 
@@ -799,44 +968,42 @@ function OverviewTab({
   return (
     <div className="space-y-4">
       <Card className="p-5">
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
           <div>
             <div className="text-sm font-semibold tracking-tight">
               Fluxo de caixa{ano ? ` — ${ano}` : ""}
             </div>
             <div className="text-[11px] text-muted-foreground">
-              Movimentações já realizadas
+              Movimentações realizadas · dados do sistema financeiro
             </div>
           </div>
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
             <Legend dot="bg-emerald-500" label="Entradas" />
             <Legend dot="bg-rose-500" label="Saídas" />
-            <Legend dot="bg-foreground" label="Saldo" />
+            <Legend dot="bg-violet-500" label="Saldo acum." />
           </div>
         </div>
         {fluxoMensal.length === 0 ? (
-          <div className="h-[280px] grid place-items-center text-xs text-muted-foreground">
-            Sem movimentações liquidadas no período selecionado.
-          </div>
+          <EmptyChart message="Sem movimentações liquidadas no período selecionado." />
         ) : (
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={fluxoMensal} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="grad-entradas" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="rgb(16,185,129)" stopOpacity={0.45} />
-                    <stop offset="100%" stopColor="rgb(16,185,129)" stopOpacity={0} />
+                    <stop offset="0%" stopColor="rgb(16,185,129)" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="rgb(16,185,129)" stopOpacity={0.02} />
                   </linearGradient>
                   <linearGradient id="grad-saidas" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0} />
+                    <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0.02} />
                   </linearGradient>
-                  <linearGradient id="grad-saldo" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--foreground))" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="hsl(var(--foreground))" stopOpacity={0} />
+                  <linearGradient id="grad-acumulado" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="rgb(139,92,246)" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="rgb(139,92,246)" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/50" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/40" />
                 <XAxis
                   dataKey="mes"
                   stroke="hsl(var(--muted-foreground))"
@@ -852,10 +1019,11 @@ function OverviewTab({
                   tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`}
                   width={48}
                 />
-                <Tooltip content={<MoneyTip />} cursor={{ stroke: "hsl(var(--border))" }} />
-                <Area type="monotone" dataKey="entradas" stroke="rgb(16,185,129)" strokeWidth={2} fill="url(#grad-entradas)" />
-                <Area type="monotone" dataKey="saidas" stroke="rgb(244,63,94)" strokeWidth={2} fill="url(#grad-saidas)" />
-                <Area type="monotone" dataKey="saldo" stroke="hsl(var(--foreground))" strokeWidth={2} fill="url(#grad-saldo)" />
+                <ReferenceLine y={0} stroke="hsl(var(--border))" strokeDasharray="4 4" />
+                <Tooltip content={<MoneyTip />} cursor={{ stroke: "hsl(var(--border))", strokeWidth: 1.5 }} />
+                <Area type="monotone" dataKey="entradas" name="Entradas" stroke="rgb(16,185,129)" strokeWidth={2} fill="url(#grad-entradas)" dot={false} />
+                <Area type="monotone" dataKey="saidas" name="Saídas" stroke="rgb(244,63,94)" strokeWidth={2} fill="url(#grad-saidas)" dot={false} />
+                <Area type="monotone" dataKey="acumulado" name="Saldo acum." stroke="rgb(139,92,246)" strokeWidth={2} fill="url(#grad-acumulado)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -865,28 +1033,16 @@ function OverviewTab({
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-3">
         <Card className="p-5">
           <div className="text-sm font-semibold tracking-tight mb-1">Resultado por evento</div>
-          <div className="text-[11px] text-muted-foreground mb-3">
-            Receitas versus despesas · top {barData.length}
+          <div className="text-[11px] text-muted-foreground mb-4">
+            Receitas × despesas · top {barData.length} eventos
           </div>
           {barData.length === 0 ? (
-            <div className="h-[260px] grid place-items-center text-xs text-muted-foreground">
-              Sem eventos nas movimentações do período.
-            </div>
+            <EmptyChart message="Sem eventos nas movimentações do período." height="h-[200px]" />
           ) : (
             <div className="h-[260px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="bar-receita-fin" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--brand-2))" stopOpacity={0.95} />
-                      <stop offset="100%" stopColor="hsl(var(--brand-1))" stopOpacity={0.6} />
-                    </linearGradient>
-                    <linearGradient id="bar-despesa-fin" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="rgb(244,63,94)" stopOpacity={0.6} />
-                      <stop offset="100%" stopColor="rgb(244,63,94)" stopOpacity={0.18} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/50" />
+                <BarChart data={barData} margin={{ top: 8, right: 10, left: 0, bottom: 0 }} barGap={3}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/40" />
                   <XAxis
                     dataKey="nome"
                     stroke="hsl(var(--muted-foreground))"
@@ -903,9 +1059,9 @@ function OverviewTab({
                     width={48}
                     tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`}
                   />
-                  <Tooltip content={<MoneyTip />} cursor={{ fill: "hsl(var(--muted) / 0.3)" }} />
-                  <Bar dataKey="Receita" fill="url(#bar-receita-fin)" radius={[8, 8, 4, 4]} />
-                  <Bar dataKey="Despesa" fill="url(#bar-despesa-fin)" radius={[8, 8, 4, 4]} />
+                  <Tooltip content={<MoneyTip />} cursor={{ fill: "hsl(var(--muted) / 0.2)" }} />
+                  <Bar dataKey="Receita" fill="rgb(16,185,129)" radius={[6, 6, 0, 0]} fillOpacity={0.9} />
+                  <Bar dataKey="Despesa" fill="rgb(244,63,94)" radius={[6, 6, 0, 0]} fillOpacity={0.75} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -921,6 +1077,17 @@ function OverviewTab({
   );
 }
 
+function EmptyChart({ message, height = "h-[280px]" }: { message: string; height?: string }) {
+  return (
+    <div className={cn(height, "grid place-items-center text-center")}>
+      <div className="space-y-2">
+        <div className="text-3xl opacity-20">📊</div>
+        <div className="text-xs text-muted-foreground max-w-[200px]">{message}</div>
+      </div>
+    </div>
+  );
+}
+
 function ProximosVencimentos() {
   const { state, togglePago } = useAppState();
   const hoje = todayBrasilia();
@@ -931,8 +1098,9 @@ function ProximosVencimentos() {
 
   if (proximos.length === 0) {
     return (
-      <div className="text-xs text-muted-foreground text-center py-6">
-        Sem lançamentos em aberto. Tudo conciliado.
+      <div className="text-center py-8 space-y-2">
+        <CheckCircle2 className="h-7 w-7 text-emerald-500 mx-auto opacity-60" />
+        <div className="text-xs text-muted-foreground">Sem lançamentos em aberto. Tudo conciliado.</div>
       </div>
     );
   }
@@ -942,41 +1110,42 @@ function ProximosVencimentos() {
       {proximos.map((l) => {
         const atrasado = l.vencimento < hoje;
         return (
-          <div
+          <motion.div
             key={l.id}
-            className="flex items-center gap-2 rounded-xl border border-border/50 bg-foreground/[0.02] dark:bg-white/[0.03] px-3 py-2"
+            layout
+            className={cn(
+              "flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors",
+              atrasado
+                ? "border-rose-200 dark:border-rose-900/50 bg-rose-500/[0.04]"
+                : "border-border/50 bg-foreground/[0.02] dark:bg-white/[0.03]",
+            )}
           >
-            <span
-              className={cn(
-                "h-2 w-2 shrink-0 rounded-full",
-                l.tipo === "receita" ? "bg-emerald-500" : "bg-rose-500",
-              )}
-            />
+            <span className={cn(
+              "h-2 w-2 shrink-0 rounded-full",
+              atrasado ? "bg-rose-500 animate-pulse" :
+              l.tipo === "receita" ? "bg-amber-500" : "bg-blue-400",
+            )} />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-medium truncate">{l.descricao}</div>
               <div className="text-[10px] text-muted-foreground">
                 Vence em {formatDateBR(l.vencimento)}
-                {atrasado && <span className="ml-1.5 text-rose-500">· atrasado</span>}
+                {atrasado && <span className="ml-1.5 text-rose-500 font-medium">· vencido</span>}
               </div>
             </div>
-            <div
-              className={cn(
-                "text-sm font-semibold tabular-nums shrink-0",
-                l.tipo === "receita"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-foreground/80",
-              )}
-            >
+            <div className={cn(
+              "text-sm font-semibold tabular-nums shrink-0",
+              l.tipo === "receita" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground/80",
+            )}>
               {l.tipo === "receita" ? "+" : "−"}{formatCurrencyBRL(l.valor).replace("R$", "R$ ")}
             </div>
             <button
               onClick={() => togglePago(l.id, true)}
-              className="h-7 w-7 grid place-items-center rounded-lg text-muted-foreground hover:text-emerald-600 hover:bg-emerald-500/10"
+              className="h-7 w-7 grid place-items-center rounded-lg text-muted-foreground hover:text-emerald-600 hover:bg-emerald-500/10 transition-colors"
               aria-label="Marcar como liquidado"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
             </button>
-          </div>
+          </motion.div>
         );
       })}
     </div>
@@ -984,12 +1153,8 @@ function ProximosVencimentos() {
 }
 
 // ---------------------------------------------------------------------------
-// Fluxo de caixa — editable table
+// Fluxo de caixa
 // ---------------------------------------------------------------------------
-
-interface EditableFluxoRow extends FluxoMensal {
-  chave: string;
-}
 
 function FluxoTab({
   fluxoMensal,
@@ -1005,15 +1170,17 @@ function FluxoTab({
           label="Total de entradas"
           value={totals.entradasPeriodo}
           hint="Recebimentos liquidados no período"
-          icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
+          icon={<ArrowDownRight className="h-3.5 w-3.5" />}
           accent="emerald"
+          accentColor="border-t-emerald-500"
         />
         <KpiCard
           label="Total de saídas"
           value={totals.saidasPeriodo}
           hint="Pagamentos efetuados no período"
-          icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
+          icon={<ArrowUpRight className="h-3.5 w-3.5" />}
           accent="rose"
+          accentColor="border-t-rose-500"
         />
         <KpiCard
           label="Saldo do período"
@@ -1021,21 +1188,28 @@ function FluxoTab({
           hint="Resultado realizado"
           icon={<Wallet className="h-3.5 w-3.5" />}
           accent={totals.entradasPeriodo - totals.saidasPeriodo >= 0 ? "emerald" : "rose"}
+          accentColor={totals.entradasPeriodo - totals.saidasPeriodo >= 0 ? "border-t-emerald-500" : "border-t-rose-500"}
+          trend={totals.entradasPeriodo - totals.saidasPeriodo >= 0 ? "up" : "down"}
         />
       </div>
 
-      <Card className="p-5">
-        <div className="text-sm font-semibold tracking-tight mb-3">Mês a mês</div>
+      <Card className="overflow-hidden">
+        <div className="px-5 py-4 border-b border-border/50">
+          <div className="text-sm font-semibold tracking-tight">Mês a mês</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">
+            {fluxoMensal.length} meses com movimentações realizadas
+          </div>
+        </div>
 
-        <div className="overflow-x-auto rounded-xl border border-border/60">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
-              <tr className="bg-foreground/[0.02] dark:bg-white/[0.02]">
+              <tr className="bg-foreground/[0.02] dark:bg-white/[0.02] border-b border-border/50">
                 {["Mês", "Entradas", "Saídas", "Saldo do mês", "Saldo acumulado"].map((h, i) => (
                   <th
                     key={h}
                     className={cn(
-                      "px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium",
+                      "px-4 py-2.5 text-[11px] uppercase tracking-wider text-muted-foreground font-medium",
                       i === 0 ? "text-left" : "text-right",
                     )}
                   >
@@ -1045,29 +1219,53 @@ function FluxoTab({
               </tr>
             </thead>
             <tbody>
-              {fluxoMensal.map((row) => {
+              {fluxoMensal.map((row, idx) => {
                 const key = (row as any).chave ?? row.mes;
+                const saldoPos = row.saldo >= 0;
                 return (
-                  <tr key={key} className="border-t border-border/50">
-                    <td className="px-3 py-2 font-medium">{row.mes || key}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                  <motion.tr
+                    key={key}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: idx * 0.02 }}
+                    className="border-t border-border/40 hover:bg-foreground/[0.015] dark:hover:bg-white/[0.015] transition-colors"
+                  >
+                    <td className="px-4 py-2.5 font-medium text-sm">{row.mes || key}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-emerald-600 dark:text-emerald-400 font-medium">
                       {formatCurrencyBRL(row.entradas)}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-rose-600 dark:text-rose-400">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-rose-600 dark:text-rose-400">
                       {formatCurrencyBRL(row.saidas)}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrencyBRL(row.saldo)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                    <td className={cn(
+                      "px-4 py-2.5 text-right tabular-nums font-semibold",
+                      saldoPos ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                    )}>
+                      <span className="inline-flex items-center gap-1">
+                        {saldoPos
+                          ? <TrendingUp className="h-3 w-3 opacity-60" />
+                          : <TrendingDown className="h-3 w-3 opacity-60" />
+                        }
+                        {formatCurrencyBRL(row.saldo)}
+                      </span>
+                    </td>
+                    <td className={cn(
+                      "px-4 py-2.5 text-right tabular-nums font-semibold",
+                      row.acumulado >= 0 ? "text-foreground" : "text-rose-600 dark:text-rose-400"
+                    )}>
                       {formatCurrencyBRL(row.acumulado)}
                     </td>
-                  </tr>
+                  </motion.tr>
                 );
               })}
 
               {fluxoMensal.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-center text-xs text-muted-foreground py-8">
-                    Sem movimentações no período selecionado.
+                  <td colSpan={5} className="text-center text-xs text-muted-foreground py-12">
+                    <div className="space-y-2">
+                      <div className="text-2xl opacity-20">📋</div>
+                      <div>Sem movimentações no período selecionado.</div>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -1100,7 +1298,6 @@ function LancamentosSupabaseTab({
   const limit = 50;
 
   const titulo = recDesp === "Receitas" ? "Contas a receber" : "Contas a pagar";
-  const cor = recDesp === "Receitas" ? "emerald" : "rose";
 
   const fetchData = React.useCallback(() => {
     setLoading(true);
@@ -1147,53 +1344,55 @@ function LancamentosSupabaseTab({
         ];
 
   return (
-    <div className="space-y-4">
-      <Card className="p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div>
-            <div className="text-sm font-semibold tracking-tight">{titulo}</div>
-            <div className="text-[11px] text-muted-foreground">
-              {total.toLocaleString("pt-BR")} registros
-              {ano ? ` em ${ano}` : " · todos os anos"} · sistema financeiro
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nome, evento ou classificação…"
-              className="pl-8"
-            />
-          </div>
-          <Select
-            value={situacao}
-            onValueChange={setSituacao}
-            options={statusOptions}
-            triggerClassName="min-w-[160px]"
+    <div className="space-y-3">
+      {/* Search bar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nome, evento ou classificação…"
+            className="pl-8"
           />
         </div>
-      </Card>
+        <Select
+          value={situacao}
+          onValueChange={setSituacao}
+          options={statusOptions}
+          triggerClassName="min-w-[160px]"
+        />
+        <span className="text-[11px] text-muted-foreground ml-auto hidden sm:block">
+          {total.toLocaleString("pt-BR")} registros{ano ? ` · ${ano}` : ""}
+        </span>
+      </div>
 
-      <Card className="p-0 overflow-hidden">
+      {/* Table */}
+      <Card className="overflow-hidden">
+        <div className="px-4 py-3 border-b border-border/50 flex items-center justify-between">
+          <div>
+            <span className="text-sm font-semibold">{titulo}</span>
+          </div>
+          <span className="text-[11px] text-muted-foreground sm:hidden">
+            {total.toLocaleString("pt-BR")} registros
+          </span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
-              <tr className="bg-foreground/[0.02] dark:bg-white/[0.02]">
+              <tr className="bg-foreground/[0.02] dark:bg-white/[0.02] border-b border-border/50">
                 {[
                   ["left", "Status"],
                   ["left", "Nome / Descrição"],
                   ["left", "Evento"],
                   ["left", "Vencimento"],
-                  ["left", "Pagamento"],
+                  ["left", "Liquidação"],
                   ["right", "Valor"],
                 ].map(([align, label]) => (
                   <th
                     key={label}
                     className={cn(
-                      "px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium",
+                      "px-4 py-2.5 text-[11px] uppercase tracking-wider text-muted-foreground font-medium",
                       `text-${align}`,
                     )}
                   >
@@ -1203,66 +1402,73 @@ function LancamentosSupabaseTab({
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan={6} className="text-center text-xs text-muted-foreground py-10">
-                    Carregando…
-                  </td>
-                </tr>
-              )}
+              {loading && Array.from({ length: 8 }).map((_, i) => (
+                <SkeletonRow key={i} cols={6} />
+              ))}
               {!loading && lancamentos.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center text-xs text-muted-foreground py-10">
-                    Nenhum lançamento encontrado.
+                  <td colSpan={6} className="text-center text-xs text-muted-foreground py-12">
+                    <div className="space-y-2">
+                      <div className="text-2xl opacity-20">🔍</div>
+                      <div>Nenhum lançamento encontrado{search ? ` para "${search}"` : ""}.</div>
+                    </div>
                   </td>
                 </tr>
               )}
               {!loading &&
-                lancamentos.map((l) => {
-                  const pago = l.situacao === "Recebido" || l.situacao === "Pago";
+                lancamentos.map((l, idx) => {
+                  const kind = getStatusKind(l.situacao, recDesp, l.data_vencimento);
                   return (
-                    <tr key={l.id} className="border-t border-border/50">
-                      <td className="px-3 py-2.5">
-                        <Badge variant={pago ? "success" : "warning"} className="gap-1">
-                          <CircleDot className="h-3 w-3" />
-                          {l.situacao ?? "—"}
-                        </Badge>
+                    <motion.tr
+                      key={l.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: idx * 0.015 }}
+                      className={cn(
+                        "border-t border-border/40 hover:bg-foreground/[0.02] dark:hover:bg-white/[0.015] transition-colors",
+                        ROW_BORDER[kind],
+                      )}
+                    >
+                      <td className="px-4 py-3">
+                        <StatusPill situacao={l.situacao} recDesp={recDesp} dataVencimento={l.data_vencimento} />
                       </td>
-                      <td className="px-3 py-2.5 max-w-[240px]">
+                      <td className="px-4 py-3 max-w-[240px]">
                         <div className="text-sm font-medium truncate">
                           {l.nome_razao_social || l.descricao || "—"}
                         </div>
                         {l.classificacao && (
-                          <div className="text-[10px] text-muted-foreground truncate">
+                          <div className="text-[10px] text-muted-foreground truncate mt-0.5">
                             {l.classificacao}
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[160px]">
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px]">
                         <div className="truncate">{l.evento || "—"}</div>
                       </td>
-                      <td className="px-3 py-2.5 text-xs">
-                        {formatDateBR(l.data_vencimento ?? "")}
+                      <td className="px-4 py-3 text-xs tabular-nums">
+                        {l.data_vencimento ? (
+                          <span className={cn(kind === "overdue" && "text-rose-600 dark:text-rose-400 font-medium")}>
+                            {formatDateBR(l.data_vencimento)}
+                          </span>
+                        ) : "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-xs">
+                      <td className="px-4 py-3 text-xs tabular-nums">
                         {l.data_pagamento ? (
-                          formatDateBR(l.data_pagamento)
+                          <span className="text-emerald-600 dark:text-emerald-400">{formatDateBR(l.data_pagamento)}</span>
                         ) : (
-                          <span className="text-muted-foreground/50">—</span>
+                          <span className="text-muted-foreground/40">—</span>
                         )}
                       </td>
-                      <td
-                        className={cn(
-                          "px-3 py-2.5 text-right font-semibold tabular-nums text-sm",
-                          cor === "emerald"
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-foreground/85",
-                        )}
-                      >
+                      <td className={cn(
+                        "px-4 py-3 text-right font-semibold tabular-nums text-sm",
+                        recDesp === "Receitas"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-foreground/85",
+                      )}>
                         {recDesp === "Receitas" ? "+" : "−"}
                         {formatCurrencyBRL(Number(l.valor) || 0).replace("R$", "R$ ")}
                       </td>
-                    </tr>
+                    </motion.tr>
                   );
                 })}
             </tbody>
@@ -1285,6 +1491,7 @@ function LancamentosSupabaseTab({
             >
               <ChevronLeft className="h-3.5 w-3.5" />
             </Button>
+            <span className="px-2 font-medium">{page}</span>
             <Button
               size="icon"
               variant="ghost"
@@ -1309,32 +1516,58 @@ function MargemTab({ margens, porEvento }: { margens: MargemEdicao[]; porEvento:
   if (porEvento.length > 0) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {porEvento.map((ev) => {
-          const margemPct =
-            ev.Receita > 0 ? Math.round(((ev.Receita - ev.Despesa) / ev.Receita) * 100) : 0;
+        {porEvento.map((ev, idx) => {
+          const margemPct = ev.Receita > 0 ? Math.round(((ev.Receita - ev.Despesa) / ev.Receita) * 100) : 0;
+          const despesaPct = ev.Receita > 0 ? Math.min(100, Math.round((ev.Despesa / ev.Receita) * 100)) : 0;
           return (
-            <Card key={ev.nome} className="p-5">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold tracking-tight truncate">{ev.nome}</div>
+            <motion.div
+              key={ev.nome}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.04, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <Card className="p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold tracking-tight truncate">{ev.nome}</div>
+                  </div>
+                  <Badge
+                    variant={margemPct >= 30 ? "success" : margemPct >= 0 ? "warning" : "destructive"}
+                    className="tabular-nums shrink-0"
+                  >
+                    Margem {margemPct}%
+                  </Badge>
                 </div>
-                <Badge
-                  variant={margemPct >= 30 ? "success" : margemPct >= 0 ? "warning" : "destructive"}
-                  className="tabular-nums shrink-0"
-                >
-                  Margem {margemPct}%
-                </Badge>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                <Stat label="Receitas" value={ev.Receita} accent="emerald" />
-                <Stat label="Despesas" value={ev.Despesa} accent="rose" />
-                <Stat
-                  label="Resultado"
-                  value={ev.resultado}
-                  accent={ev.resultado >= 0 ? "emerald" : "rose"}
-                />
-              </div>
-            </Card>
+
+                {/* Progress bar — despesas vs receita */}
+                <div className="mb-4 space-y-1.5">
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>Despesas ({despesaPct}% da receita)</span>
+                    <span className={margemPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+                      {margemPct >= 0 ? "✓ Superávit" : "✗ Déficit"}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-foreground/[0.06] rounded-full overflow-hidden">
+                    <motion.div
+                      className={cn("h-full rounded-full", margemPct >= 30 ? "bg-emerald-500" : margemPct >= 0 ? "bg-amber-500" : "bg-rose-500")}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${despesaPct}%` }}
+                      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <Stat label="Receitas" value={ev.Receita} accent="emerald" />
+                  <Stat label="Despesas" value={ev.Despesa} accent="rose" />
+                  <Stat
+                    label="Resultado"
+                    value={ev.resultado}
+                    accent={ev.resultado >= 0 ? "emerald" : "rose"}
+                  />
+                </div>
+              </Card>
+            </motion.div>
           );
         })}
       </div>
@@ -1343,45 +1576,74 @@ function MargemTab({ margens, porEvento }: { margens: MargemEdicao[]; porEvento:
 
   if (margens.length === 0) {
     return (
-      <Card className="p-10 text-center text-sm text-muted-foreground">
-        Nenhum evento encontrado no período selecionado.
+      <Card className="p-12 text-center">
+        <div className="space-y-2">
+          <div className="text-3xl opacity-20">📊</div>
+          <div className="text-sm text-muted-foreground">Nenhum evento encontrado no período selecionado.</div>
+        </div>
       </Card>
     );
   }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-      {margens.map((m) => {
+      {margens.map((m, idx) => {
         const margemPct =
           m.receitaTotal > 0
             ? Math.round(((m.receitaTotal - m.despesaTotal) / m.receitaTotal) * 100)
             : 0;
         const margemValor = m.receitaTotal - m.despesaTotal;
+        const despesaPct = m.receitaTotal > 0 ? Math.min(100, Math.round((m.despesaTotal / m.receitaTotal) * 100)) : 0;
         return (
-          <Card key={m.edicao.slug} className="p-5">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold tracking-tight truncate">{m.edicao.nome}</div>
-                <div className="text-[11px] text-muted-foreground truncate">{m.edicao.cidade}</div>
+          <motion.div
+            key={m.edicao.slug}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.04, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <Card className="p-5 hover:shadow-md transition-shadow">
+              <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold tracking-tight truncate">{m.edicao.nome}</div>
+                  <div className="text-[11px] text-muted-foreground truncate">{m.edicao.cidade}</div>
+                </div>
+                <Badge
+                  variant={margemPct >= 30 ? "success" : margemPct >= 0 ? "warning" : "destructive"}
+                  className="tabular-nums shrink-0"
+                >
+                  Margem {margemPct}%
+                </Badge>
               </div>
-              <Badge
-                variant={margemPct >= 30 ? "success" : margemPct >= 0 ? "warning" : "destructive"}
-                className="tabular-nums shrink-0"
-              >
-                Margem {margemPct}%
-              </Badge>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <Stat label="Receitas vinculadas" value={m.receitasVinculadas} accent="emerald" />
-              <Stat label="Despesas vinculadas" value={m.despesasVinculadas} accent="rose" />
-              <Stat label="Custo de produção" value={m.edicao.custoProducao} accent="rose" />
-              <Stat
-                label="Resultado"
-                value={margemValor}
-                accent={margemValor >= 0 ? "emerald" : "rose"}
-              />
-            </div>
-          </Card>
+
+              <div className="mb-4 space-y-1.5">
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>Despesas ({despesaPct}% da receita)</span>
+                  <span className={margemPct >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+                    {margemPct >= 0 ? "✓ Superávit" : "✗ Déficit"}
+                  </span>
+                </div>
+                <div className="h-2 bg-foreground/[0.06] rounded-full overflow-hidden">
+                  <motion.div
+                    className={cn("h-full rounded-full", margemPct >= 30 ? "bg-emerald-500" : margemPct >= 0 ? "bg-amber-500" : "bg-rose-500")}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${despesaPct}%` }}
+                    transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Stat label="Receitas vinculadas" value={m.receitasVinculadas} accent="emerald" />
+                <Stat label="Despesas vinculadas" value={m.despesasVinculadas} accent="rose" />
+                <Stat label="Custo de produção" value={m.edicao.custoProducao} accent="rose" />
+                <Stat
+                  label="Resultado"
+                  value={margemValor}
+                  accent={margemValor >= 0 ? "emerald" : "rose"}
+                />
+              </div>
+            </Card>
+          </motion.div>
         );
       })}
     </div>
@@ -1430,13 +1692,16 @@ function Legend({ dot, label }: { dot: string; label: string }) {
 function MoneyTip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl glass-strong px-3 py-2 text-xs shadow-xl">
-      <div className="text-[11px] text-muted-foreground mb-1.5">{label}</div>
-      <div className="space-y-1">
+    <div className="rounded-xl border border-border/60 bg-background shadow-xl px-3 py-2.5 text-xs min-w-[160px]">
+      <div className="text-[11px] font-medium text-muted-foreground mb-2">{label}</div>
+      <div className="space-y-1.5">
         {payload.map((p: any) => (
-          <div key={p.dataKey} className="flex items-center justify-between gap-6">
-            <span className="capitalize text-muted-foreground">{p.dataKey ?? p.name}</span>
-            <span className="font-medium tabular-nums">{formatCurrencyBRL(p.value)}</span>
+          <div key={p.dataKey ?? p.name} className="flex items-center justify-between gap-6">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full shrink-0" style={{ background: p.color }} />
+              <span className="text-muted-foreground">{p.name ?? p.dataKey}</span>
+            </span>
+            <span className="font-semibold tabular-nums">{formatCurrencyBRL(p.value)}</span>
           </div>
         ))}
       </div>
