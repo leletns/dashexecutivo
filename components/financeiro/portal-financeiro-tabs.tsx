@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { usePortalSession } from "@/components/layout/portal-sector-context";
 import { cn, formatCurrencyBRL } from "@/lib/utils";
+import { currentMonthBrasilia } from "@/lib/timezone";
 import {
   DEPARTAMENTOS,
   EMPTY_SNAPSHOT,
@@ -89,8 +90,7 @@ async function mutate(
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function nowMes(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return currentMonthBrasilia();
 }
 
 function cryptoId(): string {
@@ -156,10 +156,8 @@ export function PortalFinanceiroTabs() {
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
-            Dados estruturados
-          </p>
-          <h2 className="text-sm font-semibold tracking-tight">Portal Financeiro</h2>
+          <h2 className="text-sm font-semibold tracking-tight">Entrar dados</h2>
+          <p className="text-[11px] text-muted-foreground/70">Contas, previsão, eventos, associados e departamentos</p>
         </div>
         <div className="ml-auto">
           <Select
@@ -269,7 +267,7 @@ function ContasTab({
   const [adding, setAdding] = React.useState(false);
   const [form, setForm] = React.useState<Partial<ContaBancaria>>({
     tipo: "corrente",
-    data_saldo: new Date().toISOString().slice(0, 10),
+    data_saldo: currentMonthBrasilia() + "-01",
   });
 
   const totalSaldo = data.reduce((s, c) => s + c.saldo, 0);
@@ -283,7 +281,7 @@ function ContasTab({
       await mutate("portal_contas_bancarias", "upsert", { ...form, id: form.id ?? cryptoId() });
       toast.success("Conta salva.");
       setAdding(false);
-      setForm({ tipo: "corrente", data_saldo: new Date().toISOString().slice(0, 10) });
+      setForm({ tipo: "corrente", data_saldo: currentMonthBrasilia() + "-01" });
       onSave();
     } catch (e: any) {
       toast.error(e.message);
@@ -777,11 +775,11 @@ function AssociadosTab({
             <thead>
               <tr className="bg-muted/30">
                 <Th>Mês</Th>
-                <Th right>Total início</Th>
-                <Th right>Previsão renovação</Th>
-                <Th right>Renovações realizadas</Th>
-                <Th right>Novas adesões</Th>
-                <Th right>Saídas</Th>
+                <Th right>Total no início</Th>
+                <Th right>Previsão renov.</Th>
+                <Th right>Renovações feitas</Th>
+                <Th right>Novos associados</Th>
+                <Th right>Saíram</Th>
               </tr>
             </thead>
             <tbody>
@@ -1011,12 +1009,12 @@ function AnaliseTab({
     setEditingMensalidade(false);
   };
 
-  const saldoSource = ovSaldo != null ? "editado manualmente"
+  const saldoSource = ovSaldo != null ? "valor ajustado manualmente"
     : hasContas ? "soma das contas bancárias"
-    : lancTotais ? "saldo realizado e-Gestor" : "aguardando dados…";
-  const custoSource = ovCusto != null ? "editado manualmente"
+    : lancTotais ? "saldo do sistema financeiro" : "aguardando dados…";
+  const custoSource = ovCusto != null ? "valor ajustado manualmente"
     : hasDept ? "soma dos departamentos"
-    : last3.length > 0 ? `média últimos ${last3.length} meses (e-Gestor)` : "aguardando dados…";
+    : last3.length > 0 ? `média dos últimos ${last3.length} meses` : "aguardando dados…";
 
   const inputCls = "w-full text-sm font-semibold border border-border/60 rounded px-2 py-0.5 bg-background outline-none focus:ring-1 focus:ring-ring tabular-nums";
   const pencilBtn = (onClick: () => void) => (
@@ -1026,7 +1024,7 @@ function AnaliseTab({
   );
   const resetBtn = (onClick: () => void, auto: string) => (
     <button onClick={onClick} className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline">
-      Restaurar automático ({auto})
+      Usar valor calculado ({auto})
     </button>
   );
 
@@ -1035,7 +1033,7 @@ function AnaliseTab({
       {/* ── Valores base editáveis ── */}
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50 mb-2.5">
-          Valores base — clique no lápis para editar
+          Valores de referência — clique no lápis para ajustar
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           {/* Caixa disponível */}
@@ -1070,7 +1068,7 @@ function AnaliseTab({
                   <TrendingDown className="h-3 w-3 text-muted-foreground/70" />
                 </div>
                 <div className="min-w-0 flex-1 space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">Custo mensal médio</p>
+                  <p className="text-[11px] text-muted-foreground">Quanto gastamos por mês</p>
                   {editingCusto ? (
                     <input autoFocus type="number" value={draftCusto} onChange={(e) => setDraftCusto(e.target.value)}
                       onBlur={commitCusto} onKeyDown={(e) => { if (e.key === "Enter") commitCusto(); if (e.key === "Escape") setEditingCusto(false); }}
@@ -1105,7 +1103,7 @@ function AnaliseTab({
                     </p>
                   )}
                   <p className="text-[9px] text-muted-foreground/50">
-                    {ovAtivos != null ? "editado manualmente" : "aba Associados"}
+                    {ovAtivos != null ? "valor ajustado manualmente" : "aba Associados"}
                   </p>
                   {ovAtivos != null && resetBtn(() => { setOvAtivos(null); persistOv({ ativos: null }); }, autoAtivos.toLocaleString("pt-BR"))}
                 </div>
@@ -1122,7 +1120,7 @@ function AnaliseTab({
                   <TrendingUp className="h-3 w-3 text-muted-foreground/70" />
                 </div>
                 <div className="min-w-0 flex-1 space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">Mensalidade média por assoc.</p>
+                  <p className="text-[11px] text-muted-foreground">Quanto cada associado paga em média</p>
                   {editingMensalidade ? (
                     <input autoFocus type="number" value={draftMensalidade} onChange={(e) => setDraftMensalidade(e.target.value)}
                       onBlur={commitMensalidade} onKeyDown={(e) => { if (e.key === "Enter") commitMensalidade(); if (e.key === "Escape") setEditingMensalidade(false); }}
@@ -1133,7 +1131,7 @@ function AnaliseTab({
                     </p>
                   )}
                   <p className="text-[9px] text-muted-foreground/50">
-                    {ovMensalidade != null ? "editado manualmente" : "receita média ÷ associados (e-Gestor)"}
+                    {ovMensalidade != null ? "valor ajustado manualmente" : "receita média ÷ associados"}
                   </p>
                   {ovMensalidade != null && resetBtn(() => { setOvMensalidade(null); persistOv({ mensalidade: null }); }, formatCurrencyBRL(autoMensalidade))}
                 </div>
@@ -1147,7 +1145,7 @@ function AnaliseTab({
       {/* ── Indicadores calculados ── */}
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50 mb-2.5">
-          Indicadores calculados automaticamente
+          Calculado automaticamente
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0, duration: 0.3, type: "spring", stiffness: 400, damping: 30 }}>
@@ -1157,7 +1155,7 @@ function AnaliseTab({
                   <Landmark className="h-3 w-3 text-muted-foreground/70" />
                 </div>
                 <div className="space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">Caixa cobre despesas até quando?</p>
+                  <p className="text-[11px] text-muted-foreground">O caixa aguenta até quando?</p>
                   <p className={cn("text-base font-semibold tabular-nums",
                     runway !== null && runway < 6 ? "text-red-600 dark:text-red-400" : "text-foreground")}>
                     {runway !== null ? (runway < 0 ? "Saldo negativo" : `${runway.toFixed(1).replace(".", ",")} meses`) : "—"}
@@ -1177,12 +1175,12 @@ function AnaliseTab({
                   <Users className="h-3 w-3 text-muted-foreground/70" />
                 </div>
                 <div className="space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">Ponto de equilíbrio</p>
+                  <p className="text-[11px] text-muted-foreground">Quantos associados para se manter?</p>
                   <p className="text-base font-semibold tabular-nums">
-                    {breakEven !== null ? `${Math.ceil(breakEven).toLocaleString("pt-BR")} assoc.` : "—"}
+                    {breakEven !== null ? `${Math.ceil(breakEven).toLocaleString("pt-BR")} associados` : "—"}
                   </p>
                   <p className="text-[9px] text-muted-foreground/50">
-                    Custo mensal ÷ mensalidade média
+                    Custo do mês ÷ o que cada um paga
                   </p>
                 </div>
               </div>
@@ -1196,7 +1194,7 @@ function AnaliseTab({
                   <CalendarDays className="h-3 w-3 text-muted-foreground/70" />
                 </div>
                 <div className="space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">Custo por associado / mês</p>
+                  <p className="text-[11px] text-muted-foreground">Quanto custa cada associado por mês</p>
                   <p className="text-base font-semibold tabular-nums">
                     {custoPorAssociado > 0 ? formatCurrencyBRL(custoPorAssociado) : "—"}
                   </p>
@@ -1217,7 +1215,7 @@ function AnaliseTab({
                     : <TrendingDown className="h-3 w-3 text-red-500" />}
                 </div>
                 <div className="space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">Resultado previsto</p>
+                  <p className="text-[11px] text-muted-foreground">O que sobra no mês</p>
                   <p className={cn("text-base font-semibold tabular-nums",
                     previsto != null
                       ? previsto >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
@@ -1225,7 +1223,7 @@ function AnaliseTab({
                     {previsto != null ? formatCurrencyBRL(previsto) : "—"}
                   </p>
                   <p className="text-[9px] text-muted-foreground/50">
-                    {data.previsao_mensal ? "Previsão manual (aba Previsão)" : "A receber − A pagar (e-Gestor)"}
+                    {data.previsao_mensal ? "Da sua previsão (aba Previsão)" : "A receber menos o que falta pagar"}
                   </p>
                 </div>
               </div>

@@ -47,6 +47,8 @@ import {
 } from "@/lib/app-state";
 import { useRegisterPageState } from "@/lib/page-state";
 import { cn, formatCurrencyBRL } from "@/lib/utils";
+import { todayBrasilia } from "@/lib/timezone";
+import { getSupabaseBrowser } from "@/lib/supabase/browser";
 
 const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const ANOS = ["2022", "2023", "2024", "2025", "2026"];
@@ -122,8 +124,6 @@ function useLancamentosFluxo(ano: string) {
   const [porEvento, setPorEvento] = React.useState<EventoRow[]>([]);
   const [totaisSupabase, setTotaisSupabase] = React.useState<FluxoTotais | null>(null);
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
-  // Once Supabase responds (even empty), stop falling back to localStorage
-  const [sbLoaded, setSbLoaded] = React.useState(false);
 
   const fetchData = React.useCallback(() => {
     const url = `/api/lancamentos/fluxo${ano ? `?ano=${encodeURIComponent(ano)}` : ""}`;
@@ -134,29 +134,29 @@ function useLancamentosFluxo(ano: string) {
         setFluxoSupabase((d.fluxo_mensal ?? []) as FluxoRow[]);
         setPorEvento((d.por_evento ?? []) as EventoRow[]);
         if (d.totais) setTotaisSupabase(d.totais as FluxoTotais);
-        setSbLoaded(true);
-      })
-      .catch(() => {});
-
-    fetch("/api/sync/sheets", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: any) => {
-        if (d?.last_sync?.finished_at) setUpdatedAt(d.last_sync.finished_at as string);
+        setUpdatedAt(new Date().toISOString());
       })
       .catch(() => {});
   }, [ano]);
 
   React.useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30_000);
+
+    // Supabase Realtime — atualiza automaticamente quando dados mudam no banco
+    const sb = getSupabaseBrowser();
+    const channel = sb
+      ?.channel("lancamentos-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "portal_lancamentos" }, fetchData)
+      .subscribe();
+
     window.addEventListener("portal:data-updated", fetchData);
     return () => {
-      clearInterval(interval);
+      channel?.unsubscribe();
       window.removeEventListener("portal:data-updated", fetchData);
     };
   }, [fetchData]);
 
-  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt, sbLoaded };
+  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt };
 }
 
 function useTotalCount(ano: string) {
@@ -530,146 +530,37 @@ function ImportarPlanilhaPanel({
 
 export default function FinanceiroPage() {
   const { state } = useAppState();
-  // Default: todos os anos (string vazia = sem filtro de ano)
   const [anoFiltro, setAnoFiltro] = React.useState<string>("");
   const [activeTab, setActiveTab] = React.useState("overview");
 
-  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt, sbLoaded } = useLancamentosFluxo(anoFiltro);
+  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt } = useLancamentosFluxo(anoFiltro);
   const totalCount = useTotalCount(anoFiltro);
 
   const totals = React.useMemo(() => computeTotals(state.financeiro), [state.financeiro]);
-  const fluxoLocal = React.useMemo(() => computeFluxoMensal(state.financeiro), [state.financeiro]);
   const margens = React.useMemo(
     () => computeMargensPorEdicao(state.edicoes, state.financeiro),
     [state.edicoes, state.financeiro],
   );
 
-  // ---------------------------------------------------------------------------
-  // Fluxo overrides (manual edits + imports) — persisted in localStorage
-  // ---------------------------------------------------------------------------
-  const FLUXO_OV_KEY = "fin_fluxo_ov_v2";
-  const [fluxoOv, setFluxoOv] = React.useState<Record<string, { entradas: number; saidas: number }>>({});
-
-  React.useEffect(() => {
-    try {
-      const r = localStorage.getItem(FLUXO_OV_KEY);
-      if (r) setFluxoOv(JSON.parse(r));
-    } catch {}
-  }, []);
-
-  const setMonthOv = (chave: string, entradas: number, saidas: number) => {
-    setFluxoOv((prev) => {
-      const next = { ...prev, [chave]: { entradas, saidas } };
-      try { localStorage.setItem(FLUXO_OV_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  };
-
-  const bulkImportFluxo = (rows: ImportRow[]) => {
-    setFluxoOv((prev) => {
-      const next = { ...prev };
-      rows.forEach((r) => { next[r.chave] = { entradas: r.entradas, saidas: r.saidas }; });
-      try { localStorage.setItem(FLUXO_OV_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  };
-
-  const resetFluxoOv = () => {
-    setFluxoOv({});
-    try { localStorage.removeItem(FLUXO_OV_KEY); } catch {}
-  };
-
-  // ---------------------------------------------------------------------------
-  // KPI overrides — persisted in localStorage
-  // ---------------------------------------------------------------------------
-  const KPI_OV_KEY = "fin_kpi_ov_v2";
-  const [kpiOv, setKpiOv] = React.useState<Partial<Totals>>({});
-
-  React.useEffect(() => {
-    try {
-      const r = localStorage.getItem(KPI_OV_KEY);
-      if (r) setKpiOv(JSON.parse(r));
-    } catch {}
-  }, []);
-
-  const saveKpiOv = (patch: Partial<Totals>) => {
-    setKpiOv((prev) => {
-      const next = { ...prev, ...patch };
-      try { localStorage.setItem(KPI_OV_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  };
-
-  // ---------------------------------------------------------------------------
-  // Merged fluxo = Supabase base + local overrides
-  // ---------------------------------------------------------------------------
+  // Fluxo mensal vem direto do Supabase (sem override localStorage)
   const fluxoMensal: FluxoMensal[] = React.useMemo(() => {
-    const base: FluxoRow[] = sbLoaded ? fluxoSupabase : (fluxoSupabase.length > 0 ? fluxoSupabase : fluxoLocal);
-
-    const keysFromSb = base.map((r) => r.chave ?? r.mes);
-    const keysFromOv = Object.keys(fluxoOv);
-    const allKeys = Array.from(new Set([...keysFromSb, ...keysFromOv])).sort();
-
     let acumulado = 0;
-    return allKeys.map((key) => {
-      const sbRow = base.find((r) => (r.chave ?? r.mes) === key);
-      const ov = fluxoOv[key];
-      const entradas = ov?.entradas ?? sbRow?.entradas ?? 0;
-      const saidas = ov?.saidas ?? sbRow?.saidas ?? 0;
-      const saldo = entradas - saidas;
-      acumulado += saldo;
+    return [...fluxoSupabase]
+      .sort((a, b) => (a.chave ?? a.mes).localeCompare(b.chave ?? b.mes))
+      .map((r) => {
+        const saldo = r.entradas - r.saidas;
+        acumulado += saldo;
+        return { ...r, saldo, acumulado };
+      });
+  }, [fluxoSupabase]);
 
-      let mes = sbRow?.mes ?? "";
-      if (!mes && key.match(/^\d{4}-\d{2}$/)) {
-        const [y, m] = key.split("-");
-        mes = `${MESES_PT[Number(m) - 1] ?? m}/${y.slice(2)}`;
-      }
-
-      return { mes, chave: key, entradas, saidas, saldo, acumulado };
-    });
-  }, [sbLoaded, fluxoSupabase, fluxoLocal, fluxoOv]);
-
-  // ---------------------------------------------------------------------------
-  // Auto totals from merged fluxo
-  // ---------------------------------------------------------------------------
   const autoTotais = React.useMemo(() => ({
     entradasPeriodo: fluxoMensal.reduce((s, r) => s + r.entradas, 0),
     saidasPeriodo: fluxoMensal.reduce((s, r) => s + r.saidas, 0),
   }), [fluxoMensal]);
 
-  // ---------------------------------------------------------------------------
-  // Display totals: KPI overrides > Supabase > local
-  // ---------------------------------------------------------------------------
+  // Totais vêm do Supabase diretamente
   const displayTotals: Totals = {
-    saldoConferido: kpiOv.saldoConferido ?? (totaisSupabase?.saldo_realizado ?? autoTotais.entradasPeriodo - autoTotais.saidasPeriodo),
-    aReceber: kpiOv.aReceber ?? (totaisSupabase?.total_a_receber ?? totals.aReceber),
-    aReceberCount: totals.aReceberCount,
-    aPagar: kpiOv.aPagar ?? (totaisSupabase?.total_a_pagar ?? totals.aPagar),
-    aPagarCount: totals.aPagarCount,
-    resultadoProjetado: kpiOv.resultadoProjetado ?? (totaisSupabase?.resultado_projetado ?? totals.resultadoProjetado),
-    entradasPeriodo: kpiOv.entradasPeriodo ?? autoTotais.entradasPeriodo,
-    saidasPeriodo: kpiOv.saidasPeriodo ?? autoTotais.saidasPeriodo,
-  };
-
-  useRegisterPageState({
-    module: "Financeiro",
-    summary: [
-      { label: "A receber (em aberto)", value: formatCurrencyBRL(displayTotals.aReceber) },
-      { label: "A pagar (em aberto)", value: formatCurrencyBRL(displayTotals.aPagar) },
-      { label: "Saldo conferido", value: formatCurrencyBRL(displayTotals.saldoConferido) },
-      { label: "Resultado projetado", value: formatCurrencyBRL(displayTotals.resultadoProjetado) },
-    ],
-  });
-
-  const relTime = (iso: string) => {
-    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-    if (diff < 3600) return `${Math.floor(diff / 60)} min atrás`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} h atrás`;
-    return `${Math.floor(diff / 86400)} dias atrás`;
-  };
-
-  // Auto-value for KPI cards (what would be computed without overrides)
-  const autoKpiValues: Totals = {
     saldoConferido: totaisSupabase?.saldo_realizado ?? autoTotais.entradasPeriodo - autoTotais.saidasPeriodo,
     aReceber: totaisSupabase?.total_a_receber ?? totals.aReceber,
     aReceberCount: totals.aReceberCount,
@@ -678,6 +569,24 @@ export default function FinanceiroPage() {
     resultadoProjetado: totaisSupabase?.resultado_projetado ?? totals.resultadoProjetado,
     entradasPeriodo: autoTotais.entradasPeriodo,
     saidasPeriodo: autoTotais.saidasPeriodo,
+  };
+
+  useRegisterPageState({
+    module: "Financeiro",
+    summary: [
+      { label: "Ainda vou receber", value: formatCurrencyBRL(displayTotals.aReceber) },
+      { label: "Ainda tenho que pagar", value: formatCurrencyBRL(displayTotals.aPagar) },
+      { label: "Dinheiro em caixa", value: formatCurrencyBRL(displayTotals.saldoConferido) },
+      { label: "O que sobra no final", value: formatCurrencyBRL(displayTotals.resultadoProjetado) },
+    ],
+  });
+
+  const relTime = (iso: string) => {
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return "agora";
+    if (diff < 3600) return `${Math.floor(diff / 60)} min atrás`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} h atrás`;
+    return `${Math.floor(diff / 86400)} dias atrás`;
   };
 
   return (
@@ -693,7 +602,7 @@ export default function FinanceiroPage() {
           <p className="text-xs text-muted-foreground">
             {totalCount != null
               ? `${totalCount.toLocaleString("pt-BR")} movimentações${anoFiltro ? ` em ${anoFiltro}` : ""}${updatedAt ? ` · atualizado ${relTime(updatedAt)}` : ""}`
-              : "Fluxo de caixa, contas a pagar e a receber, margem por edição"}
+              : "Entradas, saídas e saldo · dados em tempo real"}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -704,23 +613,18 @@ export default function FinanceiroPage() {
 
       <KpiGrid
         totals={displayTotals}
-        autoValues={autoKpiValues}
-        kpiOv={kpiOv}
-        onSaveKpi={saveKpiOv}
         onVerDetalhes={setActiveTab}
       />
-
-      <ImportarPlanilhaPanel onImport={bulkImportFluxo} onReset={resetFluxoOv} />
 
       <PortalFinanceiroTabs />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="overview">Visão geral</TabsTrigger>
-          <TabsTrigger value="fluxo">Fluxo de caixa</TabsTrigger>
-          <TabsTrigger value="receber">Contas a receber</TabsTrigger>
-          <TabsTrigger value="pagar">Contas a pagar</TabsTrigger>
-          <TabsTrigger value="margem">Margem por evento</TabsTrigger>
+          <TabsTrigger value="overview">Resumo</TabsTrigger>
+          <TabsTrigger value="fluxo">Mês a mês</TabsTrigger>
+          <TabsTrigger value="receber">Ainda vou receber</TabsTrigger>
+          <TabsTrigger value="pagar">Ainda tenho que pagar</TabsTrigger>
+          <TabsTrigger value="margem">Resultado por evento</TabsTrigger>
           <TabsTrigger value="egestor">Atualizar dados</TabsTrigger>
         </TabsList>
 
@@ -738,8 +642,6 @@ export default function FinanceiroPage() {
           <FluxoTab
             fluxoMensal={fluxoMensal}
             totals={displayTotals}
-            fluxoOv={fluxoOv}
-            setMonthOv={setMonthOv}
           />
         </TabsContent>
 
@@ -769,81 +671,43 @@ export default function FinanceiroPage() {
 
 function KpiGrid({
   totals,
-  autoValues,
-  kpiOv,
-  onSaveKpi,
   onVerDetalhes,
 }: {
   totals: Totals;
-  autoValues: Totals;
-  kpiOv: Partial<Totals>;
-  onSaveKpi: (patch: Partial<Totals>) => void;
   onVerDetalhes: (tab: string) => void;
 }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KpiCard
-        label="Saldo conferido"
+        label="Dinheiro em caixa"
         value={totals.saldoConferido}
-        hint="Recebimentos − pagamentos"
+        hint="O que entrou menos o que saiu"
         icon={<Wallet className="h-3.5 w-3.5" />}
         onDetalhes={() => onVerDetalhes("fluxo")}
-        canEdit
-        autoValue={autoValues.saldoConferido}
-        onSave={(v) => onSaveKpi({ saldoConferido: v })}
-        hasOverride={"saldoConferido" in kpiOv}
-        onRestore={() => {
-          const { saldoConferido: _, ...rest } = kpiOv as any;
-          onSaveKpi(rest);
-        }}
       />
       <KpiCard
-        label="A receber"
+        label="Ainda vou receber"
         value={totals.aReceber}
-        hint="Pendente de recebimento"
+        hint="Valores que ainda não chegaram"
         icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
         accent="emerald"
         onDetalhes={() => onVerDetalhes("receber")}
-        canEdit
-        autoValue={autoValues.aReceber}
-        onSave={(v) => onSaveKpi({ aReceber: v })}
-        hasOverride={"aReceber" in kpiOv}
-        onRestore={() => {
-          const { aReceber: _, ...rest } = kpiOv as any;
-          onSaveKpi(rest);
-        }}
       />
       <KpiCard
-        label="A pagar"
+        label="Ainda tenho que pagar"
         value={totals.aPagar}
-        hint="Pendente de pagamento"
+        hint="Valores que ainda vou pagar"
         icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
         accent="rose"
         onDetalhes={() => onVerDetalhes("pagar")}
-        canEdit
-        autoValue={autoValues.aPagar}
-        onSave={(v) => onSaveKpi({ aPagar: v })}
-        hasOverride={"aPagar" in kpiOv}
-        onRestore={() => {
-          const { aPagar: _, ...rest } = kpiOv as any;
-          onSaveKpi(rest);
-        }}
       />
       <KpiCard
-        label="Resultado projetado"
+        label="O que sobra no final"
         value={totals.resultadoProjetado}
-        hint="Saldo + a receber − a pagar"
+        hint="Se tudo entrar e tudo sair conforme previsto"
         icon={<Receipt className="h-3.5 w-3.5" />}
         accent={totals.resultadoProjetado >= 0 ? "emerald" : "rose"}
         onDetalhes={() => onVerDetalhes("overview")}
-        canEdit
-        autoValue={autoValues.resultadoProjetado}
-        onSave={(v) => onSaveKpi({ resultadoProjetado: v })}
-        hasOverride={"resultadoProjetado" in kpiOv}
-        onRestore={() => {
-          const { resultadoProjetado: _, ...rest } = kpiOv as any;
-          onSaveKpi(rest);
-        }}
       />
     </div>
   );
@@ -856,11 +720,6 @@ function KpiCard({
   icon,
   accent,
   onDetalhes,
-  canEdit,
-  autoValue,
-  onSave,
-  hasOverride,
-  onRestore,
 }: {
   label: string;
   value: number;
@@ -868,33 +727,9 @@ function KpiCard({
   icon?: React.ReactNode;
   accent?: "emerald" | "rose";
   onDetalhes?: () => void;
-  canEdit?: boolean;
-  autoValue?: number;
-  onSave?: (v: number) => void;
-  hasOverride?: boolean;
-  onRestore?: () => void;
 }) {
-  const [editing, setEditing] = React.useState(false);
-  const [draft, setDraft] = React.useState("");
-  const inputRef = React.useRef<HTMLInputElement>(null);
-
-  const startEdit = () => {
-    setDraft(String(value));
-    setEditing(true);
-    setTimeout(() => inputRef.current?.select(), 0);
-  };
-
-  const commitEdit = () => {
-    const raw = draft.replace(/[^\d.,-]/g, "").replace(",", ".");
-    const n = parseFloat(raw);
-    if (!isNaN(n) && onSave) onSave(n);
-    setEditing(false);
-  };
-
-  const cancelEdit = () => setEditing(false);
-
   return (
-    <Card className="p-4 overflow-hidden flex flex-col gap-2 group">
+    <Card className="p-4 overflow-hidden flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2 min-w-0">
         <div className="min-w-0 flex-1">
           <div className="text-[11px] font-medium text-muted-foreground tracking-tight leading-tight truncate">
@@ -904,75 +739,32 @@ function KpiCard({
             <div className="text-[10px] text-muted-foreground/60 mt-0.5 truncate">{hint}</div>
           )}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {canEdit && !editing && (
-            <button
-              onClick={startEdit}
-              className="opacity-0 group-hover:opacity-100 transition-opacity h-5 w-5 grid place-items-center rounded text-muted-foreground/50 hover:text-foreground hover:bg-foreground/[0.06]"
-              aria-label="Editar valor"
-            >
-              <PencilLine className="h-3 w-3" />
-            </button>
-          )}
-          {icon && (
-            <div className="h-7 w-7 rounded-lg bg-foreground/[0.05] dark:bg-white/[0.06] grid place-items-center text-muted-foreground">
-              {icon}
-            </div>
-          )}
-        </div>
+        {icon && (
+          <div className="h-7 w-7 rounded-lg bg-foreground/[0.05] dark:bg-white/[0.06] grid place-items-center text-muted-foreground shrink-0">
+            {icon}
+          </div>
+        )}
       </div>
 
-      {editing ? (
-        <div className="flex items-center gap-1">
-          <input
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitEdit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitEdit();
-              if (e.key === "Escape") cancelEdit();
-            }}
-            className={cn(
-              "flex-1 text-[22px] font-semibold tracking-tight tabular-nums leading-none bg-transparent border-b border-dashed border-foreground/40 focus:outline-none focus:border-foreground/80 min-w-0 w-full",
-              accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
-              accent === "rose" && "text-rose-600 dark:text-rose-400",
-            )}
-            autoFocus
-          />
-        </div>
-      ) : (
-        <div
-          className={cn(
-            "text-[22px] font-semibold tracking-tight tabular-nums leading-none truncate",
-            accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
-            accent === "rose" && "text-rose-600 dark:text-rose-400",
-          )}
-          title={formatCurrencyBRL(value)}
+      <div
+        className={cn(
+          "text-[22px] font-semibold tracking-tight tabular-nums leading-none truncate",
+          accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
+          accent === "rose" && "text-rose-600 dark:text-rose-400",
+        )}
+        title={formatCurrencyBRL(value)}
+      >
+        {fmtCompact(value)}
+      </div>
+
+      {onDetalhes && (
+        <button
+          onClick={onDetalhes}
+          className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors leading-none text-left"
         >
-          {fmtCompact(value)}
-        </div>
+          Ver detalhes →
+        </button>
       )}
-
-      <div className="flex items-center justify-between min-h-[14px]">
-        {onDetalhes && !hasOverride && (
-          <button
-            onClick={onDetalhes}
-            className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors leading-none"
-          >
-            Ver detalhes →
-          </button>
-        )}
-        {hasOverride && onRestore && (
-          <button
-            onClick={onRestore}
-            className="text-[10px] text-muted-foreground/50 hover:text-foreground transition-colors leading-none"
-          >
-            restaurar automático
-          </button>
-        )}
-        {!onDetalhes && !hasOverride && <span />}
-      </div>
     </Card>
   );
 }
@@ -1010,15 +802,15 @@ function OverviewTab({
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <div>
             <div className="text-sm font-semibold tracking-tight">
-              Fluxo de caixa{ano ? ` — ${ano}` : " — histórico"}
+              Dinheiro que entrou e saiu{ano ? ` — ${ano}` : ""}
             </div>
             <div className="text-[11px] text-muted-foreground">
-              Entradas, saídas e saldo · movimentações realizadas
+              Movimentações já realizadas
             </div>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-            <Legend dot="bg-emerald-500" label="Entradas" />
-            <Legend dot="bg-rose-500" label="Saídas" />
+            <Legend dot="bg-emerald-500" label="Entrou" />
+            <Legend dot="bg-rose-500" label="Saiu" />
             <Legend dot="bg-foreground" label="Saldo" />
           </div>
         </div>
@@ -1074,7 +866,7 @@ function OverviewTab({
         <Card className="p-5">
           <div className="text-sm font-semibold tracking-tight mb-1">Resultado por evento</div>
           <div className="text-[11px] text-muted-foreground mb-3">
-            Receitas versus despesas · top {barData.length}
+            O que entrou e o que saiu em cada evento
           </div>
           {barData.length === 0 ? (
             <div className="h-[260px] grid place-items-center text-xs text-muted-foreground">
@@ -1121,7 +913,7 @@ function OverviewTab({
         </Card>
 
         <Card className="p-5">
-          <div className="text-sm font-semibold tracking-tight mb-2">Próximos vencimentos</div>
+          <div className="text-sm font-semibold tracking-tight mb-2">O que vence em breve</div>
           <ProximosVencimentos />
         </Card>
       </div>
@@ -1131,7 +923,7 @@ function OverviewTab({
 
 function ProximosVencimentos() {
   const { state, togglePago } = useAppState();
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = todayBrasilia();
   const proximos = state.financeiro
     .filter((f) => !f.pagamento)
     .sort((a, b) => a.vencimento.localeCompare(b.vencimento))
@@ -1202,148 +994,44 @@ interface EditableFluxoRow extends FluxoMensal {
 function FluxoTab({
   fluxoMensal,
   totals,
-  fluxoOv,
-  setMonthOv,
 }: {
   fluxoMensal: FluxoMensal[];
   totals: Totals;
-  fluxoOv: Record<string, { entradas: number; saidas: number }>;
-  setMonthOv: (chave: string, entradas: number, saidas: number) => void;
 }) {
-  const [editMode, setEditMode] = React.useState(false);
-  // Local draft state for the table rows while editing
-  const [drafts, setDrafts] = React.useState<Record<string, { entradas: string; saidas: string }>>({});
-  // New row being added
-  const [addingRow, setAddingRow] = React.useState(false);
-  const [newChave, setNewChave] = React.useState("");
-  const [newEntradas, setNewEntradas] = React.useState("");
-  const [newSaidas, setNewSaidas] = React.useState("");
-
-  // Sync drafts when entering edit mode
-  React.useEffect(() => {
-    if (editMode) {
-      const init: Record<string, { entradas: string; saidas: string }> = {};
-      for (const r of fluxoMensal) {
-        const key = (r as any).chave ?? r.mes;
-        init[key] = {
-          entradas: String(r.entradas),
-          saidas: String(r.saidas),
-        };
-      }
-      setDrafts(init);
-    }
-  }, [editMode, fluxoMensal]);
-
-  const parseNum = (s: string) => {
-    const n = parseFloat(s.replace(/[^\d.,-]/g, "").replace(",", "."));
-    return isNaN(n) ? 0 : n;
-  };
-
-  // Compute derived values from current drafts
-  const computedRows = React.useMemo(() => {
-    let acumulado = 0;
-    return fluxoMensal.map((r) => {
-      const key = (r as any).chave ?? r.mes;
-      const d = drafts[key];
-      const entradas = editMode ? parseNum(d?.entradas ?? String(r.entradas)) : r.entradas;
-      const saidas = editMode ? parseNum(d?.saidas ?? String(r.saidas)) : r.saidas;
-      const saldo = entradas - saidas;
-      acumulado += saldo;
-      return { ...r, chave: key, entradas, saidas, saldo, acumulado };
-    });
-  }, [fluxoMensal, drafts, editMode]);
-
-  const handleSaveAll = () => {
-    for (const r of computedRows) {
-      setMonthOv(r.chave, r.entradas, r.saidas);
-    }
-    setEditMode(false);
-    setAddingRow(false);
-  };
-
-  const handleAddRow = () => {
-    const chave = newChave.trim();
-    if (!chave.match(/^\d{4}-\d{2}$/)) return;
-    setMonthOv(chave, parseNum(newEntradas), parseNum(newSaidas));
-    setNewChave("");
-    setNewEntradas("");
-    setNewSaidas("");
-    setAddingRow(false);
-  };
-
-  const updateDraft = (key: string, field: "entradas" | "saidas", value: string) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [key]: { ...(prev[key] ?? { entradas: "0", saidas: "0" }), [field]: value },
-    }));
-  };
-
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard
-          label="Total entradas"
+          label="Total que entrou"
           value={totals.entradasPeriodo}
-          hint="Recebimentos liquidados"
+          hint="Tudo que foi recebido no período"
           icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
           accent="emerald"
         />
         <KpiCard
-          label="Total saídas"
+          label="Total que saiu"
           value={totals.saidasPeriodo}
-          hint="Pagamentos efetuados"
+          hint="Tudo que foi pago no período"
           icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
           accent="rose"
         />
         <KpiCard
-          label="Saldo do período"
+          label="Resultado do período"
           value={totals.entradasPeriodo - totals.saidasPeriodo}
-          hint="Resultado realizado"
+          hint="O que entrou menos o que saiu"
           icon={<Wallet className="h-3.5 w-3.5" />}
           accent={totals.entradasPeriodo - totals.saidasPeriodo >= 0 ? "emerald" : "rose"}
         />
       </div>
 
       <Card className="p-5">
-        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-          <div className="text-sm font-semibold tracking-tight">Fluxo mês a mês</div>
-          <div className="flex items-center gap-2">
-            {editMode && (
-              <>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => { setEditMode(false); setAddingRow(false); }}
-                  className="h-7 text-xs gap-1"
-                >
-                  <X className="h-3 w-3" />
-                  Cancelar
-                </Button>
-                <Button size="sm" onClick={handleSaveAll} className="h-7 text-xs gap-1">
-                  <Check className="h-3 w-3" />
-                  Salvar
-                </Button>
-              </>
-            )}
-            {!editMode && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setEditMode(true)}
-                className="h-7 text-xs gap-1"
-              >
-                <PencilLine className="h-3 w-3" />
-                Editar dados
-              </Button>
-            )}
-          </div>
-        </div>
+        <div className="text-sm font-semibold tracking-tight mb-3">Mês a mês</div>
 
         <div className="overflow-x-auto rounded-xl border border-border/60">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="bg-foreground/[0.02] dark:bg-white/[0.02]">
-                {["Mês", "Entradas", "Saídas", "Saldo do mês", "Saldo acumulado"].map((h, i) => (
+                {["Mês", "Entrou", "Saiu", "Resultado do mês", "Acumulado no ano"].map((h, i) => (
                   <th
                     key={h}
                     className={cn(
@@ -1357,40 +1045,16 @@ function FluxoTab({
               </tr>
             </thead>
             <tbody>
-              {computedRows.map((row) => {
-                const key = row.chave;
-                const isOv = key in fluxoOv;
+              {fluxoMensal.map((row) => {
+                const key = (row as any).chave ?? row.mes;
                 return (
-                  <tr key={key} className={cn("border-t border-border/50", isOv && !editMode && "bg-emerald-500/[0.03]")}>
-                    <td className="px-3 py-2 font-medium">
-                      {row.mes || key}
-                      {isOv && !editMode && (
-                        <span className="ml-1.5 text-[9px] text-muted-foreground/50">editado</span>
-                      )}
-                    </td>
+                  <tr key={key} className="border-t border-border/50">
+                    <td className="px-3 py-2 font-medium">{row.mes || key}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
-                      {editMode ? (
-                        <input
-                          type="text"
-                          value={drafts[key]?.entradas ?? String(row.entradas)}
-                          onChange={(e) => updateDraft(key, "entradas", e.target.value)}
-                          className="w-28 text-right bg-transparent border-b border-dashed border-emerald-500/50 focus:border-emerald-500 focus:outline-none tabular-nums"
-                        />
-                      ) : (
-                        formatCurrencyBRL(row.entradas)
-                      )}
+                      {formatCurrencyBRL(row.entradas)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-rose-600 dark:text-rose-400">
-                      {editMode ? (
-                        <input
-                          type="text"
-                          value={drafts[key]?.saidas ?? String(row.saidas)}
-                          onChange={(e) => updateDraft(key, "saidas", e.target.value)}
-                          className="w-28 text-right bg-transparent border-b border-dashed border-rose-500/50 focus:border-rose-500 focus:outline-none tabular-nums"
-                        />
-                      ) : (
-                        formatCurrencyBRL(row.saidas)
-                      )}
+                      {formatCurrencyBRL(row.saidas)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatCurrencyBRL(row.saldo)}</td>
                     <td className="px-3 py-2 text-right tabular-nums font-semibold">
@@ -1400,60 +1064,7 @@ function FluxoTab({
                 );
               })}
 
-              {/* New row form */}
-              {addingRow && (
-                <tr className="border-t border-border/50 bg-foreground/[0.02]">
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      placeholder="YYYY-MM"
-                      value={newChave}
-                      onChange={(e) => setNewChave(e.target.value)}
-                      className="w-24 bg-transparent border-b border-dashed border-foreground/30 focus:border-foreground/80 focus:outline-none text-sm font-medium"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <input
-                      type="text"
-                      placeholder="0"
-                      value={newEntradas}
-                      onChange={(e) => setNewEntradas(e.target.value)}
-                      className="w-28 text-right bg-transparent border-b border-dashed border-emerald-500/50 focus:border-emerald-500 focus:outline-none tabular-nums text-emerald-600 dark:text-emerald-400"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <input
-                      type="text"
-                      placeholder="0"
-                      value={newSaidas}
-                      onChange={(e) => setNewSaidas(e.target.value)}
-                      className="w-28 text-right bg-transparent border-b border-dashed border-rose-500/50 focus:border-rose-500 focus:outline-none tabular-nums text-rose-600 dark:text-rose-400"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground text-xs">
-                    {formatCurrencyBRL(parseNum(newEntradas) - parseNum(newSaidas))}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={handleAddRow}
-                        disabled={!newChave.match(/^\d{4}-\d{2}$/)}
-                        className="h-6 w-6 grid place-items-center rounded text-emerald-600 hover:bg-emerald-500/10 disabled:opacity-30"
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => { setAddingRow(false); setNewChave(""); setNewEntradas(""); setNewSaidas(""); }}
-                        className="h-6 w-6 grid place-items-center rounded text-muted-foreground hover:bg-foreground/[0.06]"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )}
-
-              {computedRows.length === 0 && !addingRow && (
+              {fluxoMensal.length === 0 && (
                 <tr>
                   <td colSpan={5} className="text-center text-xs text-muted-foreground py-8">
                     Sem movimentações no período selecionado.
@@ -1463,15 +1074,6 @@ function FluxoTab({
             </tbody>
           </table>
         </div>
-
-        {/* Add month button */}
-        <button
-          onClick={() => { setAddingRow(true); setEditMode(false); }}
-          className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Adicionar mês
-        </button>
       </Card>
     </div>
   );
@@ -1497,7 +1099,7 @@ function LancamentosSupabaseTab({
   const [loading, setLoading] = React.useState(false);
   const limit = 50;
 
-  const titulo = recDesp === "Receitas" ? "Contas a receber" : "Contas a pagar";
+  const titulo = recDesp === "Receitas" ? "Ainda vou receber" : "Ainda tenho que pagar";
   const cor = recDesp === "Receitas" ? "emerald" : "rose";
 
   const fetchData = React.useCallback(() => {
@@ -1534,14 +1136,14 @@ function LancamentosSupabaseTab({
   const statusOptions: SelectOption[] =
     recDesp === "Receitas"
       ? [
-          { value: "", label: "Todos os status" },
-          { value: "A receber", label: "A receber" },
-          { value: "Recebido", label: "Recebido" },
+          { value: "", label: "Todos" },
+          { value: "A receber", label: "Ainda não recebi" },
+          { value: "Recebido", label: "Já recebi" },
         ]
       : [
-          { value: "", label: "Todos os status" },
-          { value: "A pagar", label: "A pagar" },
-          { value: "Pago", label: "Pago" },
+          { value: "", label: "Todos" },
+          { value: "A pagar", label: "Ainda não paguei" },
+          { value: "Pago", label: "Já paguei" },
         ];
 
   return (
@@ -1551,8 +1153,8 @@ function LancamentosSupabaseTab({
           <div>
             <div className="text-sm font-semibold tracking-tight">{titulo}</div>
             <div className="text-[11px] text-muted-foreground">
-              {total.toLocaleString("pt-BR")} lançamentos
-              {ano ? ` em ${ano}` : " (todos os anos)"} · dados do e-Gestor
+              {total.toLocaleString("pt-BR")} registros
+              {ano ? ` em ${ano}` : " · todos os anos"} · sistema financeiro
             </div>
           </div>
         </div>
@@ -1742,7 +1344,7 @@ function MargemTab({ margens, porEvento }: { margens: MargemEdicao[]; porEvento:
   if (margens.length === 0) {
     return (
       <Card className="p-10 text-center text-sm text-muted-foreground">
-        Importe movimentações para ver a margem por evento automaticamente.
+        Nenhum evento encontrado no período selecionado.
       </Card>
     );
   }
@@ -1770,8 +1372,8 @@ function MargemTab({ margens, porEvento }: { margens: MargemEdicao[]; porEvento:
               </Badge>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <Stat label="Receitas vinculadas" value={m.receitasVinculadas} accent="emerald" />
-              <Stat label="Despesas vinculadas" value={m.despesasVinculadas} accent="rose" />
+              <Stat label="O que entrou" value={m.receitasVinculadas} accent="emerald" />
+              <Stat label="O que saiu" value={m.despesasVinculadas} accent="rose" />
               <Stat label="Custo de produção" value={m.edicao.custoProducao} accent="rose" />
               <Stat
                 label="Resultado"

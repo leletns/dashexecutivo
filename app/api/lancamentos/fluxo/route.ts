@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { todayBrasilia } from "@/lib/timezone";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const ano = searchParams.get("ano")?.trim() ?? "";
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayBrasilia();
 
     // Fluxo mensal — só pagamentos já realizados até hoje (nunca meses futuros)
     let fluxoQuery = sb
