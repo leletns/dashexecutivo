@@ -574,10 +574,10 @@ export default function FinanceiroPage() {
   useRegisterPageState({
     module: "Financeiro",
     summary: [
-      { label: "Ainda vou receber", value: formatCurrencyBRL(displayTotals.aReceber) },
-      { label: "Ainda tenho que pagar", value: formatCurrencyBRL(displayTotals.aPagar) },
-      { label: "Dinheiro em caixa", value: formatCurrencyBRL(displayTotals.saldoConferido) },
-      { label: "O que sobra no final", value: formatCurrencyBRL(displayTotals.resultadoProjetado) },
+      { label: "A receber", value: formatCurrencyBRL(displayTotals.aReceber) },
+      { label: "A pagar", value: formatCurrencyBRL(displayTotals.aPagar) },
+      { label: "Saldo em caixa", value: formatCurrencyBRL(displayTotals.saldoConferido) },
+      { label: "Resultado projetado", value: formatCurrencyBRL(displayTotals.resultadoProjetado) },
     ],
   });
 
@@ -622,8 +622,8 @@ export default function FinanceiroPage() {
         <TabsList>
           <TabsTrigger value="overview">Resumo</TabsTrigger>
           <TabsTrigger value="fluxo">Mês a mês</TabsTrigger>
-          <TabsTrigger value="receber">Ainda vou receber</TabsTrigger>
-          <TabsTrigger value="pagar">Ainda tenho que pagar</TabsTrigger>
+          <TabsTrigger value="receber">A receber</TabsTrigger>
+          <TabsTrigger value="pagar">A pagar</TabsTrigger>
           <TabsTrigger value="margem">Resultado por evento</TabsTrigger>
           <TabsTrigger value="egestor">Atualizar dados</TabsTrigger>
         </TabsList>
@@ -679,32 +679,32 @@ function KpiGrid({
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KpiCard
-        label="Dinheiro em caixa"
+        label="Saldo em caixa"
         value={totals.saldoConferido}
-        hint="O que entrou menos o que saiu"
+        hint="Recebimentos − pagamentos realizados"
         icon={<Wallet className="h-3.5 w-3.5" />}
         onDetalhes={() => onVerDetalhes("fluxo")}
       />
       <KpiCard
-        label="Ainda vou receber"
+        label="A receber"
         value={totals.aReceber}
-        hint="Valores que ainda não chegaram"
+        hint="Pendente de recebimento"
         icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
         accent="emerald"
         onDetalhes={() => onVerDetalhes("receber")}
       />
       <KpiCard
-        label="Ainda tenho que pagar"
+        label="A pagar"
         value={totals.aPagar}
-        hint="Valores que ainda vou pagar"
+        hint="Pendente de pagamento"
         icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
         accent="rose"
         onDetalhes={() => onVerDetalhes("pagar")}
       />
       <KpiCard
-        label="O que sobra no final"
+        label="Resultado projetado"
         value={totals.resultadoProjetado}
-        hint="Se tudo entrar e tudo sair conforme previsto"
+        hint="Saldo + a receber − a pagar"
         icon={<Receipt className="h-3.5 w-3.5" />}
         accent={totals.resultadoProjetado >= 0 ? "emerald" : "rose"}
         onDetalhes={() => onVerDetalhes("overview")}
@@ -802,15 +802,15 @@ function OverviewTab({
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <div>
             <div className="text-sm font-semibold tracking-tight">
-              Dinheiro que entrou e saiu{ano ? ` — ${ano}` : ""}
+              Fluxo de caixa{ano ? ` — ${ano}` : ""}
             </div>
             <div className="text-[11px] text-muted-foreground">
               Movimentações já realizadas
             </div>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-            <Legend dot="bg-emerald-500" label="Entrou" />
-            <Legend dot="bg-rose-500" label="Saiu" />
+            <Legend dot="bg-emerald-500" label="Entradas" />
+            <Legend dot="bg-rose-500" label="Saídas" />
             <Legend dot="bg-foreground" label="Saldo" />
           </div>
         </div>
@@ -866,7 +866,7 @@ function OverviewTab({
         <Card className="p-5">
           <div className="text-sm font-semibold tracking-tight mb-1">Resultado por evento</div>
           <div className="text-[11px] text-muted-foreground mb-3">
-            O que entrou e o que saiu em cada evento
+            Receitas versus despesas · top {barData.length}
           </div>
           {barData.length === 0 ? (
             <div className="h-[260px] grid place-items-center text-xs text-muted-foreground">
@@ -913,7 +913,7 @@ function OverviewTab({
         </Card>
 
         <Card className="p-5">
-          <div className="text-sm font-semibold tracking-tight mb-2">O que vence em breve</div>
+          <div className="text-sm font-semibold tracking-tight mb-2">Próximos vencimentos</div>
           <ProximosVencimentos />
         </Card>
       </div>
@@ -1002,23 +1002,23 @@ function FluxoTab({
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard
-          label="Total que entrou"
+          label="Total de entradas"
           value={totals.entradasPeriodo}
-          hint="Tudo que foi recebido no período"
+          hint="Recebimentos liquidados no período"
           icon={<ArrowDownRight className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />}
           accent="emerald"
         />
         <KpiCard
-          label="Total que saiu"
+          label="Total de saídas"
           value={totals.saidasPeriodo}
-          hint="Tudo que foi pago no período"
+          hint="Pagamentos efetuados no período"
           icon={<ArrowUpRight className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />}
           accent="rose"
         />
         <KpiCard
-          label="Resultado do período"
+          label="Saldo do período"
           value={totals.entradasPeriodo - totals.saidasPeriodo}
-          hint="O que entrou menos o que saiu"
+          hint="Resultado realizado"
           icon={<Wallet className="h-3.5 w-3.5" />}
           accent={totals.entradasPeriodo - totals.saidasPeriodo >= 0 ? "emerald" : "rose"}
         />
@@ -1031,7 +1031,7 @@ function FluxoTab({
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="bg-foreground/[0.02] dark:bg-white/[0.02]">
-                {["Mês", "Entrou", "Saiu", "Resultado do mês", "Acumulado no ano"].map((h, i) => (
+                {["Mês", "Entradas", "Saídas", "Saldo do mês", "Saldo acumulado"].map((h, i) => (
                   <th
                     key={h}
                     className={cn(
@@ -1099,7 +1099,7 @@ function LancamentosSupabaseTab({
   const [loading, setLoading] = React.useState(false);
   const limit = 50;
 
-  const titulo = recDesp === "Receitas" ? "Ainda vou receber" : "Ainda tenho que pagar";
+  const titulo = recDesp === "Receitas" ? "Contas a receber" : "Contas a pagar";
   const cor = recDesp === "Receitas" ? "emerald" : "rose";
 
   const fetchData = React.useCallback(() => {
@@ -1137,13 +1137,13 @@ function LancamentosSupabaseTab({
     recDesp === "Receitas"
       ? [
           { value: "", label: "Todos" },
-          { value: "A receber", label: "Ainda não recebi" },
-          { value: "Recebido", label: "Já recebi" },
+          { value: "A receber", label: "A receber" },
+          { value: "Recebido", label: "Recebido" },
         ]
       : [
           { value: "", label: "Todos" },
-          { value: "A pagar", label: "Ainda não paguei" },
-          { value: "Pago", label: "Já paguei" },
+          { value: "A pagar", label: "A pagar" },
+          { value: "Pago", label: "Pago" },
         ];
 
   return (
@@ -1372,8 +1372,8 @@ function MargemTab({ margens, porEvento }: { margens: MargemEdicao[]; porEvento:
               </Badge>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <Stat label="O que entrou" value={m.receitasVinculadas} accent="emerald" />
-              <Stat label="O que saiu" value={m.despesasVinculadas} accent="rose" />
+              <Stat label="Receitas vinculadas" value={m.receitasVinculadas} accent="emerald" />
+              <Stat label="Despesas vinculadas" value={m.despesasVinculadas} accent="rose" />
               <Stat label="Custo de produção" value={m.edicao.custoProducao} accent="rose" />
               <Stat
                 label="Resultado"

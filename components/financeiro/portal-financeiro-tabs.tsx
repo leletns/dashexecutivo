@@ -156,8 +156,10 @@ export function PortalFinanceiroTabs() {
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <div>
-          <h2 className="text-sm font-semibold tracking-tight">Entrar dados</h2>
-          <p className="text-[11px] text-muted-foreground/70">Contas, previsão, eventos, associados e departamentos</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
+            Dados estruturados
+          </p>
+          <h2 className="text-sm font-semibold tracking-tight">Portal Financeiro</h2>
         </div>
         <div className="ml-auto">
           <Select
@@ -775,11 +777,11 @@ function AssociadosTab({
             <thead>
               <tr className="bg-muted/30">
                 <Th>Mês</Th>
-                <Th right>Total no início</Th>
-                <Th right>Previsão renov.</Th>
-                <Th right>Renovações feitas</Th>
-                <Th right>Novos associados</Th>
-                <Th right>Saíram</Th>
+                <Th right>Total início</Th>
+                <Th right>Previsão renovação</Th>
+                <Th right>Renovações realizadas</Th>
+                <Th right>Novas adesões</Th>
+                <Th right>Saídas</Th>
               </tr>
             </thead>
             <tbody>
@@ -1033,7 +1035,7 @@ function AnaliseTab({
       {/* ── Valores base editáveis ── */}
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50 mb-2.5">
-          Valores de referência — clique no lápis para ajustar
+          Valores de referência — clique no lápis para editar
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           {/* Caixa disponível */}
@@ -1068,7 +1070,7 @@ function AnaliseTab({
                   <TrendingDown className="h-3 w-3 text-muted-foreground/70" />
                 </div>
                 <div className="min-w-0 flex-1 space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">Quanto gastamos por mês</p>
+                  <p className="text-[11px] text-muted-foreground">Custo mensal médio</p>
                   {editingCusto ? (
                     <input autoFocus type="number" value={draftCusto} onChange={(e) => setDraftCusto(e.target.value)}
                       onBlur={commitCusto} onKeyDown={(e) => { if (e.key === "Enter") commitCusto(); if (e.key === "Escape") setEditingCusto(false); }}
@@ -1120,7 +1122,7 @@ function AnaliseTab({
                   <TrendingUp className="h-3 w-3 text-muted-foreground/70" />
                 </div>
                 <div className="min-w-0 flex-1 space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">Quanto cada associado paga em média</p>
+                  <p className="text-[11px] text-muted-foreground">Mensalidade média por associado</p>
                   {editingMensalidade ? (
                     <input autoFocus type="number" value={draftMensalidade} onChange={(e) => setDraftMensalidade(e.target.value)}
                       onBlur={commitMensalidade} onKeyDown={(e) => { if (e.key === "Enter") commitMensalidade(); if (e.key === "Escape") setEditingMensalidade(false); }}
@@ -1145,7 +1147,7 @@ function AnaliseTab({
       {/* ── Indicadores calculados ── */}
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50 mb-2.5">
-          Calculado automaticamente
+          Indicadores calculados automaticamente
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0, duration: 0.3, type: "spring", stiffness: 400, damping: 30 }}>
@@ -1155,7 +1157,7 @@ function AnaliseTab({
                   <Landmark className="h-3 w-3 text-muted-foreground/70" />
                 </div>
                 <div className="space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">O caixa aguenta até quando?</p>
+                  <p className="text-[11px] text-muted-foreground">Caixa cobre despesas por quantos meses?</p>
                   <p className={cn("text-base font-semibold tabular-nums",
                     runway !== null && runway < 6 ? "text-red-600 dark:text-red-400" : "text-foreground")}>
                     {runway !== null ? (runway < 0 ? "Saldo negativo" : `${runway.toFixed(1).replace(".", ",")} meses`) : "—"}
@@ -1175,12 +1177,12 @@ function AnaliseTab({
                   <Users className="h-3 w-3 text-muted-foreground/70" />
                 </div>
                 <div className="space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">Quantos associados para se manter?</p>
+                  <p className="text-[11px] text-muted-foreground">Ponto de equilíbrio</p>
                   <p className="text-base font-semibold tabular-nums">
-                    {breakEven !== null ? `${Math.ceil(breakEven).toLocaleString("pt-BR")} associados` : "—"}
+                    {breakEven !== null ? `${Math.ceil(breakEven).toLocaleString("pt-BR")} assoc.` : "—"}
                   </p>
                   <p className="text-[9px] text-muted-foreground/50">
-                    Custo do mês ÷ o que cada um paga
+                    Custo mensal ÷ mensalidade média
                   </p>
                 </div>
               </div>
@@ -1194,7 +1196,7 @@ function AnaliseTab({
                   <CalendarDays className="h-3 w-3 text-muted-foreground/70" />
                 </div>
                 <div className="space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">Quanto custa cada associado por mês</p>
+                  <p className="text-[11px] text-muted-foreground">Custo por associado / mês</p>
                   <p className="text-base font-semibold tabular-nums">
                     {custoPorAssociado > 0 ? formatCurrencyBRL(custoPorAssociado) : "—"}
                   </p>
@@ -1215,7 +1217,7 @@ function AnaliseTab({
                     : <TrendingDown className="h-3 w-3 text-red-500" />}
                 </div>
                 <div className="space-y-0.5">
-                  <p className="text-[11px] text-muted-foreground">O que sobra no mês</p>
+                  <p className="text-[11px] text-muted-foreground">Resultado previsto no mês</p>
                   <p className={cn("text-base font-semibold tabular-nums",
                     previsto != null
                       ? previsto >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
