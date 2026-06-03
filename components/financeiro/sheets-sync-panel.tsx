@@ -79,12 +79,21 @@ function formatRelative(iso: string): string {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+interface ReconciliacaoRow {
+  situacao: string;
+  count: number;
+  total: number;
+  rec_desp: string;
+}
+
 export function SheetsSyncPanel() {
   const [status, setStatus] = React.useState<SyncStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = React.useState(true);
   const [uploading, setUploading] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState<string>("");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const [reconciliacao, setReconciliacao] = React.useState<ReconciliacaoRow[] | null>(null);
 
   const [search, setSearch] = React.useState("");
   const [searchDebounced, setSearchDebounced] = React.useState("");
@@ -103,8 +112,12 @@ export function SheetsSyncPanel() {
 
   const fetchStatus = React.useCallback(async () => {
     try {
-      const res = await fetch("/api/sync/sheets", { cache: "no-store" });
-      if (res.ok) setStatus(await res.json());
+      const [syncRes, reconRes] = await Promise.all([
+        fetch("/api/sync/sheets", { cache: "no-store" }),
+        fetch("/api/lancamentos/reconciliacao", { cache: "no-store" }),
+      ]);
+      if (syncRes.ok) setStatus(await syncRes.json());
+      if (reconRes.ok) setReconciliacao(await reconRes.json());
     } finally {
       setLoadingStatus(false);
     }
@@ -328,6 +341,86 @@ export function SheetsSyncPanel() {
           </div>
         ) : null}
       </Card>
+
+      {/* ── Conferência de totais ────────────────────────────────────────────── */}
+      {reconciliacao && reconciliacao.length > 0 && (
+        <Card className="p-5">
+          <div className="mb-3">
+            <div className="text-sm font-semibold tracking-tight">Conferência de totais</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">
+              Compare estes totais com sua planilha para verificar se os dados estão corretos.
+              Se houver diferença, importe o arquivo atualizado acima.
+            </div>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-border/60">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-foreground/[0.02] border-b border-border/50">
+                  {["Situação", "Tipo", "Qtd. registros", "Valor total"].map((h, i) => (
+                    <th key={h} className={cn(
+                      "px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground font-medium",
+                      i >= 2 ? "text-right" : "text-left"
+                    )}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {reconciliacao.map((r, i) => (
+                  <tr key={i} className="border-t border-border/40 hover:bg-foreground/[0.01]">
+                    <td className="px-3 py-2.5">
+                      <span className={cn(
+                        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium",
+                        r.situacao === "Recebido" || r.situacao === "Pago"
+                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                          : r.situacao === "A receber"
+                            ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            : r.situacao === "A pagar"
+                              ? "bg-blue-500/10 text-blue-700 dark:text-blue-300"
+                              : "bg-foreground/[0.05] text-muted-foreground",
+                      )}>
+                        {r.situacao}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground">{r.rec_desp}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+                      {r.count.toLocaleString("pt-BR")}
+                    </td>
+                    <td className={cn(
+                      "px-3 py-2.5 text-right tabular-nums font-semibold",
+                      r.rec_desp === "Receitas" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground/80"
+                    )}>
+                      {formatCurrencyBRL(r.total)}
+                    </td>
+                  </tr>
+                ))}
+                {/* Totals row */}
+                {(() => {
+                  const totalReceitas = reconciliacao.filter(r => r.rec_desp === "Receitas").reduce((s, r) => s + r.total, 0);
+                  const totalDespesas = reconciliacao.filter(r => r.rec_desp === "Despesas").reduce((s, r) => s + r.total, 0);
+                  const totalCount = reconciliacao.reduce((s, r) => s + r.count, 0);
+                  return (
+                    <tr className="border-t-2 border-border/60 bg-foreground/[0.02]">
+                      <td className="px-3 py-2.5 text-xs font-semibold">Total no banco</td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">Receitas + Despesas</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold">
+                        {totalCount.toLocaleString("pt-BR")}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold">
+                        <span className="text-emerald-600 dark:text-emerald-400">{formatCurrencyBRL(totalReceitas)}</span>
+                        <span className="text-muted-foreground mx-1">/</span>
+                        <span className="text-foreground/80">{formatCurrencyBRL(totalDespesas)}</span>
+                      </td>
+                    </tr>
+                  );
+                })()}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 text-[11px] text-muted-foreground bg-foreground/[0.02] rounded-lg px-3 py-2 border border-border/40">
+            <strong>Como conferir:</strong> na sua planilha do e-Gestor, filtre por situação e compare o total de registros e o valor com a tabela acima. Se não bater, atualize o arquivo.
+          </div>
+        </Card>
+      )}
 
       {/* ── Tabela ────────────────────────────────────────────────────────────── */}
       {(status?.total_lancamentos ?? 0) > 0 && (

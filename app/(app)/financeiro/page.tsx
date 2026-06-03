@@ -38,6 +38,7 @@ import {
   PencilLine,
   CircleDot,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -180,6 +181,31 @@ function useTotalCount(ano: string) {
       .catch(() => {});
   }, [ano]);
   return count;
+}
+
+interface SyncInfo {
+  lastSync: string | null;   // ISO datetime
+  totalRows: number;
+  status: "success" | "error" | "running" | null;
+}
+
+function useSyncStatus() {
+  const [info, setInfo] = React.useState<SyncInfo | null>(null);
+  const fetch_ = React.useCallback(() => {
+    fetch("/api/sync/sheets", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: any) => {
+        if (!d) return;
+        setInfo({
+          lastSync: d.last_sync?.finished_at ?? d.last_sync?.started_at ?? null,
+          totalRows: d.total_lancamentos ?? 0,
+          status: d.last_sync?.status ?? null,
+        });
+      })
+      .catch(() => {});
+  }, []);
+  React.useEffect(() => { fetch_(); }, [fetch_]);
+  return info;
 }
 
 // ---------------------------------------------------------------------------
@@ -641,6 +667,7 @@ export default function FinanceiroPage() {
 
   const { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected } = useLancamentosFluxo(anoFiltro);
   const totalCount = useTotalCount(anoFiltro);
+  const syncInfo = useSyncStatus();
 
   const totals = React.useMemo(() => computeTotals(state.financeiro), [state.financeiro]);
   const margens = React.useMemo(
@@ -722,6 +749,8 @@ export default function FinanceiroPage() {
         loading={totaisSupabase === null && updatedAt === null}
       />
 
+      <DataFreshnessBanner syncInfo={syncInfo} onGoToSync={() => setActiveTab("egestor")} />
+
       <PortalFinanceiroTabs />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -777,6 +806,102 @@ export default function FinanceiroPage() {
           </motion.div>
         </AnimatePresence>
       </Tabs>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Data freshness banner
+// ---------------------------------------------------------------------------
+
+function DataFreshnessBanner({
+  syncInfo,
+  onGoToSync,
+}: {
+  syncInfo: SyncInfo | null;
+  onGoToSync: () => void;
+}) {
+  if (!syncInfo) return null;
+
+  const lastSyncDate = syncInfo.lastSync ? new Date(syncInfo.lastSync) : null;
+  const hoursAgo = lastSyncDate
+    ? (Date.now() - lastSyncDate.getTime()) / (1000 * 60 * 60)
+    : null;
+
+  const isStale = hoursAgo !== null && hoursAgo > 24;
+  const neverSynced = syncInfo.totalRows === 0;
+
+  const formatSyncTime = (dt: Date): string => {
+    const diffH = (Date.now() - dt.getTime()) / (1000 * 60 * 60);
+    if (diffH < 1) return `${Math.floor(diffH * 60)} min atrás`;
+    if (diffH < 24) return `${Math.floor(diffH)} h atrás`;
+    const diffD = Math.floor(diffH / 24);
+    return `${diffD} ${diffD === 1 ? "dia" : "dias"} atrás`;
+  };
+
+  if (neverSynced) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center gap-3 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3"
+      >
+        <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+            Nenhum dado importado ainda.
+          </span>
+          <span className="text-xs text-amber-700/70 dark:text-amber-300/70 ml-1.5">
+            Os números mostrados acima não vêm do sistema financeiro.
+          </span>
+        </div>
+        <button
+          onClick={onGoToSync}
+          className="text-xs font-semibold text-amber-700 dark:text-amber-300 underline underline-offset-2 shrink-0"
+        >
+          Importar agora →
+        </button>
+      </motion.div>
+    );
+  }
+
+  if (isStale) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center gap-3 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3"
+      >
+        <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+        <div className="flex-1 min-w-0 text-sm text-amber-800 dark:text-amber-200">
+          Dados atualizados{" "}
+          <strong>{formatSyncTime(lastSyncDate!)}</strong>.{" "}
+          <span className="text-amber-700/70 dark:text-amber-300/70">
+            Se a planilha foi atualizada depois disso, os valores aqui estão desatualizados.
+          </span>
+        </div>
+        <button
+          onClick={onGoToSync}
+          className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 shrink-0"
+        >
+          <RefreshCw className="h-3 w-3" />
+          Atualizar dados
+        </button>
+      </motion.div>
+    );
+  }
+
+  // Fresh data — show as a subtle success info strip
+  return (
+    <div className="flex items-center gap-2 text-[11px] text-muted-foreground px-1">
+      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+      <span>
+        {syncInfo.totalRows.toLocaleString("pt-BR")} movimentações importadas
+        {lastSyncDate && <> · atualizado {formatSyncTime(lastSyncDate)}</>}
+      </span>
+      <button onClick={onGoToSync} className="ml-auto text-muted-foreground/60 hover:text-foreground transition-colors">
+        Atualizar →
+      </button>
     </div>
   );
 }
