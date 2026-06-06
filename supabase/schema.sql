@@ -421,7 +421,8 @@ create policy "portal_sheets_sync_log_service_all"
 -- ---------------------------------------------------------------------------
 -- Função RPC: totais agregados dos lançamentos (evita N+1 no cliente)
 -- ---------------------------------------------------------------------------
-create or replace function public.lancamentos_totais()
+-- p_ano (ex: '2025') filtra por data_pagamento/data_vencimento; null = tudo
+create or replace function public.lancamentos_totais(p_ano text default null)
 returns table (
   total_receitas_pagas    numeric,
   total_despesas_pagas    numeric,
@@ -434,6 +435,17 @@ returns table (
 language sql
 security definer
 as $$
+  with base as (
+    select rec_desp, situacao, valor
+    from public.portal_lancamentos
+    where p_ano is null
+       or (
+         case
+           when situacao in ('Recebido','Pago') then data_pagamento
+           else data_vencimento
+         end between (p_ano || '-01-01')::date and (p_ano || '-12-31')::date
+       )
+  )
   select
     coalesce(sum(valor) filter (where rec_desp = 'Receitas' and situacao = 'Recebido'), 0) as total_receitas_pagas,
     coalesce(sum(valor) filter (where rec_desp = 'Despesas' and situacao = 'Pago'),     0) as total_despesas_pagas,
@@ -446,5 +458,9 @@ as $$
       + coalesce(sum(valor) filter (where situacao = 'A receber'), 0)
       - coalesce(sum(valor) filter (where situacao = 'A pagar'),   0) as resultado_projetado,
     count(*) as count_total
-  from public.portal_lancamentos;
+  from base;
 $$;
+
+-- Habilitar Supabase Realtime para portal_lancamentos
+-- (execute este ALTER após criar/recriando o schema)
+alter publication supabase_realtime add table public.portal_lancamentos;
