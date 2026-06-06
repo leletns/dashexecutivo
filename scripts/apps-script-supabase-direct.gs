@@ -142,14 +142,16 @@ function sincronizar() {
 
   const allValues = sheet.getRange(1, 1, lastRow, lastCol).getValues();
 
-  // 2. Encontrar linha do cabeçalho (procura por "Cod" ou "COD")
-  let headerIdx = -1;
-  for (let i = 0; i < Math.min(10, allValues.length); i++) {
-    const row = allValues[i];
-    for (let j = 0; j < row.length; j++) {
-      const cell = String(row[j] || "").trim().toLowerCase();
-      if (cell === "cod" || cell === "código" || cell === "codigo") {
-        headerIdx = i;
+  // 2. Encontrar linha do cabeçalho — normaliza para lidar com "Cód.", "COD", etc.
+  var headerIdx = -1;
+  for (var hi = 0; hi < Math.min(10, allValues.length); hi++) {
+    var hrow = allValues[hi];
+    for (var hj = 0; hj < hrow.length; hj++) {
+      var hcell = String(hrow[hj] || "").trim().toLowerCase()
+        .normalize("NFD").replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]/g, "");
+      if (hcell === "cod" || hcell === "codigo") {
+        headerIdx = hi;
         break;
       }
     }
@@ -167,29 +169,49 @@ function sincronizar() {
       .replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
   });
 
-  // 3. Mapeamento de colunas (baseado em lib/google-sheets.ts)
-  const col = function(name) { return headers.indexOf(name); };
-  const colMap = {
-    cod:                   col("cod"),
-    descricao:             col("descricao"),
-    conta_caixa:           Math.max(col("conta_caixa"), col("conta")),
-    plano_contas:          col("plano_de_contas"),
-    forma_pagamento:       col("forma_de_pagamento"),
-    situacao:              col("situacao"),
-    valor:                 col("valor"),
-    data_vencimento:       Math.max(col("data_de_vencimento"), col("data_vencimento")),
-    data_pagamento:        Math.max(col("data_de_pagamento"), col("data_pagamento")),
-    data_cred_deb:         Math.max(col("data_cred_deb"), col("data_credito_debito")),
-    plano_primario_contas: Math.max(col("plano_primario_de_contas"), col("plano_primario_contas")),
-    classificacao:         col("classificacao"),
-    sub_classificacao:     col("sub_classificacao"),
-    ent_saida:             Math.max(col("ent_saida"), col("entrada_saida")),
-    rec_desp:              Math.max(col("rec_desp"), col("receita_despesa")),
-    tratativa:             col("tratativa"),
-    tratativa_oculta:      col("tratativa_oculta"),
-    nome_razao_social:     Math.max(col("nome_razao_social"), col("nome")),
-    evento:                col("evento"),
+  // 3. Mapeamento de colunas \u2014 usa busca por substring como lib/google-sheets.ts
+  // "Rec./Des." \u2192 normaliza "recdes" \u2192 indexOf("rec_desp") falha \u2192 usamos includes()
+  var firstCol = function(include, exclude) {
+    var includeArr = Array.isArray(include) ? include : [include];
+    var excludeArr = Array.isArray(exclude) ? exclude : (exclude ? [exclude] : []);
+    for (var i = 0; i < headers.length; i++) {
+      var h = headers[i];
+      var ok = includeArr.every(function(t) { return h.indexOf(t) >= 0; }) &&
+               excludeArr.every(function(t) { return h.indexOf(t) < 0; });
+      if (ok) return i;
+    }
+    return -1;
   };
+
+  // Log para diagn\u00f3stico (primeiros 30 headers normalizados)
+  Logger.log("[BAPS] Headers normalizados: " + headers.slice(0, 30).join(" | "));
+
+  var colMap = {
+    cod:                   firstCol("cod"),
+    descricao:             firstCol("descricao"),
+    conta_caixa:           firstCol(["conta", "caixa"]),
+    plano_contas:          firstCol(["plano", "conta"], "primario"),
+    forma_pagamento:       firstCol(["forma", "pagamento"]),
+    situacao:              firstCol("situacao"),
+    valor:                 firstCol("valor"),
+    data_vencimento:       firstCol("vencimento"),
+    data_pagamento:        firstCol(["data", "pagamento"], ["vencimento", "cred", "deb", "cadastro"]),
+    data_cred_deb:         firstCol(["cred", "deb"]),
+    plano_primario_contas: firstCol("primario"),
+    classificacao:         firstCol("classif", "sub"),
+    sub_classificacao:     firstCol(["sub", "classif"]),
+    ent_saida:             firstCol(["ent", "saida"]),
+    rec_desp:              firstCol(["rec", "des"]),
+    tratativa:             firstCol("tratativa", "oculta"),
+    tratativa_oculta:      firstCol(["tratativa", "oculta"]),
+    nome_razao_social:     firstCol(["nome", "razao"]),
+    evento:                firstCol("evento"),
+  };
+
+  // Log dos \u00edndices de colunas cr\u00edticas para diagn\u00f3stico
+  Logger.log("[BAPS] Mapa de colunas: cod=" + colMap.cod + " valor=" + colMap.valor +
+    " situacao=" + colMap.situacao + " rec_desp=" + colMap.rec_desp +
+    " data_pagamento=" + colMap.data_pagamento + " data_vencimento=" + colMap.data_vencimento);
 
   // 4. Transformar linhas em registros
   const agora = new Date().toISOString();
@@ -253,7 +275,7 @@ function sincronizar() {
 
   for (let i = 0; i < registros.length; i += BATCH) {
     const lote = registros.slice(i, i + BATCH);
-    const resp = UrlFetchApp.fetch(cfg.supabaseUrl + "/rest/v1/portal_lancamentos", {
+    const resp = UrlFetchApp.fetch(cfg.supabaseUrl + "/rest/v1/portal_lancamentos?on_conflict=cod", {
       method:  "post",
       headers: {
         "apikey":        cfg.supabaseKey,
