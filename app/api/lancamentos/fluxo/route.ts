@@ -44,7 +44,7 @@ export async function GET(req: Request) {
     const fluxoMap = new Map<string, { entradas: number; saidas: number }>();
     for (const row of pagamentos ?? []) {
       const sit = (row.situacao ?? "").toLowerCase();
-      if (sit !== "recebido" && sit !== "pago") continue; // filtra no JS — case-insensitive
+      if (sit !== "recebido" && sit !== "pago") continue;
       const key = (row.data_pagamento as string).slice(0, 7);
       const cur = fluxoMap.get(key) ?? { entradas: 0, saidas: 0 };
       const rd = (row.rec_desp ?? "").toLowerCase();
