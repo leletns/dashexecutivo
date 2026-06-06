@@ -4,6 +4,9 @@
  * Agrega portal_lancamentos em:
  *  - fluxo_mensal: entradas/saídas/saldo/acumulado por mês (data_pagamento)
  *  - por_evento: receita/despesa/resultado por nome do evento
+ *
+ * Totais calculados 100% via JS (sem depender do RPC lancamentos_totais)
+ * para funcionar mesmo com versão antiga da função no Supabase.
  */
 
 import { NextResponse } from "next/server";
@@ -28,7 +31,8 @@ export async function GET(req: Request) {
     const ano = searchParams.get("ano")?.trim() ?? "";
     const today = todayBrasilia();
 
-    // Fluxo mensal — só pagamentos já realizados até hoje (nunca meses futuros)
+    // ── 1. Lançamentos realizados (com data_pagamento) ────────────────────────
+    // Filtra no JS por situacao para aceitar qualquer capitalização do e-Gestor
     let fluxoQuery = sb
       .from("portal_lancamentos")
       .select("rec_desp, situacao, valor, data_pagamento")
@@ -41,15 +45,26 @@ export async function GET(req: Request) {
     }
     const { data: pagamentos } = await fluxoQuery;
 
+    let totalEntradas = 0;
+    let totalSaidas = 0;
     const fluxoMap = new Map<string, { entradas: number; saidas: number }>();
+
     for (const row of pagamentos ?? []) {
-      const sit = (row.situacao ?? "").toLowerCase();
+      const sit = (row.situacao ?? "").toLowerCase().trim();
       if (sit !== "recebido" && sit !== "pago") continue;
+
+      const rd  = (row.rec_desp ?? "").toLowerCase().trim();
+      const val = Number(row.valor) || 0;
       const key = (row.data_pagamento as string).slice(0, 7);
       const cur = fluxoMap.get(key) ?? { entradas: 0, saidas: 0 };
-      const rd = (row.rec_desp ?? "").toLowerCase();
-      if (rd === "receitas") cur.entradas += Number(row.valor) || 0;
-      else cur.saidas += Number(row.valor) || 0;
+
+      if (rd === "receitas") {
+        cur.entradas += val;
+        totalEntradas += val;
+      } else {
+        cur.saidas += val;
+        totalSaidas += val;
+      }
       fluxoMap.set(key, cur);
     }
 
@@ -64,11 +79,27 @@ export async function GET(req: Request) {
         return { mes: label, chave: key, entradas, saidas, saldo, acumulado };
       });
 
-    // Totais do período (para KPIs)
-    const totalEntradas = fluxo_mensal.reduce((s, r) => s + r.entradas, 0);
-    const totalSaidas = fluxo_mensal.reduce((s, r) => s + r.saidas, 0);
+    // ── 2. Lançamentos pendentes (A receber / A pagar) ────────────────────────
+    let pendentesQuery = sb
+      .from("portal_lancamentos")
+      .select("situacao, valor, data_vencimento");
+    if (ano) {
+      pendentesQuery = pendentesQuery
+        .gte("data_vencimento", `${ano}-01-01`)
+        .lte("data_vencimento", `${ano}-12-31`);
+    }
+    const { data: pendentes } = await pendentesQuery;
 
-    // Por evento — filtrado pelo mesmo ano quando aplicável
+    let aReceber = 0;
+    let aPagar   = 0;
+    for (const row of pendentes ?? []) {
+      const sit = (row.situacao ?? "").toLowerCase().trim();
+      const val = Number(row.valor) || 0;
+      if (sit === "a receber") aReceber += val;
+      else if (sit === "a pagar") aPagar += val;
+    }
+
+    // ── 3. Por evento ─────────────────────────────────────────────────────────
     let evQuery = sb
       .from("portal_lancamentos")
       .select("evento, rec_desp, valor")
@@ -85,7 +116,8 @@ export async function GET(req: Request) {
     for (const row of eventos ?? []) {
       if (!row.evento) continue;
       const cur = eventoMap.get(row.evento) ?? { receita: 0, despesa: 0 };
-      if (row.rec_desp === "Receitas") cur.receita += Number(row.valor) || 0;
+      const rd  = (row.rec_desp ?? "").toLowerCase().trim();
+      if (rd === "receitas") cur.receita += Number(row.valor) || 0;
       else cur.despesa += Number(row.valor) || 0;
       eventoMap.set(row.evento, cur);
     }
@@ -100,22 +132,14 @@ export async function GET(req: Request) {
       .sort((a, b) => b.Receita - a.Receita)
       .slice(0, 12);
 
-    // Totais via RPC (inclui A receber / A pagar filtrados por ano)
-    const rpcParams = ano ? { p_ano: ano } : {};
-    const { data: rpcRows } = await sb.rpc("lancamentos_totais", rpcParams);
-    const rpc = (rpcRows as any)?.[0];
-
-    const aReceber = Number(rpc?.total_a_receber ?? 0);
-    const aPagar   = Number(rpc?.total_a_pagar   ?? 0);
-
     return NextResponse.json({
       fluxo_mensal,
       por_evento,
       totais: {
-        total_receitas_pagas: Number(rpc?.total_receitas_pagas ?? totalEntradas),
-        total_despesas_pagas: Number(rpc?.total_despesas_pagas ?? totalSaidas),
-        saldo_realizado:      Number(rpc?.saldo_realizado      ?? totalEntradas - totalSaidas),
-        resultado_projetado:  Number(rpc?.resultado_projetado  ?? totalEntradas - totalSaidas + aReceber - aPagar),
+        total_receitas_pagas: totalEntradas,
+        total_despesas_pagas: totalSaidas,
+        saldo_realizado:      totalEntradas - totalSaidas,
+        resultado_projetado:  totalEntradas - totalSaidas + aReceber - aPagar,
         total_a_receber:      aReceber,
         total_a_pagar:        aPagar,
       },
