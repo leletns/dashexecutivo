@@ -127,20 +127,8 @@ function useLancamentosFluxo(ano: string) {
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = React.useState(false);
 
-  // Fast path: RPC direto ao Supabase (sem roundtrip por API Route)
-  // Atualiza KPIs em ~50ms quando Realtime dispara
-  const fetchTotais = React.useCallback(async () => {
-    const sb = getSupabaseBrowser();
-    if (!sb) return;
-    const params = ano ? { p_ano: ano } : {};
-    const { data, error } = await sb.rpc("lancamentos_totais", params);
-    if (!error && data?.[0]) {
-      setTotaisSupabase(data[0] as FluxoTotais);
-      setUpdatedAt(new Date().toISOString());
-    }
-  }, [ano]);
-
-  // Full fetch: fluxo mensal + por evento + totais (via API Route autenticada)
+  // Fetch completo: fluxo mensal + por evento + totais computados no servidor
+  // Totais calculados 100% via JS na API Route — não depende do RPC do Supabase
   const fetchData = React.useCallback(() => {
     const url = `/api/lancamentos/fluxo${ano ? `?ano=${encodeURIComponent(ano)}` : ""}`;
     fetch(url, { cache: "no-store" })
@@ -165,8 +153,7 @@ function useLancamentosFluxo(ano: string) {
         "postgres_changes",
         { event: "*", schema: "public", table: "portal_lancamentos" },
         () => {
-          fetchTotais(); // KPIs atualizam imediatamente
-          fetchData();   // gráficos atualizam logo após
+          fetchData(); // re-busca quando o banco muda
         },
       )
       .subscribe((status) => {
@@ -179,7 +166,7 @@ function useLancamentosFluxo(ano: string) {
       setRealtimeConnected(false);
       window.removeEventListener("portal:data-updated", fetchData);
     };
-  }, [fetchData, fetchTotais]);
+  }, [fetchData]);
 
   return { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected };
 }
