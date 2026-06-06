@@ -209,6 +209,73 @@ function useSyncStatus() {
 }
 
 // ---------------------------------------------------------------------------
+// Hook: baps_dashboard_dados (Data Lake)
+// ---------------------------------------------------------------------------
+
+interface BapsDadosTotais {
+  receitas: number;
+  despesas: number;
+  saldo: number;
+  resultado_projetado: number;
+  a_receber: number;
+  a_pagar: number;
+}
+
+interface BapsDadosPorAba {
+  aba_origem: string;
+  receitas: number;
+  despesas: number;
+  saldo: number;
+  campos: string[];
+  sample: Record<string, any>;
+}
+
+interface BapsDadosRegistro {
+  id: number;
+  aba_origem: string;
+  dados: Record<string, any>;
+  criado_em: string;
+}
+
+interface BapsDadosState {
+  totais: BapsDadosTotais | null;
+  porAba: BapsDadosPorAba[];
+  registros: BapsDadosRegistro[];
+  total: number;
+  page: number;
+  pages: number;
+  loading: boolean;
+  error: string | null;
+}
+
+function useBapsDados(abaFiltro: string, page = 1) {
+  const [state, setState] = React.useState<BapsDadosState>({
+    totais: null, porAba: [], registros: [], total: 0, page: 1, pages: 1, loading: false, error: null,
+  });
+
+  React.useEffect(() => {
+    setState((s) => ({ ...s, loading: true, error: null }));
+    const qs = new URLSearchParams({ page: String(page), limit: "100" });
+    if (abaFiltro) qs.set("aba", abaFiltro);
+    fetch(`/api/baps-dados?${qs}`, { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : Promise.reject(r.statusText))
+      .then((d: any) => setState({
+        totais:    d.totais ?? null,
+        porAba:    d.por_aba ?? [],
+        registros: d.registros ?? [],
+        total:     d.total ?? 0,
+        page:      d.page ?? 1,
+        pages:     d.pages ?? 1,
+        loading:   false,
+        error:     null,
+      }))
+      .catch((e: any) => setState((s) => ({ ...s, loading: false, error: String(e) })));
+  }, [abaFiltro, page]);
+
+  return state;
+}
+
+// ---------------------------------------------------------------------------
 // Animated counter
 // ---------------------------------------------------------------------------
 
@@ -760,6 +827,7 @@ export default function FinanceiroPage() {
           <TabsTrigger value="receber">A receber</TabsTrigger>
           <TabsTrigger value="pagar">A pagar</TabsTrigger>
           <TabsTrigger value="margem">Resultado por evento</TabsTrigger>
+          <TabsTrigger value="datalake">Data Lake</TabsTrigger>
           <TabsTrigger value="egestor">Atualizar dados</TabsTrigger>
         </TabsList>
 
@@ -798,6 +866,10 @@ export default function FinanceiroPage() {
 
             <TabsContent value="margem" className="mt-2">
               <MargemTab margens={margens} porEvento={porEvento} />
+            </TabsContent>
+
+            <TabsContent value="datalake" className="mt-2">
+              <DataLakeTab />
             </TabsContent>
 
             <TabsContent value="egestor" className="mt-2">
@@ -1626,6 +1698,208 @@ function LancamentosSupabaseTab({
             >
               <ChevronRight className="h-3.5 w-3.5" />
             </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Data Lake — baps_dashboard_dados
+// ---------------------------------------------------------------------------
+
+const ABA_FILTROS = [
+  { label: "Tudo", value: "" },
+  { label: "Eventos", value: "evento" },
+  { label: "Fluxo de caixa", value: "fluxo" },
+  { label: "Saldos", value: "saldo" },
+  { label: "Receitas", value: "receita" },
+  { label: "Despesas", value: "despesa" },
+];
+
+function DataLakeTab() {
+  const [abaFiltro, setAbaFiltro] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const { totais, porAba, registros, total, pages, loading, error } = useBapsDados(abaFiltro, page);
+
+  React.useEffect(() => { setPage(1); }, [abaFiltro]);
+
+  const fmtBRL = (v: number) =>
+    v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  const fmtDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    } catch {
+      return iso;
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-sm font-semibold">Data Lake — baps_dashboard_dados</h2>
+          <p className="text-xs text-muted-foreground">
+            {total > 0 ? `${total.toLocaleString("pt-BR")} registros` : "Verificando…"}
+          </p>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {ABA_FILTROS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setAbaFiltro(f.value)}
+              className={cn(
+                "px-2.5 py-1 rounded-full text-[11px] font-medium transition-all",
+                abaFiltro === f.value
+                  ? "bg-foreground text-background"
+                  : "bg-foreground/[0.06] hover:bg-foreground/[0.10] text-muted-foreground"
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* KPI totais da seleção */}
+      {totais && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {[
+            { label: "Receitas", value: totais.receitas, color: "text-emerald-600 dark:text-emerald-400" },
+            { label: "Despesas", value: totais.despesas, color: "text-rose-600 dark:text-rose-400" },
+            { label: "Saldo", value: totais.saldo, color: totais.saldo >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400" },
+            { label: "A receber", value: totais.a_receber, color: "text-amber-600 dark:text-amber-400" },
+            { label: "A pagar", value: totais.a_pagar, color: "text-blue-600 dark:text-blue-400" },
+            { label: "Resultado", value: totais.resultado_projetado, color: totais.resultado_projetado >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400" },
+          ].map(({ label, value, color }) => (
+            <Card key={label} className="p-3">
+              <p className="text-[11px] text-muted-foreground mb-1">{label}</p>
+              <p className={cn("text-sm font-semibold tabular-nums", color)}>{fmtBRL(value)}</p>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Agrupamento por aba_origem */}
+      {porAba.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-border/40">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border/40 bg-foreground/[0.02]">
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Origem (aba)</th>
+                <th className="px-3 py-2 text-right font-medium text-muted-foreground">Receitas</th>
+                <th className="px-3 py-2 text-right font-medium text-muted-foreground">Despesas</th>
+                <th className="px-3 py-2 text-right font-medium text-muted-foreground">Saldo</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Campos detectados</th>
+              </tr>
+            </thead>
+            <tbody>
+              {porAba.map((aba) => (
+                <tr key={aba.aba_origem} className="border-t border-border/30 hover:bg-foreground/[0.02]">
+                  <td className="px-3 py-2 font-medium max-w-[200px] truncate" title={aba.aba_origem}>
+                    {aba.aba_origem}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {fmtBRL(aba.receitas)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-rose-600 dark:text-rose-400">
+                    {fmtBRL(aba.despesas)}
+                  </td>
+                  <td className={cn("px-3 py-2 text-right tabular-nums font-semibold",
+                    aba.saldo >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                  )}>
+                    {fmtBRL(aba.saldo)}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground max-w-[260px]">
+                    <span className="truncate block" title={aba.campos.join(", ")}>
+                      {aba.campos.slice(0, 5).join(", ")}{aba.campos.length > 5 ? ` +${aba.campos.length - 5}` : ""}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Registros individuais paginados */}
+      <div className="overflow-x-auto rounded-xl border border-border/40">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border/40 bg-foreground/[0.02]">
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8">#</th>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Origem</th>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Data</th>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Dados (chaves → valores)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={4} />)}
+            {!loading && registros.length === 0 && !error && (
+              <tr>
+                <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">
+                  {total === 0 ? "Tabela baps_dashboard_dados não encontrada ou vazia." : "Nenhum registro neste filtro."}
+                </td>
+              </tr>
+            )}
+            {!loading && error && (
+              <tr>
+                <td colSpan={4} className="px-3 py-6 text-center text-rose-600 dark:text-rose-400 text-xs">
+                  Erro ao carregar: {error}
+                </td>
+              </tr>
+            )}
+            {registros.map((row) => {
+              const financiais = Object.entries(row.dados ?? {})
+                .filter(([, v]) => typeof v === "number" || (typeof v === "string" && !isNaN(parseFloat(v.replace(",", ".")))))
+                .map(([k, v]) => {
+                  const n = parseFloat(String(v).replace(/[^\d.,-]/g, "").replace(",", "."));
+                  return `${k}: ${isNaN(n) ? v : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`;
+                })
+                .slice(0, 6);
+              return (
+                <tr key={row.id} className="border-t border-border/30 hover:bg-foreground/[0.02]">
+                  <td className="px-3 py-2 tabular-nums text-muted-foreground">{row.id}</td>
+                  <td className="px-3 py-2 font-medium max-w-[180px] truncate" title={row.aba_origem}>
+                    {row.aba_origem}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums whitespace-nowrap text-muted-foreground">
+                    {fmtDate(row.criado_em)}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground max-w-[400px]">
+                    <span className="truncate block" title={JSON.stringify(row.dados)}>
+                      {financiais.join(" · ") || JSON.stringify(row.dados).slice(0, 120)}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Paginação */}
+      {pages > 1 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Página {page} de {pages} · {total.toLocaleString("pt-BR")} registros</span>
+          <div className="flex gap-1.5">
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="px-2.5 py-1 rounded bg-foreground/[0.06] disabled:opacity-40 hover:bg-foreground/[0.11] transition-colors"
+            >
+              ← Anterior
+            </button>
+            <button
+              disabled={page >= pages}
+              onClick={() => setPage((p) => p + 1)}
+              className="px-2.5 py-1 rounded bg-foreground/[0.06] disabled:opacity-40 hover:bg-foreground/[0.11] transition-colors"
+            >
+              Próxima →
+            </button>
           </div>
         </div>
       )}
