@@ -33,7 +33,6 @@ export async function GET(req: Request) {
       .from("portal_lancamentos")
       .select("rec_desp, situacao, valor, data_pagamento")
       .not("data_pagamento", "is", null)
-      .in("situacao", ["Recebido", "Pago"])
       .lte("data_pagamento", today);
     if (ano) {
       fluxoQuery = fluxoQuery
@@ -44,9 +43,12 @@ export async function GET(req: Request) {
 
     const fluxoMap = new Map<string, { entradas: number; saidas: number }>();
     for (const row of pagamentos ?? []) {
+      const sit = (row.situacao ?? "").toLowerCase();
+      if (sit !== "recebido" && sit !== "pago") continue;
       const key = (row.data_pagamento as string).slice(0, 7);
       const cur = fluxoMap.get(key) ?? { entradas: 0, saidas: 0 };
-      if (row.rec_desp === "Receitas") cur.entradas += Number(row.valor) || 0;
+      const rd = (row.rec_desp ?? "").toLowerCase();
+      if (rd === "receitas") cur.entradas += Number(row.valor) || 0;
       else cur.saidas += Number(row.valor) || 0;
       fluxoMap.set(key, cur);
     }
@@ -98,35 +100,24 @@ export async function GET(req: Request) {
       .sort((a, b) => b.Receita - a.Receita)
       .slice(0, 12);
 
-    // A receber / A pagar filtrados
-    let pendentesQuery = sb
-      .from("portal_lancamentos")
-      .select("rec_desp, situacao, valor")
-      .in("situacao", ["A receber", "A pagar"]);
-    if (ano) {
-      pendentesQuery = pendentesQuery
-        .gte("data_vencimento", `${ano}-01-01`)
-        .lte("data_vencimento", `${ano}-12-31`);
-    }
-    const { data: pendentes } = await pendentesQuery;
+    // Totais via RPC (inclui A receber / A pagar filtrados por ano)
+    const rpcParams = ano ? { p_ano: ano } : {};
+    const { data: rpcRows } = await sb.rpc("lancamentos_totais", rpcParams);
+    const rpc = (rpcRows as any)?.[0];
 
-    let aReceber = 0;
-    let aPagar = 0;
-    for (const row of pendentes ?? []) {
-      if (row.situacao === "A receber") aReceber += Number(row.valor) || 0;
-      else aPagar += Number(row.valor) || 0;
-    }
+    const aReceber = Number(rpc?.total_a_receber ?? 0);
+    const aPagar   = Number(rpc?.total_a_pagar   ?? 0);
 
     return NextResponse.json({
       fluxo_mensal,
       por_evento,
       totais: {
-        total_receitas_pagas: totalEntradas,
-        total_despesas_pagas: totalSaidas,
-        saldo_realizado: totalEntradas - totalSaidas,
-        resultado_projetado: totalEntradas - totalSaidas + aReceber - aPagar,
-        total_a_receber: aReceber,
-        total_a_pagar: aPagar,
+        total_receitas_pagas: Number(rpc?.total_receitas_pagas ?? totalEntradas),
+        total_despesas_pagas: Number(rpc?.total_despesas_pagas ?? totalSaidas),
+        saldo_realizado:      Number(rpc?.saldo_realizado      ?? totalEntradas - totalSaidas),
+        resultado_projetado:  Number(rpc?.resultado_projetado  ?? totalEntradas - totalSaidas + aReceber - aPagar),
+        total_a_receber:      aReceber,
+        total_a_pagar:        aPagar,
       },
     });
   } catch (err: any) {

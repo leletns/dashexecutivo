@@ -63,12 +63,12 @@ export function isRouteAllowedForSector(pathname: string, sector: PortalSector):
   if (pathname.startsWith("/dashboard")) return true;
 
   const rules: [string, PortalSector[]][] = [
-    ["/juridico", ["juridico"]],
-    ["/financeiro", ["financeiro", "administrativo"]],
-    ["/contabil", ["contabil"]],
-    ["/marketing", ["marketing"]],
-    ["/administrativo", ["administrativo"]],
-    ["/eventos", ["eventos", "marketing"]],
+    ["/juridico",      ["juridico"]],
+    ["/financeiro",    ["financeiro", "administrativo", "contabil"]],
+    ["/contabil",      ["contabil", "financeiro"]],
+    ["/marketing",     ["marketing"]],
+    ["/administrativo",["administrativo"]],
+    ["/eventos",       ["eventos", "marketing"]],
   ];
 
   for (const [prefix, allowed] of rules) {
@@ -124,7 +124,11 @@ const ALL_ZONES: DashboardZone[] = [
 ];
 
 const BY_SECTOR: Record<PortalSector, DashboardZone[]> = {
-  executivo: ["macro_executivo", "bloco_nps"],
+  executivo: [
+    "macro_executivo",
+    "macro_financeiro",     // KPIs reais do e-Gestor (portal_lancamentos)
+    "bloco_nps",
+  ],
   juridico: [
     "macro_juridico",
     "bloco_risco_contratos",
@@ -153,6 +157,7 @@ const BY_SECTOR: Record<PortalSector, DashboardZone[]> = {
   ],
   administrativo: [
     "macro_admin",
+    "macro_financeiro",     // visão dos KPIs reais (somente leitura)
     "bloco_institucional",
     "bloco_certidoes",
     "bloco_financeiro_narrativa",
