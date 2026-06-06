@@ -422,6 +422,7 @@ create policy "portal_sheets_sync_log_service_all"
 -- Função RPC: totais agregados dos lançamentos (evita N+1 no cliente)
 -- ---------------------------------------------------------------------------
 -- p_ano (ex: '2025') filtra por data_pagamento/data_vencimento; null = tudo
+-- Todas as comparações usam lower() para aceitar qualquer capitalização do e-Gestor
 create or replace function public.lancamentos_totais(p_ano text default null)
 returns table (
   total_receitas_pagas    numeric,
@@ -436,27 +437,27 @@ language sql
 security definer
 as $$
   with base as (
-    select rec_desp, situacao, valor
+    select lower(rec_desp) as rd, lower(situacao) as sit, valor, data_pagamento, data_vencimento
     from public.portal_lancamentos
     where p_ano is null
        or (
          case
-           when situacao in ('Recebido','Pago') then data_pagamento
+           when lower(situacao) in ('recebido','pago') then data_pagamento
            else data_vencimento
          end between (p_ano || '-01-01')::date and (p_ano || '-12-31')::date
        )
   )
   select
-    coalesce(sum(valor) filter (where rec_desp = 'Receitas' and situacao = 'Recebido'), 0) as total_receitas_pagas,
-    coalesce(sum(valor) filter (where rec_desp = 'Despesas' and situacao = 'Pago'),     0) as total_despesas_pagas,
-    coalesce(sum(valor) filter (where situacao = 'A receber'),                           0) as total_a_receber,
-    coalesce(sum(valor) filter (where situacao = 'A pagar'),                             0) as total_a_pagar,
-    coalesce(sum(valor) filter (where rec_desp = 'Receitas' and situacao = 'Recebido'), 0)
-      - coalesce(sum(valor) filter (where rec_desp = 'Despesas' and situacao = 'Pago'), 0) as saldo_realizado,
-    coalesce(sum(valor) filter (where rec_desp = 'Receitas' and situacao = 'Recebido'), 0)
-      - coalesce(sum(valor) filter (where rec_desp = 'Despesas' and situacao = 'Pago'), 0)
-      + coalesce(sum(valor) filter (where situacao = 'A receber'), 0)
-      - coalesce(sum(valor) filter (where situacao = 'A pagar'),   0) as resultado_projetado,
+    coalesce(sum(valor) filter (where rd = 'receitas' and sit = 'recebido'), 0) as total_receitas_pagas,
+    coalesce(sum(valor) filter (where rd = 'despesas' and sit = 'pago'),     0) as total_despesas_pagas,
+    coalesce(sum(valor) filter (where sit = 'a receber'),                    0) as total_a_receber,
+    coalesce(sum(valor) filter (where sit = 'a pagar'),                      0) as total_a_pagar,
+    coalesce(sum(valor) filter (where rd = 'receitas' and sit = 'recebido'), 0)
+      - coalesce(sum(valor) filter (where rd = 'despesas' and sit = 'pago'), 0) as saldo_realizado,
+    coalesce(sum(valor) filter (where rd = 'receitas' and sit = 'recebido'), 0)
+      - coalesce(sum(valor) filter (where rd = 'despesas' and sit = 'pago'), 0)
+      + coalesce(sum(valor) filter (where sit = 'a receber'), 0)
+      - coalesce(sum(valor) filter (where sit = 'a pagar'),   0) as resultado_projetado,
     count(*) as count_total
   from base;
 $$;

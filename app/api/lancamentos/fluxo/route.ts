@@ -33,7 +33,7 @@ export async function GET(req: Request) {
       .from("portal_lancamentos")
       .select("rec_desp, situacao, valor, data_pagamento")
       .not("data_pagamento", "is", null)
-      .in("situacao", ["Recebido", "Pago"])
+      .or("situacao.ilike.recebido,situacao.ilike.pago")
       .lte("data_pagamento", today);
     if (ano) {
       fluxoQuery = fluxoQuery
@@ -46,7 +46,8 @@ export async function GET(req: Request) {
     for (const row of pagamentos ?? []) {
       const key = (row.data_pagamento as string).slice(0, 7);
       const cur = fluxoMap.get(key) ?? { entradas: 0, saidas: 0 };
-      if (row.rec_desp === "Receitas") cur.entradas += Number(row.valor) || 0;
+      const rd = (row.rec_desp ?? "").toLowerCase();
+      if (rd === "receitas") cur.entradas += Number(row.valor) || 0;
       else cur.saidas += Number(row.valor) || 0;
       fluxoMap.set(key, cur);
     }
