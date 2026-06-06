@@ -163,7 +163,7 @@ function sincronizar() {
 
   const headers = allValues[headerIdx].map(function(h) {
     return String(h || "").trim().toLowerCase()
-      .normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
   });
 
