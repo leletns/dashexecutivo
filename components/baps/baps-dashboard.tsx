@@ -112,7 +112,7 @@ export function BapsDashboard({
   }, []);
 
   React.useEffect(() => {
-    if (sector !== "financeiro" && sector !== "contabil") return;
+    if (!["financeiro", "contabil", "administrativo", "executivo"].includes(sector)) return;
     const load = () => {
       fetch("/api/lancamentos/fluxo", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
@@ -727,23 +727,62 @@ export function BapsDashboard({
         <motion.section initial="hidden" animate="show" custom={6} variants={fade} className="grid gap-3 lg:grid-cols-2">
           {showZone(sector, "bloco_financeiro_narrativa") && (
             <Card className="p-5 sm:p-6 rounded-2xl border-border/60 shadow-sm print:break-inside-avoid">
-              <h2 className="text-sm font-semibold tracking-tight">Financeiro · narrativa</h2>
-              <dl className="mt-4 space-y-3 text-sm">
-                <div>
-                  <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">Contas bancárias</dt>
-                  <dd className="mt-1 text-muted-foreground leading-relaxed">{data.financeiro_resumo.contas_bancarias}</dd>
-                </div>
-                <div>
-                  <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">Pendências</dt>
-                  <dd className="mt-1 text-muted-foreground leading-relaxed">{data.financeiro_resumo.pendencias}</dd>
-                </div>
-                <div>
-                  <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">Inadimplência · patrocinadores</dt>
-                  <dd className="mt-1 text-muted-foreground leading-relaxed">
-                    {data.financeiro_resumo.inadimplencia_patrocinadores}
-                  </dd>
-                </div>
-              </dl>
+              <h2 className="text-sm font-semibold tracking-tight">Financeiro · resumo</h2>
+              {lancTotais ? (
+                <dl className="mt-4 space-y-3 text-sm">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">A receber</dt>
+                      <dd className="mt-1 font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+                        {formatCurrencyBRL(lancTotais.total_a_receber)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">A pagar</dt>
+                      <dd className="mt-1 font-semibold tabular-nums text-blue-600 dark:text-blue-400">
+                        {formatCurrencyBRL(lancTotais.total_a_pagar)}
+                      </dd>
+                    </div>
+                  </div>
+                  {data.financeiro_resumo.contas_bancarias && (
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">Contas bancárias</dt>
+                      <dd className="mt-1 text-muted-foreground leading-relaxed">{data.financeiro_resumo.contas_bancarias}</dd>
+                    </div>
+                  )}
+                  {data.financeiro_resumo.pendencias && (
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">Pendências</dt>
+                      <dd className="mt-1 text-muted-foreground leading-relaxed">{data.financeiro_resumo.pendencias}</dd>
+                    </div>
+                  )}
+                  {data.financeiro_resumo.inadimplencia_patrocinadores && (
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">Inadimplência · patrocinadores</dt>
+                      <dd className="mt-1 text-muted-foreground leading-relaxed">
+                        {data.financeiro_resumo.inadimplencia_patrocinadores}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              ) : (
+                <dl className="mt-4 space-y-3 text-sm">
+                  <div>
+                    <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">Contas bancárias</dt>
+                    <dd className="mt-1 text-muted-foreground leading-relaxed">{data.financeiro_resumo.contas_bancarias || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">Pendências</dt>
+                    <dd className="mt-1 text-muted-foreground leading-relaxed">{data.financeiro_resumo.pendencias || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">Inadimplência · patrocinadores</dt>
+                    <dd className="mt-1 text-muted-foreground leading-relaxed">
+                      {data.financeiro_resumo.inadimplencia_patrocinadores || "—"}
+                    </dd>
+                  </div>
+                </dl>
+              )}
             </Card>
           )}
           {showZone(sector, "bloco_financeiro_eventos") && (

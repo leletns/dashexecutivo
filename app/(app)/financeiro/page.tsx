@@ -32,8 +32,6 @@ import {
   Activity,
   Wifi,
   WifiOff,
-  FileSpreadsheet,
-  Upload,
   Plus,
   PencilLine,
   CircleDot,
@@ -46,14 +44,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, type SelectOption } from "@/components/ui/select";
-import { AutoConciliacaoSheet } from "@/components/dashboard/auto-conciliacao-sheet";
 import { PortalFinanceiroTabs } from "@/components/financeiro/portal-financeiro-tabs";
-import { SheetsSyncPanel } from "@/components/financeiro/sheets-sync-panel";
-import {
-  type FinanceLancamento,
-  metricasEdicao,
-  useAppState,
-} from "@/lib/app-state";
+import { useAppState, metricasEdicao, type FinanceLancamento } from "@/lib/app-state";
 import { useRegisterPageState } from "@/lib/page-state";
 import { cn, formatCurrencyBRL } from "@/lib/utils";
 import { todayBrasilia } from "@/lib/timezone";
@@ -135,6 +127,20 @@ function useLancamentosFluxo(ano: string) {
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = React.useState(false);
 
+  // Fast path: RPC direto ao Supabase (sem roundtrip por API Route)
+  // Atualiza KPIs em ~50ms quando Realtime dispara
+  const fetchTotais = React.useCallback(async () => {
+    const sb = getSupabaseBrowser();
+    if (!sb) return;
+    const params = ano ? { p_ano: ano } : {};
+    const { data, error } = await sb.rpc("lancamentos_totais", params);
+    if (!error && data?.[0]) {
+      setTotaisSupabase(data[0] as FluxoTotais);
+      setUpdatedAt(new Date().toISOString());
+    }
+  }, [ano]);
+
+  // Full fetch: fluxo mensal + por evento + totais (via API Route autenticada)
   const fetchData = React.useCallback(() => {
     const url = `/api/lancamentos/fluxo${ano ? `?ano=${encodeURIComponent(ano)}` : ""}`;
     fetch(url, { cache: "no-store" })
@@ -155,7 +161,14 @@ function useLancamentosFluxo(ano: string) {
     const sb = getSupabaseBrowser();
     const channel = sb
       ?.channel("lancamentos-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "portal_lancamentos" }, fetchData)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "portal_lancamentos" },
+        () => {
+          fetchTotais(); // KPIs atualizam imediatamente
+          fetchData();   // gráficos atualizam logo após
+        },
+      )
       .subscribe((status) => {
         setRealtimeConnected(status === "SUBSCRIBED");
       });
@@ -166,7 +179,7 @@ function useLancamentosFluxo(ano: string) {
       setRealtimeConnected(false);
       window.removeEventListener("portal:data-updated", fetchData);
     };
-  }, [fetchData]);
+  }, [fetchData, fetchTotais]);
 
   return { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected };
 }
@@ -183,29 +196,72 @@ function useTotalCount(ano: string) {
   return count;
 }
 
-interface SyncInfo {
-  lastSync: string | null;   // ISO datetime
-  totalRows: number;
-  status: "success" | "error" | "running" | null;
+
+// ---------------------------------------------------------------------------
+// Hook: baps_dashboard_dados (Data Lake)
+// ---------------------------------------------------------------------------
+
+interface BapsDadosTotais {
+  receitas: number;
+  despesas: number;
+  saldo: number;
+  resultado_projetado: number;
+  a_receber: number;
+  a_pagar: number;
 }
 
-function useSyncStatus() {
-  const [info, setInfo] = React.useState<SyncInfo | null>(null);
-  const fetch_ = React.useCallback(() => {
-    fetch("/api/sync/sheets", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: any) => {
-        if (!d) return;
-        setInfo({
-          lastSync: d.last_sync?.finished_at ?? d.last_sync?.started_at ?? null,
-          totalRows: d.total_lancamentos ?? 0,
-          status: d.last_sync?.status ?? null,
-        });
-      })
-      .catch(() => {});
-  }, []);
-  React.useEffect(() => { fetch_(); }, [fetch_]);
-  return info;
+interface BapsDadosPorAba {
+  aba_origem: string;
+  receitas: number;
+  despesas: number;
+  saldo: number;
+  campos: string[];
+  sample: Record<string, any>;
+}
+
+interface BapsDadosRegistro {
+  id: number;
+  aba_origem: string;
+  dados: Record<string, any>;
+  criado_em: string;
+}
+
+interface BapsDadosState {
+  totais: BapsDadosTotais | null;
+  porAba: BapsDadosPorAba[];
+  registros: BapsDadosRegistro[];
+  total: number;
+  page: number;
+  pages: number;
+  loading: boolean;
+  error: string | null;
+}
+
+function useBapsDados(abaFiltro: string, page = 1) {
+  const [state, setState] = React.useState<BapsDadosState>({
+    totais: null, porAba: [], registros: [], total: 0, page: 1, pages: 1, loading: false, error: null,
+  });
+
+  React.useEffect(() => {
+    setState((s) => ({ ...s, loading: true, error: null }));
+    const qs = new URLSearchParams({ page: String(page), limit: "100" });
+    if (abaFiltro) qs.set("aba", abaFiltro);
+    fetch(`/api/baps-dados?${qs}`, { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : Promise.reject(r.statusText))
+      .then((d: any) => setState({
+        totais:    d.totais ?? null,
+        porAba:    d.por_aba ?? [],
+        registros: d.registros ?? [],
+        total:     d.total ?? 0,
+        page:      d.page ?? 1,
+        pages:     d.pages ?? 1,
+        loading:   false,
+        error:     null,
+      }))
+      .catch((e: any) => setState((s) => ({ ...s, loading: false, error: String(e) })));
+  }, [abaFiltro, page]);
+
+  return state;
 }
 
 // ---------------------------------------------------------------------------
@@ -377,286 +433,8 @@ function AnoSelector({ value, onChange }: { value: string; onChange: (v: string)
   );
 }
 
-// ---------------------------------------------------------------------------
-// XLSX Import Panel
-// ---------------------------------------------------------------------------
 
-interface ImportRow {
-  chave: string;
-  entradas: number;
-  saidas: number;
-}
-
-function ImportarPlanilhaPanel({
-  onImport,
-  onReset,
-}: {
-  onImport: (rows: ImportRow[]) => void;
-  onReset: () => void;
-}) {
-  const [open, setOpen] = React.useState(false);
-  const [sheets, setSheets] = React.useState<string[]>([]);
-  const [selectedSheet, setSelectedSheet] = React.useState("");
-  const [allRows, setAllRows] = React.useState<any[][]>([]);
-  const [headers, setHeaders] = React.useState<string[]>([]);
-  const [previewRows, setPreviewRows] = React.useState<any[][]>([]);
-  const [colMes, setColMes] = React.useState("");
-  const [colEntradas, setColEntradas] = React.useState("");
-  const [colSaidas, setColSaidas] = React.useState("");
-  const [aggregated, setAggregated] = React.useState<ImportRow[]>([]);
-  const [imported, setImported] = React.useState(false);
-  const fileRef = React.useRef<HTMLInputElement>(null);
-
-  const parseNumber = (v: any): number => {
-    if (v == null || v === "") return 0;
-    const n = parseFloat(String(v).replace(/[^\d.,-]/g, "").replace(",", "."));
-    return isNaN(n) ? 0 : n;
-  };
-
-  const toMonthKey = (v: any): string => {
-    const s = String(v ?? "").trim();
-    if (/^\d{4}-\d{2}$/.test(s)) return s;
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      return `${y}-${m}`;
-    }
-    const parts = s.split(/[/\-\.]/);
-    if (parts.length === 3) {
-      const [a, b, c] = parts;
-      if (a.length === 4) return `${a}-${b.padStart(2, "0")}`;
-      return `${c}-${b.padStart(2, "0")}`;
-    }
-    if (parts.length === 2 && parts[1].length === 4) {
-      return `${parts[1]}-${parts[0].padStart(2, "0")}`;
-    }
-    return s;
-  };
-
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setSheets([]);
-    setSelectedSheet("");
-    setAllRows([]);
-    setHeaders([]);
-    setPreviewRows([]);
-    setColMes("");
-    setColEntradas("");
-    setColSaidas("");
-    setAggregated([]);
-    setImported(false);
-
-    const XLSX = await import("xlsx");
-    const isCsv = file.name.toLowerCase().endsWith(".csv");
-    let wb: any;
-
-    const buf = await file.arrayBuffer();
-    wb = XLSX.read(buf, { type: "array", cellDates: true });
-
-    const sheetNames = wb.SheetNames as string[];
-    setSheets(sheetNames);
-    loadSheet(wb, sheetNames[0] ?? "");
-    setSelectedSheet(sheetNames[0] ?? "");
-
-    function loadSheet(workbook: any, name: string) {
-      const ws = workbook.Sheets[name];
-      if (!ws) return;
-      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[][];
-      const hdrs = (raw[0] ?? []).map(String);
-      setHeaders(hdrs);
-      setAllRows(raw.slice(1));
-      setPreviewRows(raw.slice(1, 6));
-    }
-  };
-
-  const handleSheetChange = async (name: string) => {
-    setSelectedSheet(name);
-    const XLSX = await import("xlsx");
-    const fileEl = fileRef.current;
-    if (!fileEl?.files?.[0]) return;
-    const buf = await fileEl.files[0].arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array", cellDates: true });
-    const ws = wb.Sheets[name];
-    if (!ws) return;
-    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[][];
-    setHeaders((raw[0] ?? []).map(String));
-    setAllRows(raw.slice(1));
-    setPreviewRows(raw.slice(1, 6));
-  };
-
-  const handleAggregate = () => {
-    if (!colMes || !colEntradas) return;
-    const mesIdx = headers.indexOf(colMes);
-    const entIdx = headers.indexOf(colEntradas);
-    const saidIdx = colSaidas ? headers.indexOf(colSaidas) : -1;
-
-    const map = new Map<string, { entradas: number; saidas: number }>();
-    for (const row of allRows) {
-      const key = toMonthKey(row[mesIdx]);
-      if (!key) continue;
-      const cur = map.get(key) ?? { entradas: 0, saidas: 0 };
-      cur.entradas += parseNumber(row[entIdx]);
-      if (saidIdx >= 0) cur.saidas += parseNumber(row[saidIdx]);
-      map.set(key, cur);
-    }
-    setAggregated(
-      Array.from(map.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([chave, { entradas, saidas }]) => ({ chave, entradas, saidas })),
-    );
-  };
-
-  const handleImport = () => {
-    onImport(aggregated);
-    setImported(true);
-    setOpen(false);
-  };
-
-  const colOptions: SelectOption[] = [
-    { value: "", label: "— selecionar —" },
-    ...headers.map((h) => ({ value: h, label: h })),
-  ];
-
-  return (
-    <div className="rounded-xl border border-border/60 overflow-hidden">
-      <button
-        onClick={() => setOpen((p) => !p)}
-        className="w-full flex items-center justify-between px-4 py-3 text-sm hover:bg-foreground/[0.02] transition-colors"
-      >
-        <span className="flex items-center gap-2 font-medium">
-          <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-          Importar planilha XLSX / CSV
-          {imported && (
-            <Badge variant="success" className="text-[10px]">Importado</Badge>
-          )}
-        </span>
-        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
-      </button>
-
-      {open && (
-        <div className="border-t border-border/60 px-4 py-4 space-y-4">
-          <div>
-            <label className="text-[11px] text-muted-foreground block mb-1.5">Arquivo</label>
-            <div
-              onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-3 border-2 border-dashed border-border/60 rounded-xl px-4 py-4 cursor-pointer hover:border-border hover:bg-foreground/[0.02] transition-all"
-            >
-              <Upload className="h-5 w-5 text-muted-foreground shrink-0" />
-              <span className="text-xs text-muted-foreground">Clique ou arraste um arquivo XLSX ou CSV</span>
-            </div>
-            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
-          </div>
-
-          {sheets.length > 1 && (
-            <Select
-              value={selectedSheet}
-              onValueChange={handleSheetChange}
-              options={sheets.map((s) => ({ value: s, label: s }))}
-              triggerClassName="h-8 text-xs"
-            />
-          )}
-
-          {headers.length > 0 && (
-            <div className="space-y-3">
-              <div className="overflow-x-auto rounded-lg border border-border/50 max-h-[200px]">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-background">
-                    <tr className="bg-foreground/[0.03]">
-                      {headers.map((h) => (
-                        <th key={h} className="px-2 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewRows.map((row, ri) => (
-                      <tr key={ri} className="border-t border-border/30">
-                        {headers.map((_, ci) => (
-                          <td key={ci} className="px-2 py-1.5 text-muted-foreground whitespace-nowrap max-w-[140px] truncate">
-                            {String(row[ci] ?? "")}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] text-muted-foreground">Mês / Data</label>
-                  <Select value={colMes} onValueChange={setColMes} options={colOptions} triggerClassName="h-8 text-xs" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-muted-foreground">Entradas (Receita)</label>
-                  <Select value={colEntradas} onValueChange={setColEntradas} options={colOptions} triggerClassName="h-8 text-xs" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-muted-foreground">Saídas (Despesa)</label>
-                  <Select value={colSaidas} onValueChange={setColSaidas} options={colOptions} triggerClassName="h-8 text-xs" />
-                </div>
-              </div>
-
-              <Button size="sm" variant="outline" onClick={handleAggregate} disabled={!colMes || !colEntradas} className="gap-2">
-                <Activity className="h-3.5 w-3.5" />
-                Pré-visualizar dados
-              </Button>
-            </div>
-          )}
-
-          {aggregated.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">
-                {aggregated.length} meses detectados:
-              </div>
-              <div className="max-h-[200px] overflow-y-auto rounded-lg border border-border/50">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-background">
-                    <tr className="bg-foreground/[0.03]">
-                      {["Mês", "Entradas", "Saídas", "Saldo"].map((h, i) => (
-                        <th key={h} className={cn("px-2 py-1.5 font-medium text-muted-foreground", i === 0 ? "text-left" : "text-right")}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {aggregated.map((r) => (
-                      <tr key={r.chave} className="border-t border-border/30">
-                        <td className="px-2 py-1 font-medium">{r.chave}</td>
-                        <td className="px-2 py-1 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
-                          {fmtCompact(r.entradas)}
-                        </td>
-                        <td className="px-2 py-1 text-right tabular-nums text-rose-600 dark:text-rose-400">
-                          {fmtCompact(r.saidas)}
-                        </td>
-                        <td className={cn("px-2 py-1 text-right tabular-nums font-semibold",
-                          r.entradas - r.saidas >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                        )}>
-                          {fmtCompact(r.entradas - r.saidas)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <Button size="sm" onClick={handleImport} className="gap-2">
-                <Check className="h-3.5 w-3.5" />
-                Importar {aggregated.length} meses
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
+// -----------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -667,9 +445,7 @@ export default function FinanceiroPage() {
 
   const { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected } = useLancamentosFluxo(anoFiltro);
   const totalCount = useTotalCount(anoFiltro);
-  const syncInfo = useSyncStatus();
 
-  const totals = React.useMemo(() => computeTotals(state.financeiro), [state.financeiro]);
   const margens = React.useMemo(
     () => computeMargensPorEdicao(state.edicoes, state.financeiro),
     [state.edicoes, state.financeiro],
@@ -691,15 +467,16 @@ export default function FinanceiroPage() {
     saidasPeriodo: fluxoMensal.reduce((s, r) => s + r.saidas, 0),
   }), [fluxoMensal]);
 
+  // Fonte única de verdade: Supabase (portal_lancamentos)
   const displayTotals: Totals = {
-    saldoConferido: totaisSupabase?.saldo_realizado ?? autoTotais.entradasPeriodo - autoTotais.saidasPeriodo,
-    aReceber: totaisSupabase?.total_a_receber ?? totals.aReceber,
-    aReceberCount: totals.aReceberCount,
-    aPagar: totaisSupabase?.total_a_pagar ?? totals.aPagar,
-    aPagarCount: totals.aPagarCount,
-    resultadoProjetado: totaisSupabase?.resultado_projetado ?? totals.resultadoProjetado,
-    entradasPeriodo: autoTotais.entradasPeriodo,
-    saidasPeriodo: autoTotais.saidasPeriodo,
+    saldoConferido:     totaisSupabase?.saldo_realizado    ?? autoTotais.entradasPeriodo - autoTotais.saidasPeriodo,
+    aReceber:           totaisSupabase?.total_a_receber    ?? 0,
+    aReceberCount:      0,
+    aPagar:             totaisSupabase?.total_a_pagar      ?? 0,
+    aPagarCount:        0,
+    resultadoProjetado: totaisSupabase?.resultado_projetado ?? 0,
+    entradasPeriodo:    autoTotais.entradasPeriodo,
+    saidasPeriodo:      autoTotais.saidasPeriodo,
   };
 
   useRegisterPageState({
@@ -739,7 +516,6 @@ export default function FinanceiroPage() {
         <div className="flex items-center gap-3 flex-wrap">
           <LiveDot connected={realtimeConnected} />
           <AnoSelector value={anoFiltro} onChange={setAnoFiltro} />
-          <AutoConciliacaoSheet />
         </div>
       </motion.div>
 
@@ -748,8 +524,6 @@ export default function FinanceiroPage() {
         onVerDetalhes={setActiveTab}
         loading={totaisSupabase === null && updatedAt === null}
       />
-
-      <DataFreshnessBanner syncInfo={syncInfo} onGoToSync={() => setActiveTab("egestor")} />
 
       <PortalFinanceiroTabs />
 
@@ -760,7 +534,7 @@ export default function FinanceiroPage() {
           <TabsTrigger value="receber">A receber</TabsTrigger>
           <TabsTrigger value="pagar">A pagar</TabsTrigger>
           <TabsTrigger value="margem">Resultado por evento</TabsTrigger>
-          <TabsTrigger value="egestor">Atualizar dados</TabsTrigger>
+          <TabsTrigger value="datalake">Data Lake</TabsTrigger>
         </TabsList>
 
         <AnimatePresence mode="wait">
@@ -800,8 +574,8 @@ export default function FinanceiroPage() {
               <MargemTab margens={margens} porEvento={porEvento} />
             </TabsContent>
 
-            <TabsContent value="egestor" className="mt-2">
-              <SheetsSyncPanel />
+            <TabsContent value="datalake" className="mt-2">
+              <DataLakeTab />
             </TabsContent>
           </motion.div>
         </AnimatePresence>
@@ -810,101 +584,6 @@ export default function FinanceiroPage() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Data freshness banner
-// ---------------------------------------------------------------------------
-
-function DataFreshnessBanner({
-  syncInfo,
-  onGoToSync,
-}: {
-  syncInfo: SyncInfo | null;
-  onGoToSync: () => void;
-}) {
-  if (!syncInfo) return null;
-
-  const lastSyncDate = syncInfo.lastSync ? new Date(syncInfo.lastSync) : null;
-  const hoursAgo = lastSyncDate
-    ? (Date.now() - lastSyncDate.getTime()) / (1000 * 60 * 60)
-    : null;
-
-  const isStale = hoursAgo !== null && hoursAgo > 24;
-  const neverSynced = syncInfo.totalRows === 0;
-
-  const formatSyncTime = (dt: Date): string => {
-    const diffH = (Date.now() - dt.getTime()) / (1000 * 60 * 60);
-    if (diffH < 1) return `${Math.floor(diffH * 60)} min atrás`;
-    if (diffH < 24) return `${Math.floor(diffH)} h atrás`;
-    const diffD = Math.floor(diffH / 24);
-    return `${diffD} ${diffD === 1 ? "dia" : "dias"} atrás`;
-  };
-
-  if (neverSynced) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: -4 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center gap-3 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3"
-      >
-        <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
-            Nenhum dado importado ainda.
-          </span>
-          <span className="text-xs text-amber-700/70 dark:text-amber-300/70 ml-1.5">
-            Os números mostrados acima não vêm do sistema financeiro.
-          </span>
-        </div>
-        <button
-          onClick={onGoToSync}
-          className="text-xs font-semibold text-amber-700 dark:text-amber-300 underline underline-offset-2 shrink-0"
-        >
-          Importar agora →
-        </button>
-      </motion.div>
-    );
-  }
-
-  if (isStale) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: -4 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center gap-3 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3"
-      >
-        <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-        <div className="flex-1 min-w-0 text-sm text-amber-800 dark:text-amber-200">
-          Dados atualizados{" "}
-          <strong>{formatSyncTime(lastSyncDate!)}</strong>.{" "}
-          <span className="text-amber-700/70 dark:text-amber-300/70">
-            Se a planilha foi atualizada depois disso, os valores aqui estão desatualizados.
-          </span>
-        </div>
-        <button
-          onClick={onGoToSync}
-          className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 shrink-0"
-        >
-          <RefreshCw className="h-3 w-3" />
-          Atualizar dados
-        </button>
-      </motion.div>
-    );
-  }
-
-  // Fresh data — show as a subtle success info strip
-  return (
-    <div className="flex items-center gap-2 text-[11px] text-muted-foreground px-1">
-      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-      <span>
-        {syncInfo.totalRows.toLocaleString("pt-BR")} movimentações importadas
-        {lastSyncDate && <> · atualizado {formatSyncTime(lastSyncDate)}</>}
-      </span>
-      <button onClick={onGoToSync} className="ml-auto text-muted-foreground/60 hover:text-foreground transition-colors">
-        Atualizar →
-      </button>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // KPIs
@@ -1626,6 +1305,208 @@ function LancamentosSupabaseTab({
             >
               <ChevronRight className="h-3.5 w-3.5" />
             </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Data Lake — baps_dashboard_dados
+// ---------------------------------------------------------------------------
+
+const ABA_FILTROS = [
+  { label: "Tudo", value: "" },
+  { label: "Eventos", value: "evento" },
+  { label: "Fluxo de caixa", value: "fluxo" },
+  { label: "Saldos", value: "saldo" },
+  { label: "Receitas", value: "receita" },
+  { label: "Despesas", value: "despesa" },
+];
+
+function DataLakeTab() {
+  const [abaFiltro, setAbaFiltro] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const { totais, porAba, registros, total, pages, loading, error } = useBapsDados(abaFiltro, page);
+
+  React.useEffect(() => { setPage(1); }, [abaFiltro]);
+
+  const fmtBRL = (v: number) =>
+    v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  const fmtDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    } catch {
+      return iso;
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-sm font-semibold">Data Lake — baps_dashboard_dados</h2>
+          <p className="text-xs text-muted-foreground">
+            {total > 0 ? `${total.toLocaleString("pt-BR")} registros` : "Verificando…"}
+          </p>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {ABA_FILTROS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setAbaFiltro(f.value)}
+              className={cn(
+                "px-2.5 py-1 rounded-full text-[11px] font-medium transition-all",
+                abaFiltro === f.value
+                  ? "bg-foreground text-background"
+                  : "bg-foreground/[0.06] hover:bg-foreground/[0.10] text-muted-foreground"
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* KPI totais da seleção */}
+      {totais && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {[
+            { label: "Receitas", value: totais.receitas, color: "text-emerald-600 dark:text-emerald-400" },
+            { label: "Despesas", value: totais.despesas, color: "text-rose-600 dark:text-rose-400" },
+            { label: "Saldo", value: totais.saldo, color: totais.saldo >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400" },
+            { label: "A receber", value: totais.a_receber, color: "text-amber-600 dark:text-amber-400" },
+            { label: "A pagar", value: totais.a_pagar, color: "text-blue-600 dark:text-blue-400" },
+            { label: "Resultado", value: totais.resultado_projetado, color: totais.resultado_projetado >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400" },
+          ].map(({ label, value, color }) => (
+            <Card key={label} className="p-3">
+              <p className="text-[11px] text-muted-foreground mb-1">{label}</p>
+              <p className={cn("text-sm font-semibold tabular-nums", color)}>{fmtBRL(value)}</p>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Agrupamento por aba_origem */}
+      {porAba.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-border/40">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border/40 bg-foreground/[0.02]">
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Origem (aba)</th>
+                <th className="px-3 py-2 text-right font-medium text-muted-foreground">Receitas</th>
+                <th className="px-3 py-2 text-right font-medium text-muted-foreground">Despesas</th>
+                <th className="px-3 py-2 text-right font-medium text-muted-foreground">Saldo</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Campos detectados</th>
+              </tr>
+            </thead>
+            <tbody>
+              {porAba.map((aba) => (
+                <tr key={aba.aba_origem} className="border-t border-border/30 hover:bg-foreground/[0.02]">
+                  <td className="px-3 py-2 font-medium max-w-[200px] truncate" title={aba.aba_origem}>
+                    {aba.aba_origem}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {fmtBRL(aba.receitas)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-rose-600 dark:text-rose-400">
+                    {fmtBRL(aba.despesas)}
+                  </td>
+                  <td className={cn("px-3 py-2 text-right tabular-nums font-semibold",
+                    aba.saldo >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                  )}>
+                    {fmtBRL(aba.saldo)}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground max-w-[260px]">
+                    <span className="truncate block" title={aba.campos.join(", ")}>
+                      {aba.campos.slice(0, 5).join(", ")}{aba.campos.length > 5 ? ` +${aba.campos.length - 5}` : ""}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Registros individuais paginados */}
+      <div className="overflow-x-auto rounded-xl border border-border/40">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border/40 bg-foreground/[0.02]">
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8">#</th>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Origem</th>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Data</th>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Dados (chaves → valores)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={4} />)}
+            {!loading && registros.length === 0 && !error && (
+              <tr>
+                <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">
+                  {total === 0 ? "Tabela baps_dashboard_dados não encontrada ou vazia." : "Nenhum registro neste filtro."}
+                </td>
+              </tr>
+            )}
+            {!loading && error && (
+              <tr>
+                <td colSpan={4} className="px-3 py-6 text-center text-rose-600 dark:text-rose-400 text-xs">
+                  Erro ao carregar: {error}
+                </td>
+              </tr>
+            )}
+            {registros.map((row) => {
+              const financiais = Object.entries(row.dados ?? {})
+                .filter(([, v]) => typeof v === "number" || (typeof v === "string" && !isNaN(parseFloat(v.replace(",", ".")))))
+                .map(([k, v]) => {
+                  const n = parseFloat(String(v).replace(/[^\d.,-]/g, "").replace(",", "."));
+                  return `${k}: ${isNaN(n) ? v : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`;
+                })
+                .slice(0, 6);
+              return (
+                <tr key={row.id} className="border-t border-border/30 hover:bg-foreground/[0.02]">
+                  <td className="px-3 py-2 tabular-nums text-muted-foreground">{row.id}</td>
+                  <td className="px-3 py-2 font-medium max-w-[180px] truncate" title={row.aba_origem}>
+                    {row.aba_origem}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums whitespace-nowrap text-muted-foreground">
+                    {fmtDate(row.criado_em)}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground max-w-[400px]">
+                    <span className="truncate block" title={JSON.stringify(row.dados)}>
+                      {financiais.join(" · ") || JSON.stringify(row.dados).slice(0, 120)}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Paginação */}
+      {pages > 1 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Página {page} de {pages} · {total.toLocaleString("pt-BR")} registros</span>
+          <div className="flex gap-1.5">
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="px-2.5 py-1 rounded bg-foreground/[0.06] disabled:opacity-40 hover:bg-foreground/[0.11] transition-colors"
+            >
+              ← Anterior
+            </button>
+            <button
+              disabled={page >= pages}
+              onClick={() => setPage((p) => p + 1)}
+              className="px-2.5 py-1 rounded bg-foreground/[0.06] disabled:opacity-40 hover:bg-foreground/[0.11] transition-colors"
+            >
+              Próxima →
+            </button>
           </div>
         </div>
       )}
