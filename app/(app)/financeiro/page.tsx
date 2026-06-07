@@ -126,6 +126,7 @@ function useLancamentosFluxo(ano: string) {
   const [totaisSupabase, setTotaisSupabase] = React.useState<FluxoTotais | null>(null);
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = React.useState(false);
+  const [aviso, setAviso] = React.useState<string | null>(null);
 
   // Fetch completo: fluxo mensal + por evento + totais computados no servidor
   // Totais calculados 100% via JS na API Route — não depende do RPC do Supabase
@@ -138,6 +139,7 @@ function useLancamentosFluxo(ano: string) {
         setFluxoSupabase((d.fluxo_mensal ?? []) as FluxoRow[]);
         setPorEvento((d.por_evento ?? []) as EventoRow[]);
         if (d.totais) setTotaisSupabase(d.totais as FluxoTotais);
+        setAviso(d.aviso ?? null);
         setUpdatedAt(new Date().toISOString());
       })
       .catch(() => {});
@@ -168,7 +170,7 @@ function useLancamentosFluxo(ano: string) {
     };
   }, [fetchData]);
 
-  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected };
+  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected, aviso };
 }
 
 function useTotalCount(ano: string) {
@@ -363,7 +365,7 @@ export default function FinanceiroPage() {
   const [anoFiltro, setAnoFiltro] = React.useState<string>(() => todayBrasilia().slice(0, 4));
   const [activeTab, setActiveTab] = React.useState("overview");
 
-  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected } = useLancamentosFluxo(anoFiltro);
+  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected, aviso } = useLancamentosFluxo(anoFiltro);
   const totalCount = useTotalCount(anoFiltro);
 
   const margens = React.useMemo(
@@ -438,6 +440,17 @@ export default function FinanceiroPage() {
           <AnoSelector value={anoFiltro} onChange={setAnoFiltro} />
         </div>
       </motion.div>
+
+      {aviso && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-4 py-2.5 text-xs text-amber-800 dark:text-amber-300"
+        >
+          <span className="font-medium">Atenção: </span>
+          {aviso}
+        </motion.div>
+      )}
 
       <KpiGrid
         totals={displayTotals}
