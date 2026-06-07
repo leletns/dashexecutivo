@@ -148,6 +148,10 @@ function useLancamentosFluxo(ano: string) {
   React.useEffect(() => {
     fetchData();
 
+    // Atualização automática mesmo sem evento do banco — cobre o caso em que
+    // os dados vêm direto da planilha (sem gravação no Supabase em tempo real).
+    const intervalId = window.setInterval(fetchData, 60_000);
+
     const sb = getSupabaseBrowser();
     const channel = sb
       ?.channel("lancamentos-realtime")
@@ -164,6 +168,7 @@ function useLancamentosFluxo(ano: string) {
 
     window.addEventListener("portal:data-updated", fetchData);
     return () => {
+      window.clearInterval(intervalId);
       channel?.unsubscribe();
       setRealtimeConnected(false);
       window.removeEventListener("portal:data-updated", fetchData);
