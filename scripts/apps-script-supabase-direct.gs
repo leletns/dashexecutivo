@@ -313,23 +313,25 @@ function getCell(row, idx) {
 
 function parseDateBR(valor) {
   if (!valor) return null;
-  // Já em formato ISO (yyyy-mm-dd)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(valor)) return valor;
-  // Formato dd/mm/yyyy
-  const m = valor.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) {
-    let dia = parseInt(m[1], 10), mes = parseInt(m[2], 10), ano = parseInt(m[3], 10);
-    // Se mês > 12, tenta swap
-    if (mes > 12 && dia <= 12) { const t = dia; dia = mes; mes = t; }
-    if (mes < 1 || mes > 12) return null;
-    return ano + "-" + String(mes).padStart(2, "0") + "-" + String(dia).padStart(2, "0");
-  }
-  // Objeto Date (quando a célula tem formato de data)
+  // Objeto Date (célula com formato de data) — sem ambiguidade, usa direto
   if (valor instanceof Date) {
     const d = valor;
     return d.getFullYear() + "-" +
       String(d.getMonth() + 1).padStart(2, "0") + "-" +
       String(d.getDate()).padStart(2, "0");
+  }
+  var texto = String(valor).trim();
+  // Já em formato ISO (yyyy-mm-dd)
+  if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10);
+  // A planilha exporta como texto no formato AMERICANO m/d/yyyy (ex: "5/22/2026",
+  // "3/25/2026 8:38" — confirmado olhando a própria planilha). 1º número = mês.
+  // Só inverte para d/m quando o 1º número não pode ser mês (>12).
+  const m = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  if (m) {
+    let mes = parseInt(m[1], 10), dia = parseInt(m[2], 10), ano = parseInt(m[3], 10);
+    if (mes > 12 && dia <= 12) { const t = dia; dia = mes; mes = t; }
+    if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+    return ano + "-" + String(mes).padStart(2, "0") + "-" + String(dia).padStart(2, "0");
   }
   return null;
 }
