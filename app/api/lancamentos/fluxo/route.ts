@@ -143,18 +143,29 @@ export async function GET(req: Request) {
 
     let lancamentos: Lancamento[] | null = null;
     let fonte: "planilha" | "supabase" = "supabase";
+    let avisoFonte: string | null = null;
 
     try {
       lancamentos = await getLancamentosFromSheet();
-      if (lancamentos) fonte = "planilha";
-    } catch {
+      if (lancamentos) {
+        fonte = "planilha";
+        if (lancamentos.length === 0) {
+          avisoFonte = "A planilha foi conectada, mas nenhuma linha de lançamento foi reconhecida nela. Verifique se o nome da aba configurado é exatamente o mesmo da planilha.";
+        }
+      }
+    } catch (sheetErr: any) {
       lancamentos = null; // erro ao ler a planilha → cai para o backup no Supabase
+      avisoFonte = `Não foi possível conectar à planilha (${sheetErr?.message ?? "erro desconhecido"}). Mostrando os últimos dados salvos.`;
     }
 
     if (!lancamentos) {
       const sb = createSupabaseAdmin();
       if (!sb) return NextResponse.json({ error: "Banco não configurado." }, { status: 503 });
       lancamentos = await getLancamentosFromSupabase(sb);
+      if (lancamentos.length === 0) {
+        avisoFonte = (avisoFonte ? avisoFonte + " " : "") +
+          "Os dados salvos também estão vazios — é necessário rodar a sincronização ao menos uma vez.";
+      }
     }
 
     // ── 1. Fluxo mensal (lançamentos realizados, com data_pagamento) ──────────
@@ -229,8 +240,20 @@ export async function GET(req: Request) {
       .sort((a, b) => b.Receita - a.Receita)
       .slice(0, 12);
 
+    // ── Diagnóstico: dados existem mas tudo deu zero (provável filtro/ano sem match) ─
+    if (
+      !avisoFonte &&
+      lancamentos.length > 0 &&
+      totalEntradas === 0 && totalSaidas === 0 && aReceber === 0 && aPagar === 0
+    ) {
+      avisoFonte = ano
+        ? `Existem ${lancamentos.length.toLocaleString("pt-BR")} lançamentos na fonte de dados, mas nenhum corresponde ao ano ${ano}. Tente "Todos" para ver o período completo.`
+        : `Existem ${lancamentos.length.toLocaleString("pt-BR")} lançamentos na fonte de dados, mas nenhum tem situação "Recebido/Pago" com data de pagamento já efetivada — por isso os totais aparecem zerados.`;
+    }
+
     return NextResponse.json({
       fonte,
+      aviso: avisoFonte,
       fluxo_mensal,
       por_evento,
       totais: {
