@@ -1,17 +1,19 @@
 /**
  * GET /api/lancamentos/fluxo
  *
- * Fonte de dados: lê DIRETO da planilha Google Sheets (aba e-Gestor) quando
- * configurada (GOOGLE_SERVICE_ACCOUNT_KEY_B64 + GOOGLE_SHEETS_SPREADSHEET_ID).
+ * Fonte de dados: lê DIRETO da planilha Google Sheets (aba e-Gestor) — sem
+ * Google Cloud, sem conta de serviço. Basta a planilha estar publicada/
+ * compartilhada como "Qualquer pessoa com o link pode ver"; o servidor busca
+ * o export CSV público (GOOGLE_SHEETS_SPREADSHEET_ID + GOOGLE_SHEETS_SHEET_NAME).
  * Assim o painel mostra exatamente o que está na planilha — sem depender do
  * pipeline de sincronização (Apps Script → Supabase), que é a causa dos
  * números que não batiam.
  *
- * Fallback automático: se a planilha não estiver configurada (ou a leitura
- * falhar), usa portal_lancamentos no Supabase — que continua recebendo backup
- * via Apps Script.
+ * Fallback automático: se a planilha não estiver configurada/pública (ou a
+ * leitura falhar), usa portal_lancamentos no Supabase — que continua
+ * recebendo backup via Apps Script.
  *
- * Cache em memória de 45s para não estourar o limite da API do Google Sheets.
+ * Cache em memória de 45s para não sobrecarregar o Google Sheets a cada refresh.
  *
  * Agrega em:
  *  - fluxo_mensal: entradas/saídas/saldo/acumulado por mês (data_pagamento)
@@ -20,15 +22,11 @@
  */
 
 import { NextResponse } from "next/server";
+import * as XLSX from "xlsx";
 import { requirePortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { todayBrasilia } from "@/lib/timezone";
-import {
-  readSheetValues,
-  findHeaderRowIndex,
-  buildColumnMap,
-  parseDateBR,
-} from "@/lib/google-sheets";
+import { findHeaderRowIndex, buildColumnMap, parseDateBR } from "@/lib/google-sheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,17 +45,43 @@ type Lancamento = {
 
 let sheetCache: { at: number; rows: Lancamento[] } | null = null;
 
+/** Busca o export CSV público da aba — funciona com a planilha "compartilhada por link". */
+async function fetchPublicSheetRows(spreadsheetId: string, sheetName: string): Promise<string[][]> {
+  const url =
+    `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq` +
+    `?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(
+      `Não foi possível ler a planilha pública (HTTP ${res.status}). ` +
+      `Verifique se ela está compartilhada como "Qualquer pessoa com o link pode ver".`
+    );
+  }
+  const csv = await res.text();
+  if (csv.trim().startsWith("<")) {
+    throw new Error(
+      `A planilha não está acessível publicamente. ` +
+      `Compartilhe-a como "Qualquer pessoa com o link pode ver" e tente novamente.`
+    );
+  }
+
+  const wb = XLSX.read(csv, { type: "string" });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, blankrows: false }) as string[][];
+}
+
 /** Lê e normaliza a planilha — retorna null se não estiver configurada. */
 async function getLancamentosFromSheet(): Promise<Lancamento[] | null> {
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
   const sheetName = process.env.GOOGLE_SHEETS_SHEET_NAME ?? "personalizadoFinanceiro (13)";
-  if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY_B64 || !spreadsheetId) return null;
+  if (!spreadsheetId) return null;
 
   if (sheetCache && Date.now() - sheetCache.at < CACHE_TTL_MS) {
     return sheetCache.rows;
   }
 
-  const rawRows = await readSheetValues(spreadsheetId, sheetName);
+  const rawRows = await fetchPublicSheetRows(spreadsheetId, sheetName);
   if (rawRows.length === 0) {
     sheetCache = { at: Date.now(), rows: [] };
     return [];
