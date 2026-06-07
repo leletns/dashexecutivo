@@ -258,15 +258,24 @@ export function buildColumnMap(headers: string[]): SheetColumnMap {
   return map;
 }
 
-/** Converte data brasileira (dd/mm/yyyy) ou americana (mm/dd/yyyy) para ISO (yyyy-mm-dd). */
+/**
+ * Converte data exportada pelo Google Sheets para ISO (yyyy-mm-dd).
+ *
+ * IMPORTANTE: a planilha exporta no formato AMERICANO m/d/yyyy (ex.: "5/22/2026",
+ * "3/25/2026 8:38" — confirmado olhando a própria planilha). O 1º número é o MÊS.
+ * Só invertemos para d/m quando o 1º número não pode ser mês (>12) — ex.: "25/3/2026".
+ * Aceita também hora opcional no fim (ignorada), pois colunas como "Data de cadastro"
+ * vêm como "3/25/2026 8:38".
+ */
 export function parseDateBR(value: string): string | null {
   if (!value?.trim()) return null;
   const v = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+
+  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
   if (m) {
-    let d = parseInt(m[1], 10);
-    let mo = parseInt(m[2], 10);
+    let mo = parseInt(m[1], 10);
+    let d  = parseInt(m[2], 10);
     const y = parseInt(m[3], 10);
     if (mo > 12 && d <= 12) { [d, mo] = [mo, d]; }
     if (mo > 12 || mo < 1 || d > 31 || d < 1) return null;
