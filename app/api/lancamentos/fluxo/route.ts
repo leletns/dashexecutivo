@@ -83,14 +83,25 @@ async function getLancamentosFromSheet(): Promise<Lancamento[] | null> {
 
   const rawRows = await fetchPublicSheetRows(spreadsheetId, sheetName);
   if (rawRows.length === 0) {
-    sheetCache = { at: Date.now(), rows: [] };
-    return [];
+    throw new Error(
+      `A aba "${sheetName}" foi encontrada mas está vazia (0 linhas). ` +
+      `Confira se o nome da aba em GOOGLE_SHEETS_SHEET_NAME é exatamente igual ao nome exibido na planilha.`
+    );
   }
 
   const headerIdx = findHeaderRowIndex(rawRows);
   const headers = rawRows[headerIdx] ?? [];
   const colMap = buildColumnMap(headers);
   const dataRows = rawRows.slice(headerIdx + 1);
+
+  if (colMap.cod === undefined) {
+    const amostraCabecalho = headers.filter(Boolean).slice(0, 8).join(" | ") || "(linha vazia)";
+    throw new Error(
+      `Conectou na aba "${sheetName}" (${rawRows.length} linhas), mas não encontrou a coluna "Cód." no ` +
+      `cabeçalho detectado na linha ${headerIdx + 1}: [${amostraCabecalho}]. ` +
+      `Provavelmente o nome da aba (GOOGLE_SHEETS_SHEET_NAME) está apontando para a aba errada.`
+    );
+  }
 
   const col = (row: string[], idx: number | undefined): string =>
     idx !== undefined ? (row[idx] ?? "").trim() : "";
@@ -116,6 +127,15 @@ async function getLancamentosFromSheet(): Promise<Lancamento[] | null> {
       data_vencimento: parseDateBR(col(row, colMap.data_vencimento)),
       evento:          col(row, colMap.evento) || null,
     });
+  }
+
+  if (rows.length === 0) {
+    const amostraCod = dataRows.slice(0, 3).map((r) => col(r, colMap.cod) || "(vazio)").join(", ");
+    throw new Error(
+      `Conectou na aba "${sheetName}" e achou a coluna "Cód.", mas nenhuma das ${dataRows.length} linhas ` +
+      `de dados passou no filtro (ex.: primeiros valores de Cód. encontrados: ${amostraCod}). ` +
+      `A aba pode estar com cabeçalho em outra linha do que o esperado.`
+    );
   }
 
   sheetCache = { at: Date.now(), rows };
@@ -147,15 +167,10 @@ export async function GET(req: Request) {
 
     try {
       lancamentos = await getLancamentosFromSheet();
-      if (lancamentos) {
-        fonte = "planilha";
-        if (lancamentos.length === 0) {
-          avisoFonte = "A planilha foi conectada, mas nenhuma linha de lançamento foi reconhecida nela. Verifique se o nome da aba configurado é exatamente o mesmo da planilha.";
-        }
-      }
+      if (lancamentos) fonte = "planilha";
     } catch (sheetErr: any) {
       lancamentos = null; // erro ao ler a planilha → cai para o backup no Supabase
-      avisoFonte = `Não foi possível conectar à planilha (${sheetErr?.message ?? "erro desconhecido"}). Mostrando os últimos dados salvos.`;
+      avisoFonte = `A planilha não pôde ser usada agora: ${sheetErr?.message ?? "erro desconhecido"} — mostrando os últimos dados salvos.`;
     }
 
     if (!lancamentos) {
