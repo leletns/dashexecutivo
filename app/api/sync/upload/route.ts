@@ -16,6 +16,7 @@ import {
   findHeaderRowIndex,
   buildColumnMap,
   parseDateBR,
+  parseMoneyBR,
 } from "@/lib/google-sheets";
 
 export const runtime = "nodejs";
@@ -131,10 +132,7 @@ export async function POST(req: Request) {
       if (!cod || cod.toLowerCase().includes("total")) continue;
 
       const rawValor = col(row, colMap.valor);
-      const valorRaw =
-        parseFloat(
-          rawValor.replace(/R\$\s?/, "").replace(/\./g, "").replace(",", ".")
-        ) || 0;
+      const valorRaw = parseMoneyBR(rawValor);
 
       const recDespCol = col(row, colMap.rec_desp);
       const recDesp =

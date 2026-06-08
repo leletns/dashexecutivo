@@ -208,6 +208,27 @@ function sincronizar() {
     evento:                firstCol("evento"),
   };
 
+  // Fallback por posi\u00e7\u00e3o fixa \u2014 "C\u00f3d.", "Valor" e as 5 colunas de data saem
+  // do e-Gestor com o cabe\u00e7alho em BRANCO (mesclagem da planilha original), ent\u00e3o
+  // firstCol() nunca as encontra (retorna -1). Sem isto, colMap.cod/colMap.valor
+  // ficam -1, toda linha \u00e9 descartada e a sincroniza\u00e7\u00e3o grava zero registros.
+  // Posi\u00e7\u00f5es confirmadas direto na planilha publicada (\u00edndice 0 = coluna A).
+  // data_pagamento=12 foi validado empiricamente: \u00e9 a \u00daNICA coluna 100% vazia
+  // nas linhas "A receber"/"A pagar" e 100% preenchida no que j\u00e1 foi liquidado
+  // \u2014 exatamente o comportamento esperado de uma data de pagamento.
+  var POSICAO_FIXA = {
+    cod: 0,
+    valor: 8,
+    data_vencimento: 11,
+    data_pagamento: 12,
+    data_cred_deb: 13,
+  };
+  for (var campoFixo in POSICAO_FIXA) {
+    if (colMap[campoFixo] === -1 || colMap[campoFixo] === undefined) {
+      colMap[campoFixo] = POSICAO_FIXA[campoFixo];
+    }
+  }
+
   // Log dos \u00edndices de colunas cr\u00edticas para diagn\u00f3stico
   Logger.log("[BAPS] Mapa de colunas: cod=" + colMap.cod + " valor=" + colMap.valor +
     " situacao=" + colMap.situacao + " rec_desp=" + colMap.rec_desp +
@@ -223,11 +244,12 @@ function sincronizar() {
     const codVal = colMap.cod >= 0 ? String(row[colMap.cod] || "").trim() : "";
     if (!codVal || codVal.toLowerCase().includes("total")) continue;
 
-    // Valor: remove R$, pontos de milhar, troca vírgula por ponto
+    // Valor: remove R$, pontos de milhar, troca vírgula por ponto.
+    // Notação contábil do e-Gestor: "(R$200,00)" entre parênteses = negativo.
+    // Sem tratar isso, parseFloat("(200.00)") vira NaN e ~9.500 despesas "Pago"
+    // (quase 1 em cada 5) somem dos totais como se fossem R$ 0.
     const rawValor = colMap.valor >= 0 ? String(row[colMap.valor] || "").trim() : "0";
-    const valorNum = parseFloat(
-      rawValor.replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".")
-    ) || 0;
+    const valorNum = parseMoeda(rawValor);
 
     const recDespVal = colMap.rec_desp >= 0 ? String(row[colMap.rec_desp] || "").trim() : "";
     const recDesp = recDespVal ||
@@ -309,6 +331,27 @@ function getCell(row, idx) {
   if (idx < 0 || idx >= row.length) return null;
   const v = String(row[idx] || "").trim();
   return v || null;
+}
+
+// Converte valor monetário do e-Gestor para número, preservando o sinal.
+// Entende a notação contábil de negativo entre parênteses — ex.: "(R$200,00)" → -200.
+function parseMoeda(valor) {
+  if (valor === null || valor === undefined) return 0;
+  if (typeof valor === "number") return isNaN(valor) ? 0 : valor;
+  var v = String(valor).trim();
+  if (!v) return 0;
+
+  var negativo = false;
+  var entreParenteses = v.match(/^\((.+)\)$/);
+  if (entreParenteses) {
+    negativo = true;
+    v = entreParenteses[1].trim();
+  }
+
+  var limpo = v.replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".");
+  var n = parseFloat(limpo);
+  if (isNaN(n)) return 0;
+  return negativo ? -Math.abs(n) : n;
 }
 
 function parseDateBR(valor) {

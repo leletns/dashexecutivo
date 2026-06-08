@@ -26,7 +26,7 @@ import * as XLSX from "xlsx";
 import { requirePortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { todayBrasilia } from "@/lib/timezone";
-import { findHeaderRowIndex, buildColumnMap, parseDateBR } from "@/lib/google-sheets";
+import { findHeaderRowIndex, buildColumnMap, parseDateBR, parseMoneyBR } from "@/lib/google-sheets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -112,8 +112,7 @@ async function getLancamentosFromSheet(): Promise<Lancamento[] | null> {
     if (!cod || cod.toLowerCase().includes("total")) continue;
 
     const rawValor = col(row, colMap.valor);
-    const valorRaw =
-      parseFloat(rawValor.replace(/R\$\s?/, "").replace(/\./g, "").replace(",", ".")) || 0;
+    const valorRaw = parseMoneyBR(rawValor);
 
     const recDespCol = col(row, colMap.rec_desp);
     const recDesp =

@@ -303,11 +303,17 @@ function buildColMap_(headers) {
     }
   }
 
-  // Fallback por posição fixa (colunas do e-Gestor, índice 0 = coluna A)
+  // Fallback por posição fixa (colunas do e-Gestor, índice 0 = coluna A).
+  // Confirmado direto na planilha publicada — "Cód.", "Valor" e as 5 colunas de
+  // data saem do e-Gestor com o CABEÇALHO EM BRANCO (mesclagem da planilha
+  // original), por isso a detecção por nome acima nunca acha essas colunas e
+  // caímos sempre neste fallback. data_pagamento=12 foi validado: é a ÚNICA
+  // coluna 100% vazia em "A receber"/"A pagar" e 100% preenchida no que já
+  // foi liquidado — exatamente o que se espera de uma data de pagamento.
   var FIXO = {
     cod: 0, descricao: 1, conta_caixa: 2, plano_contas: 3, nome_razao_social: 4,
     forma_pagamento: 6, situacao: 7, valor: 8,
-    data_vencimento: 10, data_pagamento: 11, data_cred_deb: 12,
+    data_vencimento: 11, data_pagamento: 12, data_cred_deb: 13,
     plano_primario_contas: 15, classificacao: 16, sub_classificacao: 17,
     ent_saida: 18, rec_desp: 19, tratativa: 20, tratativa_oculta: 22,
     nome_completo: 23, evento: 26,
@@ -330,11 +336,22 @@ function col_(row, idx) {
   return String(val).trim();
 }
 
+// Notação contábil do e-Gestor: "(R$200,00)" entre parênteses = valor negativo.
+// Sem tratar isso, parseFloat("(200.00)") vira NaN e ~9.500 despesas "Pago"
+// (quase 1 em cada 5) somem dos totais como se fossem R$ 0.
 function parseValor_(s) {
   if (!s) return 0;
-  var limpo = s.replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".");
+  var v = String(s).trim();
+  var negativo = false;
+  var entreParenteses = v.match(/^\((.+)\)$/);
+  if (entreParenteses) {
+    negativo = true;
+    v = entreParenteses[1];
+  }
+  var limpo = v.replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".");
   var n = parseFloat(limpo);
-  return isNaN(n) ? 0 : n;
+  if (isNaN(n)) return 0;
+  return negativo ? -Math.abs(n) : n;
 }
 
 function parseDateBR_(s) {
