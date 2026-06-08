@@ -120,7 +120,7 @@ export function findHeaderRowIndex(rows: string[][]): number {
 /**
  * Mapa completo de colunas — baseado na planilha real "personalizadoFinanceiro (13)":
  *
- *  A  Cód.
+ *  A  Cód.                     ⚠ cabeçalho vem em BRANCO no export do e-Gestor
  *  B  Descrição
  *  C  Conta Caixa
  *  D  Plano de contas  (base e-Gestor — ex: "SÓCIOS FUNDADORES")
@@ -128,13 +128,13 @@ export function findHeaderRowIndex(rows: string[][]): number {
  *  F  CPF/CNPJ (não armazenado — privacidade)
  *  G  Forma de pagamento  (PIX / DINHEIRO)
  *  H  Situação  (Recebido / Pago / A receber / A pagar)
- *  I  Valor  (negativo para Despesas)
- *  J  Data de cadastro (ignorada)
- *  K  Data de vencimento
- *  L  Data de pagamento
- *  M  Data de créd/déb  (efetivação bancária)
- *  N  Observações
- *  O  (vazia)
+ *  I  Valor  (entre parênteses = negativo, ex.: "(R$200,00)" = -200,00)   ⚠ cabeçalho em branco
+ *  J  Data (auxiliar — não utilizada)                                      ⚠ cabeçalho em branco
+ *  K  Data de cadastro (com hora, ex.: "7/24/22 16:02")                    ⚠ cabeçalho em branco
+ *  L  Data de vencimento                                                   ⚠ cabeçalho em branco
+ *  M  Data de pagamento  (vazia enquanto a situação for "A receber"/"A pagar")  ⚠ cabeçalho em branco
+ *  N  Data de créd/déb  (efetivação bancária)                              ⚠ cabeçalho em branco
+ *  O  Observações
  *  P  Plano Primário de Contas  (ex: "DESPESAS OPERACIONAIS BAPS")
  *  Q  Classificação de Contas   (ex: "DESPESAS COM SERVIÇOS PROFISSIONAIS")
  *  R  Sub Classificação de Contas (ex: "IMÓVEL - ALUGUEL")
@@ -147,6 +147,14 @@ export function findHeaderRowIndex(rows: string[][]): number {
  *  Y  Coluna3 (CPF/CNPJ — não armazenado)
  *  Z  Coluna32 (REALIZADO — sempre igual, ignorado)
  *  AA Evento  (ex: "OPERAÇÃO DE FUNDAÇÃO BAPS")
+ *
+ * As colunas A e I..N saem do export do Google Sheets com o texto do cabeçalho
+ * em branco (mesclagem/formatação da planilha original do e-Gestor) — por isso
+ * `buildColumnMap` não consegue achá-las pelo nome e cai no fallback de posição
+ * fixa logo abaixo. Os índices de M (data_pagamento) e L (data_vencimento) foram
+ * confirmados empiricamente: M é a ÚNICA coluna 100% vazia nas ~2.600 linhas com
+ * situação "A receber"/"A pagar" e 100% preenchida nas ~47.200 linhas já
+ * liquidadas — exatamente o comportamento esperado de uma data de pagamento.
  */
 export interface SheetColumnMap {
   cod?: number;
@@ -157,9 +165,9 @@ export interface SheetColumnMap {
   forma_pagamento?: number;        // col G
   situacao?: number;               // col H
   valor?: number;                  // col I
-  data_vencimento?: number;        // col K
-  data_pagamento?: number;         // col L
-  data_cred_deb?: number;          // col M
+  data_vencimento?: number;        // col L
+  data_pagamento?: number;         // col M
+  data_cred_deb?: number;          // col N
   plano_primario_contas?: number;  // col P — categoria principal enriquecida
   classificacao?: number;          // col Q
   sub_classificacao?: number;      // col R
@@ -255,6 +263,25 @@ export function buildColumnMap(headers: string[]): SheetColumnMap {
     }
   });
 
+  // ── Fallback por posição fixa ──────────────────────────────────────────
+  // O export do e-Gestor para esta planilha vem com o TEXTO do cabeçalho em
+  // branco para "Cód.", "Valor" e as colunas de data (mesclagem da planilha
+  // original) — então a detecção por nome acima não preenche esses campos.
+  // Sem isso, `colMap.cod`/`colMap.valor` ficam `undefined`, toda linha é
+  // descartada pelo filtro `if (!cod) continue`, e o painel mostra zerado.
+  // Posições confirmadas direto na planilha publicada (índice 0 = coluna A):
+  //   A=Cód., I=Valor, L=Data de vencimento, M=Data de pagamento, N=Data de créd/déb
+  const FALLBACK_POSICAO_FIXA: Partial<Record<keyof SheetColumnMap, number>> = {
+    cod: 0,
+    valor: 8,
+    data_vencimento: 11,
+    data_pagamento: 12,
+    data_cred_deb: 13,
+  };
+  for (const campo of Object.keys(FALLBACK_POSICAO_FIXA) as (keyof SheetColumnMap)[]) {
+    if (map[campo] === undefined) map[campo] = FALLBACK_POSICAO_FIXA[campo];
+  }
+
   return map;
 }
 
@@ -284,14 +311,36 @@ export function parseDateBR(value: string): string | null {
   return null;
 }
 
-/** Converte valor monetário brasileiro (1.234,56 ou 1234.56) para number. */
-export function parseValueBR(value: string): number {
+/**
+ * Converte valor monetário do e-Gestor (ex.: "R$ 1.234,56", "-1.234,56") para
+ * number — preservando o sinal. Também entende a notação contábil de negativo
+ * entre parênteses, ex.: "(R$200,00)" → -200.00.
+ *
+ * Sem isso, ~9.500 lançamentos de despesa "Pago" escritos como "(R$200,00)"
+ * viram NaN (parseFloat não entende parênteses) e o `|| 0` os zera silenciosamente
+ * — quase 1 em cada 5 despesas pagas somem dos totais.
+ */
+export function parseMoneyBR(value: string): number {
   if (!value?.trim()) return 0;
-  const cleaned = value
-    .trim()
+  let v = value.trim();
+
+  let negativo = false;
+  const entreParenteses = v.match(/^\((.+)\)$/);
+  if (entreParenteses) {
+    negativo = true;
+    v = entreParenteses[1].trim();
+  }
+
+  const cleaned = v
     .replace(/R\$\s?/, "")
     .replace(/\./g, "")  // remove separador de milhar
     .replace(",", ".");  // converte decimal
   const n = parseFloat(cleaned);
-  return isNaN(n) ? 0 : Math.abs(n);
+  if (isNaN(n)) return 0;
+  return negativo ? -Math.abs(n) : n;
+}
+
+/** Converte valor monetário brasileiro (1.234,56 ou 1234.56) para number — sempre positivo. */
+export function parseValueBR(value: string): number {
+  return Math.abs(parseMoneyBR(value));
 }

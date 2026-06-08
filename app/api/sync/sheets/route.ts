@@ -14,6 +14,7 @@ import {
   findHeaderRowIndex,
   buildColumnMap,
   parseDateBR,
+  parseMoneyBR,
 } from "@/lib/google-sheets";
 
 export const runtime = "nodejs";
@@ -166,11 +167,9 @@ export async function POST(_req: Request) {
       const cod = col(row, colMap.cod);
       if (!cod || cod.toLowerCase().includes("total")) continue;
 
-      // Valor bruto — negativo indica Despesa no e-Gestor
+      // Valor bruto — negativo indica Despesa no e-Gestor (inclui notação contábil "(R$ 1,00)")
       const rawValor = col(row, colMap.valor);
-      const valorRaw = parseFloat(
-        rawValor.replace(/R\$\s?/, "").replace(/\./g, "").replace(",", ".")
-      ) || 0;
+      const valorRaw = parseMoneyBR(rawValor);
 
       // Rec./Desp.: usa coluna T se existir, senão deriva do sinal
       const recDespCol = col(row, colMap.rec_desp);
