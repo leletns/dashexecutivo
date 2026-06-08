@@ -260,9 +260,25 @@ export async function GET(req: Request) {
       lancamentos.length > 0 &&
       totalEntradas === 0 && totalSaidas === 0 && aReceber === 0 && aPagar === 0
     ) {
-      avisoFonte = ano
-        ? `Existem ${lancamentos.length.toLocaleString("pt-BR")} lançamentos na fonte de dados, mas nenhum corresponde ao ano ${ano}. Tente "Todos" para ver o período completo.`
-        : `Existem ${lancamentos.length.toLocaleString("pt-BR")} lançamentos na fonte de dados, mas nenhum tem situação "Recebido/Pago" com data de pagamento já efetivada — por isso os totais aparecem zerados.`;
+      // Conta quantos lançamentos realmente caem no ano filtrado (por data de
+      // pagamento OU vencimento) — sem isso a mensagem podia dizer "nenhum
+      // corresponde ao ano X" mesmo quando existem lançamentos daquele ano que
+      // só não bateram com os outros filtros (situação/data já efetivada).
+      const noAno = ano
+        ? lancamentos.filter(
+            (r) =>
+              r.data_pagamento?.slice(0, 4) === ano ||
+              r.data_vencimento?.slice(0, 4) === ano
+          ).length
+        : lancamentos.length;
+
+      if (ano && noAno === 0) {
+        avisoFonte = `Existem ${lancamentos.length.toLocaleString("pt-BR")} lançamentos na fonte de dados, mas nenhum corresponde ao ano ${ano}. Tente "Todos" para ver o período completo.`;
+      } else if (ano) {
+        avisoFonte = `Existem ${noAno.toLocaleString("pt-BR")} lançamentos do ano ${ano} na fonte de dados, mas nenhum tem situação "Recebido/Pago" com data de pagamento já efetivada (até ${today}) nem "A receber/A pagar" com vencimento em ${ano} — por isso os totais aparecem zerados.`;
+      } else {
+        avisoFonte = `Existem ${lancamentos.length.toLocaleString("pt-BR")} lançamentos na fonte de dados, mas nenhum tem situação "Recebido/Pago" com data de pagamento já efetivada — por isso os totais aparecem zerados.`;
+      }
     }
 
     return NextResponse.json({

@@ -128,14 +128,21 @@ function useLancamentosFluxo(ano: string) {
   const [realtimeConnected, setRealtimeConnected] = React.useState(false);
   const [aviso, setAviso] = React.useState<string | null>(null);
 
+  // Evita que uma resposta antiga (ex.: do filtro de ano anterior) sobrescreva
+  // o estado depois que uma resposta mais nova já chegou — sem isso, trocar de
+  // ano rapidamente podia "prender" o painel nos totais/aviso do filtro anterior.
+  const requestSeqRef = React.useRef(0);
+
   // Fetch completo: fluxo mensal + por evento + totais computados no servidor
   // Totais calculados 100% via JS na API Route — não depende do RPC do Supabase
   const fetchData = React.useCallback(() => {
+    const seq = ++requestSeqRef.current;
     const url = `/api/lancamentos/fluxo${ano ? `?ano=${encodeURIComponent(ano)}` : ""}`;
     fetch(url, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
         if (!d) return;
+        if (seq !== requestSeqRef.current) return; // resposta obsoleta — ignora
         setFluxoSupabase((d.fluxo_mensal ?? []) as FluxoRow[]);
         setPorEvento((d.por_evento ?? []) as EventoRow[]);
         if (d.totais) setTotaisSupabase(d.totais as FluxoTotais);
