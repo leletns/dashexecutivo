@@ -180,20 +180,124 @@ export async function getLancamentosFromSupabase(): Promise<LancamentoRow[]> {
   })) as LancamentoRow[];
 }
 
-/** Lê a planilha com fallback automático para o Supabase. Retorna a fonte usada. */
+// ---------------------------------------------------------------------------
+// Lançamentos editados/criados pelo financeiro direto no painel
+// (tabela portal_lancamentos_overrides — ver supabase/schema.sql)
+// ---------------------------------------------------------------------------
+
+export type LancamentoOverride = Partial<Omit<LancamentoRow, "cod">> & {
+  cod: string;
+  manual?: boolean;
+  deleted?: boolean;
+};
+
+/** Busca as edições/lançamentos manuais salvos pelo financeiro. Retorna [] se a tabela não existir/configurada. */
+export async function getLancamentosOverrides(): Promise<LancamentoOverride[]> {
+  const sb = createSupabaseAdmin();
+  if (!sb) return [];
+  const { data, error } = await sb.from("portal_lancamentos_overrides").select("*");
+  if (error || !data) return [];
+  return data as LancamentoOverride[];
+}
+
+/** Aplica uma edição sobre um lançamento da planilha — campos não preenchidos mantêm o original. */
+function applyOverride(base: LancamentoRow, ov: LancamentoOverride): LancamentoRow {
+  return {
+    cod: base.cod,
+    descricao: ov.descricao ?? base.descricao,
+    nome: ov.nome ?? base.nome,
+    conta_caixa: ov.conta_caixa ?? base.conta_caixa,
+    plano_contas: ov.plano_contas ?? base.plano_contas,
+    plano_primario_contas: ov.plano_primario_contas ?? base.plano_primario_contas,
+    classificacao: ov.classificacao ?? base.classificacao,
+    sub_classificacao: ov.sub_classificacao ?? base.sub_classificacao,
+    forma_pagamento: ov.forma_pagamento ?? base.forma_pagamento,
+    situacao: ov.situacao ?? base.situacao,
+    ent_saida: ov.ent_saida ?? base.ent_saida,
+    rec_desp: ov.rec_desp ?? base.rec_desp,
+    tratativa: ov.tratativa ?? base.tratativa,
+    evento: ov.evento ?? base.evento,
+    valor: ov.valor ?? base.valor,
+    data_vencimento: ov.data_vencimento ?? base.data_vencimento,
+    data_pagamento: ov.data_pagamento ?? base.data_pagamento,
+    data_cred_deb: ov.data_cred_deb ?? base.data_cred_deb,
+  };
+}
+
+/** Converte um lançamento 100% manual (sem linha correspondente na planilha) em LancamentoRow. */
+function overrideToRow(ov: LancamentoOverride): LancamentoRow {
+  return {
+    cod: ov.cod,
+    descricao: ov.descricao ?? null,
+    nome: ov.nome ?? null,
+    conta_caixa: ov.conta_caixa ?? null,
+    plano_contas: ov.plano_contas ?? null,
+    plano_primario_contas: ov.plano_primario_contas ?? null,
+    classificacao: ov.classificacao ?? null,
+    sub_classificacao: ov.sub_classificacao ?? null,
+    forma_pagamento: ov.forma_pagamento ?? null,
+    situacao: ov.situacao ?? null,
+    ent_saida: ov.ent_saida ?? null,
+    rec_desp: ov.rec_desp ?? null,
+    tratativa: ov.tratativa ?? null,
+    evento: ov.evento ?? null,
+    valor: ov.valor ?? 0,
+    data_vencimento: ov.data_vencimento ?? null,
+    data_pagamento: ov.data_pagamento ?? null,
+    data_cred_deb: ov.data_cred_deb ?? null,
+  };
+}
+
+/** Mescla os lançamentos da fonte principal com edições/lançamentos manuais do financeiro. */
+function mergeOverrides(rows: LancamentoRow[], overrides: LancamentoOverride[]): LancamentoRow[] {
+  if (overrides.length === 0) return rows;
+
+  const overridesByCod = new Map(overrides.map((o) => [o.cod, o]));
+  const merged: LancamentoRow[] = [];
+
+  for (const row of rows) {
+    const ov = row.cod ? overridesByCod.get(row.cod) : undefined;
+    if (ov) {
+      overridesByCod.delete(row.cod!);
+      if (ov.deleted) continue;
+      merged.push(applyOverride(row, ov));
+    } else {
+      merged.push(row);
+    }
+  }
+
+  // Sobras = lançamentos manuais (sem linha correspondente na planilha)
+  for (const ov of overridesByCod.values()) {
+    if (ov.deleted) continue;
+    merged.push(overrideToRow(ov));
+  }
+
+  return merged;
+}
+
+/** Lê a planilha com fallback automático para o Supabase, mesclando as edições do financeiro. */
 export async function getLancamentos(): Promise<{ rows: LancamentoRow[]; fonte: "planilha" | "supabase"; aviso: string | null }> {
+  let result: { rows: LancamentoRow[]; fonte: "planilha" | "supabase"; aviso: string | null };
+
   try {
     const rows = await getLancamentosFromSheet();
-    if (rows) return { rows, fonte: "planilha", aviso: null };
+    if (rows) {
+      result = { rows, fonte: "planilha", aviso: null };
+    } else {
+      const fallback = await getLancamentosFromSupabase();
+      result = { rows: fallback, fonte: "supabase", aviso: null };
+    }
   } catch (err: any) {
-    const rows = await getLancamentosFromSupabase();
-    return {
-      rows,
+    const fallback = await getLancamentosFromSupabase();
+    result = {
+      rows: fallback,
       fonte: "supabase",
       aviso: `A planilha não pôde ser usada agora: ${err?.message ?? "erro desconhecido"} — mostrando os últimos dados salvos.`,
     };
   }
 
-  const rows = await getLancamentosFromSupabase();
-  return { rows, fonte: "supabase", aviso: null };
+  const overrides = await getLancamentosOverrides();
+  if (overrides.length === 0) return result;
+
+  return { ...result, rows: mergeOverrides(result.rows, overrides) };
 }

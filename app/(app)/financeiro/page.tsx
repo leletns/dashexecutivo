@@ -31,13 +31,14 @@ import {
   Wallet,
   Receipt,
   Activity,
-  Wifi,
-  WifiOff,
   Plus,
   PencilLine,
   CircleDot,
   X,
   RefreshCw,
+  Trash2,
+  Loader2,
+  Save,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { PortalFinanceiroTabs } from "@/components/financeiro/portal-financeiro-tabs";
+import { usePortalSession } from "@/components/layout/portal-sector-context";
 import { useAppState, metricasEdicao, type FinanceLancamento } from "@/lib/app-state";
 import { useRegisterPageState } from "@/lib/page-state";
 import { cn, formatCurrencyBRL } from "@/lib/utils";
@@ -207,6 +209,13 @@ function useLancamentosFluxo(ano: string) {
           fetchData(); // re-busca quando o banco muda
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "portal_lancamentos_overrides" },
+        () => {
+          fetchData(); // re-busca quando o financeiro edita/adiciona um lançamento
+        },
+      )
       .subscribe((status) => {
         setRealtimeConnected(status === "SUBSCRIBED");
       });
@@ -352,35 +361,6 @@ function SkeletonKpi() {
 }
 
 // ---------------------------------------------------------------------------
-// Live indicator
-// ---------------------------------------------------------------------------
-
-function LiveDot({ connected }: { connected: boolean }) {
-  return (
-    <span className={cn("inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors",
-      connected
-        ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10"
-        : "text-muted-foreground bg-foreground/[0.04]"
-    )}>
-      {connected ? (
-        <>
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          </span>
-          Ao vivo
-        </>
-      ) : (
-        <>
-          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
-          Offline
-        </>
-      )}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Year selector
 // ---------------------------------------------------------------------------
 
@@ -415,7 +395,7 @@ export default function FinanceiroPage() {
   const [anoFiltro, setAnoFiltro] = React.useState<string>(() => todayBrasilia().slice(0, 4));
   const [activeTab, setActiveTab] = React.useState("overview");
 
-  const { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt, realtimeConnected, aviso } = useLancamentosFluxo(anoFiltro);
+  const { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt } = useLancamentosFluxo(anoFiltro);
   const totalCount = useTotalCount(anoFiltro);
 
   const margens = React.useMemo(
@@ -486,21 +466,9 @@ export default function FinanceiroPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <LiveDot connected={realtimeConnected} />
           <AnoSelector value={anoFiltro} onChange={setAnoFiltro} />
         </div>
       </motion.div>
-
-      {aviso && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-4 py-2.5 text-xs text-amber-800 dark:text-amber-300"
-        >
-          <span className="font-medium">Atenção: </span>
-          {aviso}
-        </motion.div>
-      )}
 
       <KpiGrid
         totals={displayTotals}
@@ -1493,6 +1461,229 @@ function toSelectOptions(values: string[]): SelectOption[] {
   return [TODAS_OPCAO, ...values.map((v) => ({ value: v, label: v }))];
 }
 
+const SITUACAO_EDIT_OPTIONS: SelectOption[] = [
+  { value: "A receber", label: "A receber" },
+  { value: "Recebido", label: "Recebido" },
+  { value: "A pagar", label: "A pagar" },
+  { value: "Pago", label: "Pago" },
+];
+
+const REC_DESP_EDIT_OPTIONS: SelectOption[] = [
+  { value: "Receitas", label: "Receita" },
+  { value: "Despesas", label: "Despesa" },
+];
+
+interface EditFormState {
+  cod: string | null; // null = lançamento novo
+  descricao: string;
+  nome: string;
+  conta_caixa: string;
+  classificacao: string;
+  sub_classificacao: string;
+  evento: string;
+  forma_pagamento: string;
+  situacao: string;
+  rec_desp: string;
+  valor: string;
+  data_vencimento: string;
+  data_pagamento: string;
+}
+
+const NOVO_LANCAMENTO_FORM: EditFormState = {
+  cod: null,
+  descricao: "",
+  nome: "",
+  conta_caixa: "",
+  classificacao: "",
+  sub_classificacao: "",
+  evento: "",
+  forma_pagamento: "",
+  situacao: "A pagar",
+  rec_desp: "Despesas",
+  valor: "",
+  data_vencimento: "",
+  data_pagamento: "",
+};
+
+function editFormFromRow(row: LedgerRow): EditFormState {
+  return {
+    cod: row.cod,
+    descricao: row.descricao ?? "",
+    nome: row.nome ?? "",
+    conta_caixa: row.conta_caixa ?? "",
+    classificacao: row.classificacao ?? "",
+    sub_classificacao: row.sub_classificacao ?? "",
+    evento: row.evento ?? "",
+    forma_pagamento: row.forma_pagamento ?? "",
+    situacao: row.situacao ?? "",
+    rec_desp: row.rec_desp === "Receitas" ? "Receitas" : "Despesas",
+    valor: row.valor ? String(row.valor) : "",
+    data_vencimento: row.data_vencimento ?? "",
+    data_pagamento: row.data_pagamento ?? "",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Formulário de edição/novo lançamento
+// ---------------------------------------------------------------------------
+
+function LancamentoEditForm({
+  value,
+  opcoes,
+  saving,
+  error,
+  onChange,
+  onSave,
+  onCancel,
+  onDelete,
+}: {
+  value: EditFormState;
+  opcoes: LedgerOpcoes;
+  saving: boolean;
+  error: string | null;
+  onChange: (v: EditFormState) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onDelete?: () => void;
+}) {
+  const isNew = value.cod === null;
+  const set = <K extends keyof EditFormState>(key: K, v: EditFormState[K]) =>
+    onChange({ ...value, [key]: v });
+
+  return (
+    <Card className="p-4 space-y-3 border-primary/30">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">
+          {isNew ? "Novo lançamento" : `Editar lançamento · Cód. ${value.cod}`}
+        </h3>
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onCancel}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="space-y-1 lg:col-span-2">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Descrição</label>
+          <Input value={value.descricao} onChange={(e) => set("descricao", e.target.value)} placeholder="Ex.: Pagamento fornecedor X" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Nome / Razão social</label>
+          <Input value={value.nome} onChange={(e) => set("nome", e.target.value)} />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Tipo</label>
+          <Select value={value.rec_desp} onValueChange={(v) => set("rec_desp", v)} options={REC_DESP_EDIT_OPTIONS} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Situação</label>
+          <Select value={value.situacao} onValueChange={(v) => set("situacao", v)} options={SITUACAO_EDIT_OPTIONS} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Valor (R$)</label>
+          <Input
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            value={value.valor}
+            onChange={(e) => set("valor", e.target.value)}
+            placeholder="0,00"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Vencimento</label>
+          <Input type="date" value={value.data_vencimento} onChange={(e) => set("data_vencimento", e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Pagamento / Recebimento</label>
+          <Input type="date" value={value.data_pagamento} onChange={(e) => set("data_pagamento", e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Forma de pagamento</label>
+          <Input
+            list="formas-pagamento-opcoes"
+            value={value.forma_pagamento}
+            onChange={(e) => set("forma_pagamento", e.target.value)}
+            placeholder="PIX, boleto, dinheiro…"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Conta / Caixa</label>
+          <Input
+            list="contas-opcoes"
+            value={value.conta_caixa}
+            onChange={(e) => set("conta_caixa", e.target.value)}
+            placeholder="Ex.: VIACREDI"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Categoria</label>
+          <Input
+            list="categorias-opcoes"
+            value={value.classificacao}
+            onChange={(e) => set("classificacao", e.target.value)}
+            placeholder="Classificação de contas"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Sub-categoria</label>
+          <Input
+            list="sub-categorias-opcoes"
+            value={value.sub_classificacao}
+            onChange={(e) => set("sub_classificacao", e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-1 lg:col-span-3">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Evento</label>
+          <Input list="eventos-opcoes" value={value.evento} onChange={(e) => set("evento", e.target.value)} placeholder="Ex.: 5º Congresso BAPS" />
+        </div>
+      </div>
+
+      {/* Datalists para autocomplete a partir das opções já existentes */}
+      <datalist id="contas-opcoes">{opcoes.contas.map((v) => <option key={v} value={v} />)}</datalist>
+      <datalist id="categorias-opcoes">{opcoes.categorias.map((v) => <option key={v} value={v} />)}</datalist>
+      <datalist id="sub-categorias-opcoes">{opcoes.sub_categorias.map((v) => <option key={v} value={v} />)}</datalist>
+      <datalist id="eventos-opcoes">{opcoes.eventos.map((v) => <option key={v} value={v} />)}</datalist>
+      <datalist id="formas-pagamento-opcoes">
+        <option value="PIX" />
+        <option value="Boleto" />
+        <option value="Dinheiro" />
+        <option value="Cartão de crédito" />
+        <option value="Cartão de débito" />
+        <option value="Transferência" />
+      </datalist>
+
+      {error && (
+        <div className="rounded-md border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
+          {error}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <div>
+          {!isNew && onDelete && (
+            <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs text-rose-600 dark:text-rose-400" onClick={onDelete} disabled={saving}>
+              <Trash2 className="h-3.5 w-3.5" /> Remover
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={onCancel} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={onSave} disabled={saving}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Salvar
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function LancamentosLedgerTab({ ano }: { ano: string }) {
   const [page, setPage] = React.useState(1);
   const [searchInput, setSearchInput] = React.useState("");
@@ -1510,8 +1701,14 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
   const [totais, setTotais] = React.useState({ receitas: 0, despesas: 0 });
   const [opcoes, setOpcoes] = React.useState<LedgerOpcoes>(EMPTY_OPCOES);
   const [loading, setLoading] = React.useState(false);
-  const [aviso, setAviso] = React.useState<string | null>(null);
   const limit = 50;
+
+  const { sector } = usePortalSession();
+  const canEdit = sector === "financeiro" || sector === "executivo";
+  const [editing, setEditing] = React.useState<EditFormState | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [quickSavingCod, setQuickSavingCod] = React.useState<string | null>(null);
 
   // Debounce da busca
   React.useEffect(() => {
@@ -1545,7 +1742,6 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
         setPages(d.pages ?? 0);
         setTotais(d.totais ?? { receitas: 0, despesas: 0 });
         setOpcoes(d.opcoes ?? EMPTY_OPCOES);
-        setAviso(d.aviso ?? null);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -1554,6 +1750,99 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
   React.useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const notifyUpdated = () => {
+    fetchData();
+    window.dispatchEvent(new Event("portal:data-updated"));
+  };
+
+  const saveEditing = async () => {
+    if (!editing) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const valorNum = editing.valor.trim() === "" ? null : Number(editing.valor.replace(",", "."));
+      if (valorNum !== null && Number.isNaN(valorNum)) {
+        setSaveError("Valor inválido.");
+        setSaving(false);
+        return;
+      }
+      const fields: Record<string, unknown> = {
+        descricao: editing.descricao.trim() || "",
+        nome: editing.nome.trim() || "",
+        conta_caixa: editing.conta_caixa.trim() || "",
+        classificacao: editing.classificacao.trim() || "",
+        sub_classificacao: editing.sub_classificacao.trim() || "",
+        evento: editing.evento.trim() || "",
+        forma_pagamento: editing.forma_pagamento.trim() || "",
+        situacao: editing.situacao || "",
+        rec_desp: editing.rec_desp || "",
+        valor: valorNum,
+        data_vencimento: editing.data_vencimento || "",
+        data_pagamento: editing.data_pagamento || "",
+      };
+
+      const res = await fetch("/api/lancamentos/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cod: editing.cod ?? undefined, manual: editing.cod === null, fields }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSaveError(json?.error ?? "Não foi possível salvar.");
+        setSaving(false);
+        return;
+      }
+      setEditing(null);
+      notifyUpdated();
+    } catch (err: any) {
+      setSaveError(err?.message ?? "Erro ao salvar.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const quickMarkPaid = async (row: LedgerRow) => {
+    if (!row.cod) return;
+    setQuickSavingCod(row.cod);
+    try {
+      const rd = row.rec_desp === "Receitas" ? "Receitas" : "Despesas";
+      const res = await fetch("/api/lancamentos/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cod: row.cod,
+          fields: {
+            situacao: rd === "Receitas" ? "Recebido" : "Pago",
+            data_pagamento: todayBrasilia(),
+          },
+        }),
+      });
+      if (res.ok) notifyUpdated();
+    } catch {
+      // silencioso — usuário pode tentar novamente
+    } finally {
+      setQuickSavingCod(null);
+    }
+  };
+
+  const deleteEntry = async (cod: string | null) => {
+    if (!cod) return;
+    if (!window.confirm("Remover este lançamento da visão do painel? Ele deixará de aparecer aqui (mas continua na planilha original).")) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/lancamentos/edit?cod=${encodeURIComponent(cod)}`, { method: "DELETE" });
+      if (res.ok) {
+        setEditing(null);
+        notifyUpdated();
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setSaveError(json?.error ?? "Não foi possível remover.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const temFiltros = !!(search || conta || classificacao || subClassificacao || evento || situacao || recDesp);
 
@@ -1594,12 +1883,6 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
           </div>
         </Card>
       </div>
-
-      {aviso && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-          {aviso}
-        </div>
-      )}
 
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-2">
@@ -1653,15 +1936,48 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
             <X className="h-3 w-3" /> Limpar filtros
           </Button>
         )}
+        {canEdit && (
+          <Button
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => { setSaveError(null); setEditing(NOVO_LANCAMENTO_FORM); }}
+          >
+            <Plus className="h-3.5 w-3.5" /> Novo lançamento
+          </Button>
+        )}
         <span className="text-[11px] text-muted-foreground ml-auto hidden sm:block">
           {total.toLocaleString("pt-BR")} registros{ano ? ` · ${ano}` : ""}
         </span>
       </div>
 
+      {/* Formulário de edição/novo lançamento */}
+      <AnimatePresence mode="wait">
+        {editing && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <LancamentoEditForm
+              value={editing}
+              opcoes={opcoes}
+              saving={saving}
+              error={saveError}
+              onChange={setEditing}
+              onSave={saveEditing}
+              onCancel={() => { setEditing(null); setSaveError(null); }}
+              onDelete={editing.cod !== null ? () => deleteEntry(editing.cod) : undefined}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Tabela */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] text-sm">
+          <table className={cn("w-full text-sm", canEdit ? "min-w-[1040px]" : "min-w-[920px]")}>
             <thead>
               <tr className="bg-foreground/[0.02] dark:bg-white/[0.02] border-b border-border/50">
                 {[
@@ -1674,6 +1990,7 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
                   ["left", "Evento"],
                   ["left", "Forma pagto."],
                   ["right", "Valor"],
+                  ...(canEdit ? [["right", "Ações"]] : []),
                 ].map(([align, label]) => (
                   <th
                     key={label}
@@ -1689,11 +2006,11 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
             </thead>
             <tbody>
               {loading && Array.from({ length: 10 }).map((_, i) => (
-                <SkeletonRow key={i} cols={9} />
+                <SkeletonRow key={i} cols={canEdit ? 10 : 9} />
               ))}
               {!loading && data.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center text-xs text-muted-foreground py-12">
+                  <td colSpan={canEdit ? 10 : 9} className="text-center text-xs text-muted-foreground py-12">
                     <div className="space-y-2">
                       <div className="text-2xl opacity-20">🔍</div>
                       <div>Nenhum lançamento encontrado{search ? ` para "${search}"` : ""}.</div>
@@ -1734,10 +2051,13 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
                         )}
                       </td>
                       <td className="px-4 py-3 max-w-[240px]">
-                        <div className="text-sm font-medium truncate">
+                        <div className="text-sm font-medium truncate flex items-center gap-1.5">
                           {l.nome || l.descricao || "—"}
+                          {l.cod?.startsWith("MANUAL-") && (
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-normal">Manual</Badge>
+                          )}
                         </div>
-                        {l.cod && (
+                        {l.cod && !l.cod.startsWith("MANUAL-") && (
                           <div className="text-[10px] text-muted-foreground truncate mt-0.5">
                             Cód. {l.cod}
                           </div>
@@ -1769,6 +2089,46 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
                         {rd === "Receitas" ? "+" : "−"}
                         {formatCurrencyBRL(Number(l.valor) || 0).replace("R$", "R$ ")}
                       </td>
+                      {canEdit && (
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            {(l.situacao === "A receber" || l.situacao === "A pagar") && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-emerald-600 dark:text-emerald-400"
+                                title={rd === "Receitas" ? "Marcar como recebido hoje" : "Marcar como pago hoje"}
+                                disabled={quickSavingCod === l.cod}
+                                onClick={() => quickMarkPaid(l)}
+                              >
+                                {quickSavingCod === l.cod ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            )}
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              title="Editar lançamento"
+                              onClick={() => { setSaveError(null); setEditing(editFormFromRow(l)); }}
+                            >
+                              <PencilLine className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-rose-600 dark:text-rose-400"
+                              title="Remover da visão"
+                              onClick={() => deleteEntry(l.cod)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      )}
                     </motion.tr>
                   );
                 })}
