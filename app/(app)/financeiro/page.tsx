@@ -8,6 +8,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -103,6 +104,13 @@ interface EventoRow {
   resultado: number;
 }
 
+type CategoriaRow = EventoRow;
+
+interface ContaRow {
+  nome: string;
+  saldo: number;
+}
+
 interface LancSupabase {
   id: string;
   nome_razao_social?: string;
@@ -123,6 +131,8 @@ interface LancSupabase {
 function useLancamentosFluxo(ano: string) {
   const [fluxoSupabase, setFluxoSupabase] = React.useState<FluxoRow[]>([]);
   const [porEvento, setPorEvento] = React.useState<EventoRow[]>([]);
+  const [porConta, setPorConta] = React.useState<ContaRow[]>([]);
+  const [porCategoria, setPorCategoria] = React.useState<CategoriaRow[]>([]);
   const [totaisSupabase, setTotaisSupabase] = React.useState<FluxoTotais | null>(null);
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = React.useState(false);
@@ -145,6 +155,8 @@ function useLancamentosFluxo(ano: string) {
         if (seq !== requestSeqRef.current) return; // resposta obsoleta — ignora
         setFluxoSupabase((d.fluxo_mensal ?? []) as FluxoRow[]);
         setPorEvento((d.por_evento ?? []) as EventoRow[]);
+        setPorConta((d.por_conta ?? []) as ContaRow[]);
+        setPorCategoria((d.por_categoria ?? []) as CategoriaRow[]);
         if (d.totais) setTotaisSupabase(d.totais as FluxoTotais);
         setAviso(d.aviso ?? null);
         setUpdatedAt(new Date().toISOString());
@@ -182,7 +194,7 @@ function useLancamentosFluxo(ano: string) {
     };
   }, [fetchData]);
 
-  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected, aviso };
+  return { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt, realtimeConnected, aviso };
 }
 
 function useTotalCount(ano: string) {
@@ -377,7 +389,7 @@ export default function FinanceiroPage() {
   const [anoFiltro, setAnoFiltro] = React.useState<string>(() => todayBrasilia().slice(0, 4));
   const [activeTab, setActiveTab] = React.useState("overview");
 
-  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected, aviso } = useLancamentosFluxo(anoFiltro);
+  const { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt, realtimeConnected, aviso } = useLancamentosFluxo(anoFiltro);
   const totalCount = useTotalCount(anoFiltro);
 
   const margens = React.useMemo(
@@ -476,6 +488,7 @@ export default function FinanceiroPage() {
         <TabsList>
           <TabsTrigger value="overview">Resumo</TabsTrigger>
           <TabsTrigger value="fluxo">Mês a mês</TabsTrigger>
+          <TabsTrigger value="contas">Contas</TabsTrigger>
           <TabsTrigger value="receber">A receber</TabsTrigger>
           <TabsTrigger value="pagar">A pagar</TabsTrigger>
           <TabsTrigger value="margem">Resultado por evento</TabsTrigger>
@@ -504,6 +517,10 @@ export default function FinanceiroPage() {
                 fluxoMensal={fluxoMensal}
                 totals={displayTotals}
               />
+            </TabsContent>
+
+            <TabsContent value="contas" className="mt-2">
+              <ContasTab porConta={porConta} porCategoria={porCategoria} ano={anoFiltro} />
             </TabsContent>
 
             <TabsContent value="receber" className="mt-2">
@@ -1016,6 +1033,189 @@ function FluxoTab({
             </tbody>
           </table>
         </div>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Saldo por conta + categorias
+// ---------------------------------------------------------------------------
+
+function ContasTab({
+  porConta,
+  porCategoria,
+  ano,
+}: {
+  porConta: ContaRow[];
+  porCategoria: CategoriaRow[];
+  ano: string;
+}) {
+  const totalSaldo = porConta.reduce((s, c) => s + c.saldo, 0);
+  const contasComSaldo = porConta.filter((c) => Math.abs(c.saldo) >= 0.01);
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-5">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+          <div>
+            <div className="text-sm font-semibold tracking-tight">Saldo por conta</div>
+            <div className="text-[11px] text-muted-foreground">
+              Posição atual de cada conta/caixa · soma = {formatCurrencyBRL(totalSaldo)}
+            </div>
+          </div>
+        </div>
+        {contasComSaldo.length === 0 ? (
+          <EmptyChart message="Sem saldo em contas no momento." height="h-[200px]" />
+        ) : (
+          <div style={{ height: Math.max(220, contasComSaldo.length * 34) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={contasComSaldo} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-border/40" />
+                <XAxis
+                  type="number"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => fmtCompact(Number(v))}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="nome"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  width={180}
+                  tickFormatter={(v) => (String(v).length > 26 ? `${String(v).slice(0, 24)}…` : String(v))}
+                />
+                <ReferenceLine x={0} stroke="hsl(var(--border))" />
+                <Tooltip content={<MoneyTip />} cursor={{ fill: "hsl(var(--muted) / 0.2)" }} />
+                <Bar dataKey="saldo" name="Saldo" radius={[0, 6, 6, 0]}>
+                  {contasComSaldo.map((c, i) => (
+                    <Cell key={i} fill={c.saldo >= 0 ? "rgb(16,185,129)" : "rgb(244,63,94)"} fillOpacity={0.85} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </Card>
+
+      <Card className="overflow-hidden">
+        <div className="px-5 py-4 border-b border-border/50">
+          <div className="text-sm font-semibold tracking-tight">Detalhamento por conta</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">
+            {porConta.length} contas · saldo realizado até hoje (independe do ano selecionado)
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] text-sm">
+            <thead>
+              <tr className="bg-foreground/[0.02] dark:bg-white/[0.02] border-b border-border/50">
+                <th className="px-4 py-2.5 text-left text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                  Conta
+                </th>
+                <th className="px-4 py-2.5 text-right text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                  Saldo
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {porConta.map((c, idx) => (
+                <motion.tr
+                  key={c.nome}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: idx * 0.02 }}
+                  className="border-t border-border/40 hover:bg-foreground/[0.015] dark:hover:bg-white/[0.015] transition-colors"
+                >
+                  <td className="px-4 py-2.5 text-sm">{c.nome}</td>
+                  <td
+                    className={cn(
+                      "px-4 py-2.5 text-right tabular-nums font-medium",
+                      c.saldo >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+                    )}
+                  >
+                    {formatCurrencyBRL(c.saldo)}
+                  </td>
+                </motion.tr>
+              ))}
+              {porConta.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="text-center text-xs text-muted-foreground py-12">
+                    Nenhuma conta encontrada nas movimentações.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {porConta.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-border font-semibold">
+                  <td className="px-4 py-2.5 text-sm">Total</td>
+                  <td
+                    className={cn(
+                      "px-4 py-2.5 text-right tabular-nums",
+                      totalSaldo >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+                    )}
+                  >
+                    {formatCurrencyBRL(totalSaldo)}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+          <div>
+            <div className="text-sm font-semibold tracking-tight">
+              Receitas e despesas por categoria{ano ? ` — ${ano}` : ""}
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              Classificação de contas dos lançamentos · top {porCategoria.length}
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+            <Legend dot="bg-emerald-500" label="Receita" />
+            <Legend dot="bg-rose-500" label="Despesa" />
+          </div>
+        </div>
+        {porCategoria.length === 0 ? (
+          <EmptyChart message="Sem lançamentos categorizados no período." height="h-[200px]" />
+        ) : (
+          <div style={{ height: Math.max(260, porCategoria.length * 36) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={porCategoria} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 0 }} barGap={3}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-border/40" />
+                <XAxis
+                  type="number"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => fmtCompact(Number(v))}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="nome"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  width={220}
+                  tickFormatter={(v) => (String(v).length > 32 ? `${String(v).slice(0, 30)}…` : String(v))}
+                />
+                <Tooltip content={<MoneyTip />} cursor={{ fill: "hsl(var(--muted) / 0.2)" }} />
+                <Bar dataKey="Receita" fill="rgb(16,185,129)" radius={[0, 6, 6, 0]} fillOpacity={0.9} />
+                <Bar dataKey="Despesa" fill="rgb(244,63,94)" radius={[0, 6, 6, 0]} fillOpacity={0.75} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </Card>
     </div>
   );

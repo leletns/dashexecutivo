@@ -41,6 +41,8 @@ type Lancamento = {
   data_pagamento: string | null;
   data_vencimento: string | null;
   evento: string | null;
+  conta_caixa: string | null;
+  classificacao: string | null;
 };
 
 let sheetCache: { at: number; rows: Lancamento[] } | null = null;
@@ -125,6 +127,8 @@ async function getLancamentosFromSheet(): Promise<Lancamento[] | null> {
       data_pagamento:  parseDateBR(col(row, colMap.data_pagamento)),
       data_vencimento: parseDateBR(col(row, colMap.data_vencimento)),
       evento:          col(row, colMap.evento) || null,
+      conta_caixa:     col(row, colMap.conta_caixa) || null,
+      classificacao:   col(row, colMap.classificacao) || null,
     });
   }
 
@@ -147,7 +151,7 @@ async function getLancamentosFromSupabase(
 ): Promise<Lancamento[]> {
   const { data } = await sb
     .from("portal_lancamentos")
-    .select("rec_desp, situacao, valor, data_pagamento, data_vencimento, evento");
+    .select("rec_desp, situacao, valor, data_pagamento, data_vencimento, evento, conta_caixa, classificacao");
   return (data ?? []) as Lancamento[];
 }
 
@@ -254,6 +258,49 @@ export async function GET(req: Request) {
       .sort((a, b) => b.Receita - a.Receita)
       .slice(0, 12);
 
+    // ── 4. Saldo por conta (caixa/banco) ──────────────────────────────────────
+    // Saldo atual de cada conta — soma de tudo que já foi recebido/pago até hoje,
+    // independente do filtro de ano (é o "extrato" de cada conta neste momento).
+    const contaMap = new Map<string, number>();
+    for (const row of lancamentos) {
+      if (!row.conta_caixa) continue;
+      const sit = (row.situacao ?? "").toLowerCase().trim();
+      if (sit !== "recebido" && sit !== "pago") continue;
+      if (!row.data_pagamento || row.data_pagamento > today) continue;
+
+      const rd  = (row.rec_desp ?? "").toLowerCase().trim();
+      const val = Number(row.valor) || 0;
+      const sinal = rd === "receitas" ? val : -val;
+      contaMap.set(row.conta_caixa, (contaMap.get(row.conta_caixa) ?? 0) + sinal);
+    }
+
+    const por_conta = Array.from(contaMap.entries())
+      .map(([nome, saldo]) => ({ nome, saldo }))
+      .sort((a, b) => Math.abs(b.saldo) - Math.abs(a.saldo));
+
+    // ── 5. Por categoria (Classificação de Contas) ────────────────────────────
+    const categoriaMap = new Map<string, { receita: number; despesa: number }>();
+    for (const row of lancamentos) {
+      if (!row.classificacao) continue;
+      if (ano && (!row.data_vencimento || row.data_vencimento.slice(0, 4) !== ano)) continue;
+
+      const cur = categoriaMap.get(row.classificacao) ?? { receita: 0, despesa: 0 };
+      const rd  = (row.rec_desp ?? "").toLowerCase().trim();
+      if (rd === "receitas") cur.receita += Number(row.valor) || 0;
+      else cur.despesa += Number(row.valor) || 0;
+      categoriaMap.set(row.classificacao, cur);
+    }
+
+    const por_categoria = Array.from(categoriaMap.entries())
+      .map(([nome, { receita, despesa }]) => ({
+        nome,
+        Receita: receita,
+        Despesa: despesa,
+        resultado: receita - despesa,
+      }))
+      .sort((a, b) => (b.Receita + b.Despesa) - (a.Receita + a.Despesa))
+      .slice(0, 12);
+
     // ── Diagnóstico: dados existem mas tudo deu zero (provável filtro/ano sem match) ─
     if (
       !avisoFonte &&
@@ -286,6 +333,8 @@ export async function GET(req: Request) {
       aviso: avisoFonte,
       fluxo_mensal,
       por_evento,
+      por_conta,
+      por_categoria,
       totais: {
         total_receitas_pagas: totalEntradas,
         total_despesas_pagas: totalSaidas,
