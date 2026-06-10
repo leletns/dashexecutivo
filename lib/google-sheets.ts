@@ -293,17 +293,24 @@ export function buildColumnMap(headers: string[]): SheetColumnMap {
  * Só invertemos para d/m quando o 1º número não pode ser mês (>12) — ex.: "25/3/2026".
  * Aceita também hora opcional no fim (ignorada), pois colunas como "Data de cadastro"
  * vêm como "3/25/2026 8:38".
+ *
+ * ANO COM 2 DÍGITOS: ao ler o CSV exportado, a biblioteca `xlsx` reconhece essas
+ * datas como células de data e — com `raw:false` — as reformata para "m/d/yy"
+ * (ex.: "3/1/2022" vira "3/1/22"). Sem aceitar esse formato, NENHUMA data de
+ * pagamento/vencimento batia com `\d{4}` e os totais do painel ficavam sempre
+ * zerados. Pivot: 00-79 → 2000-2079, 80-99 → 1980-1999.
  */
 export function parseDateBR(value: string): string | null {
   if (!value?.trim()) return null;
   const v = value.trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
 
-  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
   if (m) {
     let mo = parseInt(m[1], 10);
     let d  = parseInt(m[2], 10);
-    const y = parseInt(m[3], 10);
+    let y  = parseInt(m[3], 10);
+    if (m[3].length === 2) y += y <= 79 ? 2000 : 1900;
     if (mo > 12 && d <= 12) { [d, mo] = [mo, d]; }
     if (mo > 12 || mo < 1 || d > 31 || d < 1) return null;
     return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;

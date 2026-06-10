@@ -8,6 +8,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -30,13 +31,14 @@ import {
   Wallet,
   Receipt,
   Activity,
-  Wifi,
-  WifiOff,
   Plus,
   PencilLine,
   CircleDot,
   X,
   RefreshCw,
+  Trash2,
+  Loader2,
+  Save,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { PortalFinanceiroTabs } from "@/components/financeiro/portal-financeiro-tabs";
+import { usePortalSession } from "@/components/layout/portal-sector-context";
 import { useAppState, metricasEdicao, type FinanceLancamento } from "@/lib/app-state";
 import { useRegisterPageState } from "@/lib/page-state";
 import { cn, formatCurrencyBRL } from "@/lib/utils";
@@ -103,6 +106,13 @@ interface EventoRow {
   resultado: number;
 }
 
+type CategoriaRow = EventoRow;
+
+interface ContaRow {
+  nome: string;
+  saldo: number;
+}
+
 interface LancSupabase {
   id: string;
   nome_razao_social?: string;
@@ -116,6 +126,32 @@ interface LancSupabase {
   rec_desp?: string;
 }
 
+interface LedgerRow {
+  cod: string | null;
+  descricao: string | null;
+  nome: string | null;
+  conta_caixa: string | null;
+  classificacao: string | null;
+  sub_classificacao: string | null;
+  forma_pagamento: string | null;
+  situacao: string | null;
+  rec_desp: string | null;
+  evento: string | null;
+  valor: number;
+  data_vencimento: string | null;
+  data_pagamento: string | null;
+}
+
+interface LedgerOpcoes {
+  contas: string[];
+  categorias: string[];
+  sub_categorias: string[];
+  eventos: string[];
+  situacoes: string[];
+}
+
+const EMPTY_OPCOES: LedgerOpcoes = { contas: [], categorias: [], sub_categorias: [], eventos: [], situacoes: [] };
+
 // ---------------------------------------------------------------------------
 // Hooks
 // ---------------------------------------------------------------------------
@@ -123,21 +159,32 @@ interface LancSupabase {
 function useLancamentosFluxo(ano: string) {
   const [fluxoSupabase, setFluxoSupabase] = React.useState<FluxoRow[]>([]);
   const [porEvento, setPorEvento] = React.useState<EventoRow[]>([]);
+  const [porConta, setPorConta] = React.useState<ContaRow[]>([]);
+  const [porCategoria, setPorCategoria] = React.useState<CategoriaRow[]>([]);
   const [totaisSupabase, setTotaisSupabase] = React.useState<FluxoTotais | null>(null);
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = React.useState(false);
   const [aviso, setAviso] = React.useState<string | null>(null);
 
+  // Evita que uma resposta antiga (ex.: do filtro de ano anterior) sobrescreva
+  // o estado depois que uma resposta mais nova já chegou — sem isso, trocar de
+  // ano rapidamente podia "prender" o painel nos totais/aviso do filtro anterior.
+  const requestSeqRef = React.useRef(0);
+
   // Fetch completo: fluxo mensal + por evento + totais computados no servidor
   // Totais calculados 100% via JS na API Route — não depende do RPC do Supabase
   const fetchData = React.useCallback(() => {
+    const seq = ++requestSeqRef.current;
     const url = `/api/lancamentos/fluxo${ano ? `?ano=${encodeURIComponent(ano)}` : ""}`;
     fetch(url, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
         if (!d) return;
+        if (seq !== requestSeqRef.current) return; // resposta obsoleta — ignora
         setFluxoSupabase((d.fluxo_mensal ?? []) as FluxoRow[]);
         setPorEvento((d.por_evento ?? []) as EventoRow[]);
+        setPorConta((d.por_conta ?? []) as ContaRow[]);
+        setPorCategoria((d.por_categoria ?? []) as CategoriaRow[]);
         if (d.totais) setTotaisSupabase(d.totais as FluxoTotais);
         setAviso(d.aviso ?? null);
         setUpdatedAt(new Date().toISOString());
@@ -162,6 +209,13 @@ function useLancamentosFluxo(ano: string) {
           fetchData(); // re-busca quando o banco muda
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "portal_lancamentos_overrides" },
+        () => {
+          fetchData(); // re-busca quando o financeiro edita/adiciona um lançamento
+        },
+      )
       .subscribe((status) => {
         setRealtimeConnected(status === "SUBSCRIBED");
       });
@@ -175,7 +229,7 @@ function useLancamentosFluxo(ano: string) {
     };
   }, [fetchData]);
 
-  return { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected, aviso };
+  return { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt, realtimeConnected, aviso };
 }
 
 function useTotalCount(ano: string) {
@@ -307,35 +361,6 @@ function SkeletonKpi() {
 }
 
 // ---------------------------------------------------------------------------
-// Live indicator
-// ---------------------------------------------------------------------------
-
-function LiveDot({ connected }: { connected: boolean }) {
-  return (
-    <span className={cn("inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors",
-      connected
-        ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10"
-        : "text-muted-foreground bg-foreground/[0.04]"
-    )}>
-      {connected ? (
-        <>
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          </span>
-          Ao vivo
-        </>
-      ) : (
-        <>
-          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
-          Offline
-        </>
-      )}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Year selector
 // ---------------------------------------------------------------------------
 
@@ -370,7 +395,7 @@ export default function FinanceiroPage() {
   const [anoFiltro, setAnoFiltro] = React.useState<string>(() => todayBrasilia().slice(0, 4));
   const [activeTab, setActiveTab] = React.useState("overview");
 
-  const { fluxoSupabase, porEvento, totaisSupabase, updatedAt, realtimeConnected, aviso } = useLancamentosFluxo(anoFiltro);
+  const { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt } = useLancamentosFluxo(anoFiltro);
   const totalCount = useTotalCount(anoFiltro);
 
   const margens = React.useMemo(
@@ -441,21 +466,9 @@ export default function FinanceiroPage() {
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <LiveDot connected={realtimeConnected} />
           <AnoSelector value={anoFiltro} onChange={setAnoFiltro} />
         </div>
       </motion.div>
-
-      {aviso && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-4 py-2.5 text-xs text-amber-800 dark:text-amber-300"
-        >
-          <span className="font-medium">Atenção: </span>
-          {aviso}
-        </motion.div>
-      )}
 
       <KpiGrid
         totals={displayTotals}
@@ -469,9 +482,11 @@ export default function FinanceiroPage() {
         <TabsList>
           <TabsTrigger value="overview">Resumo</TabsTrigger>
           <TabsTrigger value="fluxo">Mês a mês</TabsTrigger>
+          <TabsTrigger value="contas">Contas</TabsTrigger>
           <TabsTrigger value="receber">A receber</TabsTrigger>
           <TabsTrigger value="pagar">A pagar</TabsTrigger>
           <TabsTrigger value="margem">Resultado por evento</TabsTrigger>
+          <TabsTrigger value="lancamentos">Lançamentos</TabsTrigger>
         </TabsList>
 
         <AnimatePresence mode="wait">
@@ -499,6 +514,10 @@ export default function FinanceiroPage() {
               />
             </TabsContent>
 
+            <TabsContent value="contas" className="mt-2">
+              <ContasTab porConta={porConta} porCategoria={porCategoria} ano={anoFiltro} />
+            </TabsContent>
+
             <TabsContent value="receber" className="mt-2">
               <LancamentosSupabaseTab recDesp="Receitas" ano={anoFiltro} />
             </TabsContent>
@@ -509,6 +528,10 @@ export default function FinanceiroPage() {
 
             <TabsContent value="margem" className="mt-2">
               <MargemTab margens={margens} porEvento={porEvento} />
+            </TabsContent>
+
+            <TabsContent value="lancamentos" className="mt-2">
+              <LancamentosLedgerTab ano={anoFiltro} />
             </TabsContent>
           </motion.div>
         </AnimatePresence>
@@ -1015,6 +1038,189 @@ function FluxoTab({
 }
 
 // ---------------------------------------------------------------------------
+// Saldo por conta + categorias
+// ---------------------------------------------------------------------------
+
+function ContasTab({
+  porConta,
+  porCategoria,
+  ano,
+}: {
+  porConta: ContaRow[];
+  porCategoria: CategoriaRow[];
+  ano: string;
+}) {
+  const totalSaldo = porConta.reduce((s, c) => s + c.saldo, 0);
+  const contasComSaldo = porConta.filter((c) => Math.abs(c.saldo) >= 0.01);
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-5">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+          <div>
+            <div className="text-sm font-semibold tracking-tight">Saldo por conta</div>
+            <div className="text-[11px] text-muted-foreground">
+              Posição atual de cada conta/caixa · soma = {formatCurrencyBRL(totalSaldo)}
+            </div>
+          </div>
+        </div>
+        {contasComSaldo.length === 0 ? (
+          <EmptyChart message="Sem saldo em contas no momento." height="h-[200px]" />
+        ) : (
+          <div style={{ height: Math.max(220, contasComSaldo.length * 34) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={contasComSaldo} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-border/40" />
+                <XAxis
+                  type="number"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => fmtCompact(Number(v))}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="nome"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  width={180}
+                  tickFormatter={(v) => (String(v).length > 26 ? `${String(v).slice(0, 24)}…` : String(v))}
+                />
+                <ReferenceLine x={0} stroke="hsl(var(--border))" />
+                <Tooltip content={<MoneyTip />} cursor={{ fill: "hsl(var(--muted) / 0.2)" }} />
+                <Bar dataKey="saldo" name="Saldo" radius={[0, 6, 6, 0]}>
+                  {contasComSaldo.map((c, i) => (
+                    <Cell key={i} fill={c.saldo >= 0 ? "rgb(16,185,129)" : "rgb(244,63,94)"} fillOpacity={0.85} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </Card>
+
+      <Card className="overflow-hidden">
+        <div className="px-5 py-4 border-b border-border/50">
+          <div className="text-sm font-semibold tracking-tight">Detalhamento por conta</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">
+            {porConta.length} contas · saldo realizado até hoje (independe do ano selecionado)
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] text-sm">
+            <thead>
+              <tr className="bg-foreground/[0.02] dark:bg-white/[0.02] border-b border-border/50">
+                <th className="px-4 py-2.5 text-left text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                  Conta
+                </th>
+                <th className="px-4 py-2.5 text-right text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                  Saldo
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {porConta.map((c, idx) => (
+                <motion.tr
+                  key={c.nome}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: idx * 0.02 }}
+                  className="border-t border-border/40 hover:bg-foreground/[0.015] dark:hover:bg-white/[0.015] transition-colors"
+                >
+                  <td className="px-4 py-2.5 text-sm">{c.nome}</td>
+                  <td
+                    className={cn(
+                      "px-4 py-2.5 text-right tabular-nums font-medium",
+                      c.saldo >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+                    )}
+                  >
+                    {formatCurrencyBRL(c.saldo)}
+                  </td>
+                </motion.tr>
+              ))}
+              {porConta.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="text-center text-xs text-muted-foreground py-12">
+                    Nenhuma conta encontrada nas movimentações.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {porConta.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-border font-semibold">
+                  <td className="px-4 py-2.5 text-sm">Total</td>
+                  <td
+                    className={cn(
+                      "px-4 py-2.5 text-right tabular-nums",
+                      totalSaldo >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+                    )}
+                  >
+                    {formatCurrencyBRL(totalSaldo)}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+          <div>
+            <div className="text-sm font-semibold tracking-tight">
+              Receitas e despesas por categoria{ano ? ` — ${ano}` : ""}
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              Classificação de contas dos lançamentos · top {porCategoria.length}
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+            <Legend dot="bg-emerald-500" label="Receita" />
+            <Legend dot="bg-rose-500" label="Despesa" />
+          </div>
+        </div>
+        {porCategoria.length === 0 ? (
+          <EmptyChart message="Sem lançamentos categorizados no período." height="h-[200px]" />
+        ) : (
+          <div style={{ height: Math.max(260, porCategoria.length * 36) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={porCategoria} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 0 }} barGap={3}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-border/40" />
+                <XAxis
+                  type="number"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => fmtCompact(Number(v))}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="nome"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  width={220}
+                  tickFormatter={(v) => (String(v).length > 32 ? `${String(v).slice(0, 30)}…` : String(v))}
+                />
+                <Tooltip content={<MoneyTip />} cursor={{ fill: "hsl(var(--muted) / 0.2)" }} />
+                <Bar dataKey="Receita" fill="rgb(16,185,129)" radius={[0, 6, 6, 0]} fillOpacity={0.9} />
+                <Bar dataKey="Despesa" fill="rgb(244,63,94)" radius={[0, 6, 6, 0]} fillOpacity={0.75} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Lançamentos do Supabase (paginado)
 // ---------------------------------------------------------------------------
 
@@ -1205,6 +1411,724 @@ function LancamentosSupabaseTab({
                         {recDesp === "Receitas" ? "+" : "−"}
                         {formatCurrencyBRL(Number(l.valor) || 0).replace("R$", "R$ ")}
                       </td>
+                    </motion.tr>
+                  );
+                })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {pages > 1 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            Página {page} de {pages} · {total.toLocaleString("pt-BR")} registros
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <span className="px-2 font-medium">{page}</span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => setPage((p) => Math.min(pages, p + 1))}
+              disabled={page === pages}
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Lançamentos — extrato completo (réplica e-Gestor)
+// ---------------------------------------------------------------------------
+
+const TODAS_OPCAO: SelectOption = { value: "", label: "Todos" };
+
+function toSelectOptions(values: string[]): SelectOption[] {
+  return [TODAS_OPCAO, ...values.map((v) => ({ value: v, label: v }))];
+}
+
+const SITUACAO_EDIT_OPTIONS: SelectOption[] = [
+  { value: "A receber", label: "A receber" },
+  { value: "Recebido", label: "Recebido" },
+  { value: "A pagar", label: "A pagar" },
+  { value: "Pago", label: "Pago" },
+];
+
+const REC_DESP_EDIT_OPTIONS: SelectOption[] = [
+  { value: "Receitas", label: "Receita" },
+  { value: "Despesas", label: "Despesa" },
+];
+
+interface EditFormState {
+  cod: string | null; // null = lançamento novo
+  descricao: string;
+  nome: string;
+  conta_caixa: string;
+  classificacao: string;
+  sub_classificacao: string;
+  evento: string;
+  forma_pagamento: string;
+  situacao: string;
+  rec_desp: string;
+  valor: string;
+  data_vencimento: string;
+  data_pagamento: string;
+}
+
+const NOVO_LANCAMENTO_FORM: EditFormState = {
+  cod: null,
+  descricao: "",
+  nome: "",
+  conta_caixa: "",
+  classificacao: "",
+  sub_classificacao: "",
+  evento: "",
+  forma_pagamento: "",
+  situacao: "A pagar",
+  rec_desp: "Despesas",
+  valor: "",
+  data_vencimento: "",
+  data_pagamento: "",
+};
+
+function editFormFromRow(row: LedgerRow): EditFormState {
+  return {
+    cod: row.cod,
+    descricao: row.descricao ?? "",
+    nome: row.nome ?? "",
+    conta_caixa: row.conta_caixa ?? "",
+    classificacao: row.classificacao ?? "",
+    sub_classificacao: row.sub_classificacao ?? "",
+    evento: row.evento ?? "",
+    forma_pagamento: row.forma_pagamento ?? "",
+    situacao: row.situacao ?? "",
+    rec_desp: row.rec_desp === "Receitas" ? "Receitas" : "Despesas",
+    valor: row.valor ? String(row.valor) : "",
+    data_vencimento: row.data_vencimento ?? "",
+    data_pagamento: row.data_pagamento ?? "",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Formulário de edição/novo lançamento
+// ---------------------------------------------------------------------------
+
+function LancamentoEditForm({
+  value,
+  opcoes,
+  saving,
+  error,
+  onChange,
+  onSave,
+  onCancel,
+  onDelete,
+}: {
+  value: EditFormState;
+  opcoes: LedgerOpcoes;
+  saving: boolean;
+  error: string | null;
+  onChange: (v: EditFormState) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onDelete?: () => void;
+}) {
+  const isNew = value.cod === null;
+  const set = <K extends keyof EditFormState>(key: K, v: EditFormState[K]) =>
+    onChange({ ...value, [key]: v });
+
+  return (
+    <Card className="p-4 space-y-3 border-primary/30">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">
+          {isNew ? "Novo lançamento" : `Editar lançamento · Cód. ${value.cod}`}
+        </h3>
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onCancel}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="space-y-1 lg:col-span-2">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Descrição</label>
+          <Input value={value.descricao} onChange={(e) => set("descricao", e.target.value)} placeholder="Ex.: Pagamento fornecedor X" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Nome / Razão social</label>
+          <Input value={value.nome} onChange={(e) => set("nome", e.target.value)} />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Tipo</label>
+          <Select value={value.rec_desp} onValueChange={(v) => set("rec_desp", v)} options={REC_DESP_EDIT_OPTIONS} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Situação</label>
+          <Select value={value.situacao} onValueChange={(v) => set("situacao", v)} options={SITUACAO_EDIT_OPTIONS} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Valor (R$)</label>
+          <Input
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            value={value.valor}
+            onChange={(e) => set("valor", e.target.value)}
+            placeholder="0,00"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Vencimento</label>
+          <Input type="date" value={value.data_vencimento} onChange={(e) => set("data_vencimento", e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Pagamento / Recebimento</label>
+          <Input type="date" value={value.data_pagamento} onChange={(e) => set("data_pagamento", e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Forma de pagamento</label>
+          <Input
+            list="formas-pagamento-opcoes"
+            value={value.forma_pagamento}
+            onChange={(e) => set("forma_pagamento", e.target.value)}
+            placeholder="PIX, boleto, dinheiro…"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Conta / Caixa</label>
+          <Input
+            list="contas-opcoes"
+            value={value.conta_caixa}
+            onChange={(e) => set("conta_caixa", e.target.value)}
+            placeholder="Ex.: VIACREDI"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Categoria</label>
+          <Input
+            list="categorias-opcoes"
+            value={value.classificacao}
+            onChange={(e) => set("classificacao", e.target.value)}
+            placeholder="Classificação de contas"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Sub-categoria</label>
+          <Input
+            list="sub-categorias-opcoes"
+            value={value.sub_classificacao}
+            onChange={(e) => set("sub_classificacao", e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-1 lg:col-span-3">
+          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Evento</label>
+          <Input list="eventos-opcoes" value={value.evento} onChange={(e) => set("evento", e.target.value)} placeholder="Ex.: 5º Congresso BAPS" />
+        </div>
+      </div>
+
+      {/* Datalists para autocomplete a partir das opções já existentes */}
+      <datalist id="contas-opcoes">{opcoes.contas.map((v) => <option key={v} value={v} />)}</datalist>
+      <datalist id="categorias-opcoes">{opcoes.categorias.map((v) => <option key={v} value={v} />)}</datalist>
+      <datalist id="sub-categorias-opcoes">{opcoes.sub_categorias.map((v) => <option key={v} value={v} />)}</datalist>
+      <datalist id="eventos-opcoes">{opcoes.eventos.map((v) => <option key={v} value={v} />)}</datalist>
+      <datalist id="formas-pagamento-opcoes">
+        <option value="PIX" />
+        <option value="Boleto" />
+        <option value="Dinheiro" />
+        <option value="Cartão de crédito" />
+        <option value="Cartão de débito" />
+        <option value="Transferência" />
+      </datalist>
+
+      {error && (
+        <div className="rounded-md border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
+          {error}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <div>
+          {!isNew && onDelete && (
+            <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs text-rose-600 dark:text-rose-400" onClick={onDelete} disabled={saving}>
+              <Trash2 className="h-3.5 w-3.5" /> Remover
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={onCancel} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={onSave} disabled={saving}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Salvar
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function LancamentosLedgerTab({ ano }: { ano: string }) {
+  const [page, setPage] = React.useState(1);
+  const [searchInput, setSearchInput] = React.useState("");
+  const [search, setSearch] = React.useState("");
+  const [conta, setConta] = React.useState("");
+  const [classificacao, setClassificacao] = React.useState("");
+  const [subClassificacao, setSubClassificacao] = React.useState("");
+  const [evento, setEvento] = React.useState("");
+  const [situacao, setSituacao] = React.useState("");
+  const [recDesp, setRecDesp] = React.useState("");
+
+  const [data, setData] = React.useState<LedgerRow[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [pages, setPages] = React.useState(0);
+  const [totais, setTotais] = React.useState({ receitas: 0, despesas: 0 });
+  const [opcoes, setOpcoes] = React.useState<LedgerOpcoes>(EMPTY_OPCOES);
+  const [loading, setLoading] = React.useState(false);
+  const limit = 50;
+
+  const { sector } = usePortalSession();
+  const canEdit = sector === "financeiro" || sector === "executivo";
+  const [editing, setEditing] = React.useState<EditFormState | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [quickSavingCod, setQuickSavingCod] = React.useState<string | null>(null);
+
+  // Debounce da busca
+  React.useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Reseta para a página 1 quando qualquer filtro muda
+  React.useEffect(() => {
+    setPage(1);
+  }, [ano, search, conta, classificacao, subClassificacao, evento, situacao, recDesp]);
+
+  const fetchData = React.useCallback(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (ano) params.set("ano", ano);
+    if (search) params.set("search", search);
+    if (conta) params.set("conta", conta);
+    if (classificacao) params.set("classificacao", classificacao);
+    if (subClassificacao) params.set("sub_classificacao", subClassificacao);
+    if (evento) params.set("evento", evento);
+    if (situacao) params.set("situacao", situacao);
+    if (recDesp) params.set("rec_desp", recDesp);
+
+    fetch(`/api/lancamentos/ledger?${params.toString()}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: any) => {
+        if (!d) return;
+        setData((d.data ?? []) as LedgerRow[]);
+        setTotal(d.total ?? 0);
+        setPages(d.pages ?? 0);
+        setTotais(d.totais ?? { receitas: 0, despesas: 0 });
+        setOpcoes(d.opcoes ?? EMPTY_OPCOES);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [page, ano, search, conta, classificacao, subClassificacao, evento, situacao, recDesp]);
+
+  React.useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const notifyUpdated = () => {
+    fetchData();
+    window.dispatchEvent(new Event("portal:data-updated"));
+  };
+
+  const saveEditing = async () => {
+    if (!editing) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const valorNum = editing.valor.trim() === "" ? null : Number(editing.valor.replace(",", "."));
+      if (valorNum !== null && Number.isNaN(valorNum)) {
+        setSaveError("Valor inválido.");
+        setSaving(false);
+        return;
+      }
+      const fields: Record<string, unknown> = {
+        descricao: editing.descricao.trim() || "",
+        nome: editing.nome.trim() || "",
+        conta_caixa: editing.conta_caixa.trim() || "",
+        classificacao: editing.classificacao.trim() || "",
+        sub_classificacao: editing.sub_classificacao.trim() || "",
+        evento: editing.evento.trim() || "",
+        forma_pagamento: editing.forma_pagamento.trim() || "",
+        situacao: editing.situacao || "",
+        rec_desp: editing.rec_desp || "",
+        valor: valorNum,
+        data_vencimento: editing.data_vencimento || "",
+        data_pagamento: editing.data_pagamento || "",
+      };
+
+      const res = await fetch("/api/lancamentos/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cod: editing.cod ?? undefined, manual: editing.cod === null, fields }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSaveError(json?.error ?? "Não foi possível salvar.");
+        setSaving(false);
+        return;
+      }
+      setEditing(null);
+      notifyUpdated();
+    } catch (err: any) {
+      setSaveError(err?.message ?? "Erro ao salvar.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const quickMarkPaid = async (row: LedgerRow) => {
+    if (!row.cod) return;
+    setQuickSavingCod(row.cod);
+    try {
+      const rd = row.rec_desp === "Receitas" ? "Receitas" : "Despesas";
+      const res = await fetch("/api/lancamentos/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cod: row.cod,
+          fields: {
+            situacao: rd === "Receitas" ? "Recebido" : "Pago",
+            data_pagamento: todayBrasilia(),
+          },
+        }),
+      });
+      if (res.ok) notifyUpdated();
+    } catch {
+      // silencioso — usuário pode tentar novamente
+    } finally {
+      setQuickSavingCod(null);
+    }
+  };
+
+  const deleteEntry = async (cod: string | null) => {
+    if (!cod) return;
+    if (!window.confirm("Remover este lançamento da visão do painel? Ele deixará de aparecer aqui (mas continua na planilha original).")) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/lancamentos/edit?cod=${encodeURIComponent(cod)}`, { method: "DELETE" });
+      if (res.ok) {
+        setEditing(null);
+        notifyUpdated();
+      } else {
+        const json = await res.json().catch(() => ({}));
+        setSaveError(json?.error ?? "Não foi possível remover.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const temFiltros = !!(search || conta || classificacao || subClassificacao || evento || situacao || recDesp);
+
+  const limparFiltros = () => {
+    setSearchInput("");
+    setSearch("");
+    setConta("");
+    setClassificacao("");
+    setSubClassificacao("");
+    setEvento("");
+    setSituacao("");
+    setRecDesp("");
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Totais do conjunto filtrado */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <Card className="px-4 py-3">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Receitas</div>
+          <div className="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
+            {formatCurrencyBRL(totais.receitas)}
+          </div>
+        </Card>
+        <Card className="px-4 py-3">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Despesas</div>
+          <div className="text-lg font-semibold tabular-nums text-foreground/85 mt-1">
+            {formatCurrencyBRL(totais.despesas)}
+          </div>
+        </Card>
+        <Card className="px-4 py-3">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Resultado</div>
+          <div className={cn(
+            "text-lg font-semibold tabular-nums mt-1",
+            totais.receitas - totais.despesas >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+          )}>
+            {formatCurrencyBRL(totais.receitas - totais.despesas)}
+          </div>
+        </Card>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Buscar por nome, descrição, evento, categoria, código…"
+            className="pl-8"
+          />
+        </div>
+        <Select
+          value={recDesp}
+          onValueChange={setRecDesp}
+          options={[TODAS_OPCAO, { value: "Receitas", label: "Receitas" }, { value: "Despesas", label: "Despesas" }]}
+          triggerClassName="min-w-[120px]"
+        />
+        <Select
+          value={situacao}
+          onValueChange={setSituacao}
+          options={toSelectOptions(opcoes.situacoes)}
+          triggerClassName="min-w-[140px]"
+        />
+        <Select
+          value={conta}
+          onValueChange={setConta}
+          options={toSelectOptions(opcoes.contas)}
+          triggerClassName="min-w-[160px]"
+        />
+        <Select
+          value={classificacao}
+          onValueChange={(v) => { setClassificacao(v); setSubClassificacao(""); }}
+          options={toSelectOptions(opcoes.categorias)}
+          triggerClassName="min-w-[170px]"
+        />
+        <Select
+          value={subClassificacao}
+          onValueChange={setSubClassificacao}
+          options={toSelectOptions(opcoes.sub_categorias)}
+          triggerClassName="min-w-[170px]"
+        />
+        <Select
+          value={evento}
+          onValueChange={setEvento}
+          options={toSelectOptions(opcoes.eventos)}
+          triggerClassName="min-w-[160px]"
+        />
+        {temFiltros && (
+          <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs" onClick={limparFiltros}>
+            <X className="h-3 w-3" /> Limpar filtros
+          </Button>
+        )}
+        {canEdit && (
+          <Button
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => { setSaveError(null); setEditing(NOVO_LANCAMENTO_FORM); }}
+          >
+            <Plus className="h-3.5 w-3.5" /> Novo lançamento
+          </Button>
+        )}
+        <span className="text-[11px] text-muted-foreground ml-auto hidden sm:block">
+          {total.toLocaleString("pt-BR")} registros{ano ? ` · ${ano}` : ""}
+        </span>
+      </div>
+
+      {/* Formulário de edição/novo lançamento */}
+      <AnimatePresence mode="wait">
+        {editing && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <LancamentoEditForm
+              value={editing}
+              opcoes={opcoes}
+              saving={saving}
+              error={saveError}
+              onChange={setEditing}
+              onSave={saveEditing}
+              onCancel={() => { setEditing(null); setSaveError(null); }}
+              onDelete={editing.cod !== null ? () => deleteEntry(editing.cod) : undefined}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Tabela */}
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className={cn("w-full text-sm", canEdit ? "min-w-[1040px]" : "min-w-[920px]")}>
+            <thead>
+              <tr className="bg-foreground/[0.02] dark:bg-white/[0.02] border-b border-border/50">
+                {[
+                  ["left", "Status"],
+                  ["left", "Vencimento"],
+                  ["left", "Pagamento"],
+                  ["left", "Nome / Descrição"],
+                  ["left", "Conta"],
+                  ["left", "Categoria"],
+                  ["left", "Evento"],
+                  ["left", "Forma pagto."],
+                  ["right", "Valor"],
+                  ...(canEdit ? [["right", "Ações"]] : []),
+                ].map(([align, label]) => (
+                  <th
+                    key={label}
+                    className={cn(
+                      "px-4 py-2.5 text-[11px] uppercase tracking-wider text-muted-foreground font-medium whitespace-nowrap",
+                      `text-${align}`,
+                    )}
+                  >
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && Array.from({ length: 10 }).map((_, i) => (
+                <SkeletonRow key={i} cols={canEdit ? 10 : 9} />
+              ))}
+              {!loading && data.length === 0 && (
+                <tr>
+                  <td colSpan={canEdit ? 10 : 9} className="text-center text-xs text-muted-foreground py-12">
+                    <div className="space-y-2">
+                      <div className="text-2xl opacity-20">🔍</div>
+                      <div>Nenhum lançamento encontrado{search ? ` para "${search}"` : ""}.</div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {!loading &&
+                data.map((l, idx) => {
+                  const rd: "Receitas" | "Despesas" = l.rec_desp === "Receitas" ? "Receitas" : "Despesas";
+                  const kind = getStatusKind(l.situacao ?? undefined, rd, l.data_vencimento ?? undefined);
+                  return (
+                    <motion.tr
+                      key={`${l.cod}-${idx}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: Math.min(idx, 20) * 0.012 }}
+                      className={cn(
+                        "border-t border-border/40 hover:bg-foreground/[0.02] dark:hover:bg-white/[0.015] transition-colors",
+                        ROW_BORDER[kind],
+                      )}
+                    >
+                      <td className="px-4 py-3">
+                        <StatusPill situacao={l.situacao ?? undefined} recDesp={rd} dataVencimento={l.data_vencimento ?? undefined} />
+                      </td>
+                      <td className="px-4 py-3 text-xs tabular-nums whitespace-nowrap">
+                        {l.data_vencimento ? (
+                          <span className={cn(kind === "overdue" && "text-rose-600 dark:text-rose-400 font-medium")}>
+                            {formatDateBR(l.data_vencimento)}
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-xs tabular-nums whitespace-nowrap">
+                        {l.data_pagamento ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">{formatDateBR(l.data_pagamento)}</span>
+                        ) : (
+                          <span className="text-muted-foreground/40">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 max-w-[240px]">
+                        <div className="text-sm font-medium truncate flex items-center gap-1.5">
+                          {l.nome || l.descricao || "—"}
+                          {l.cod?.startsWith("MANUAL-") && (
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-normal">Manual</Badge>
+                          )}
+                        </div>
+                        {l.cod && !l.cod.startsWith("MANUAL-") && (
+                          <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                            Cód. {l.cod}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px]">
+                        <div className="truncate">{l.conta_caixa || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[180px]">
+                        <div className="truncate">{l.classificacao || "—"}</div>
+                        {l.sub_classificacao && (
+                          <div className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
+                            {l.sub_classificacao}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px]">
+                        <div className="truncate">{l.evento || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[140px]">
+                        <div className="truncate">{l.forma_pagamento || "—"}</div>
+                      </td>
+                      <td className={cn(
+                        "px-4 py-3 text-right font-semibold tabular-nums text-sm whitespace-nowrap",
+                        rd === "Receitas"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-foreground/85",
+                      )}>
+                        {rd === "Receitas" ? "+" : "−"}
+                        {formatCurrencyBRL(Number(l.valor) || 0).replace("R$", "R$ ")}
+                      </td>
+                      {canEdit && (
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            {(l.situacao === "A receber" || l.situacao === "A pagar") && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-emerald-600 dark:text-emerald-400"
+                                title={rd === "Receitas" ? "Marcar como recebido hoje" : "Marcar como pago hoje"}
+                                disabled={quickSavingCod === l.cod}
+                                onClick={() => quickMarkPaid(l)}
+                              >
+                                {quickSavingCod === l.cod ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            )}
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              title="Editar lançamento"
+                              onClick={() => { setSaveError(null); setEditing(editFormFromRow(l)); }}
+                            >
+                              <PencilLine className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-rose-600 dark:text-rose-400"
+                              title="Remover da visão"
+                              onClick={() => deleteEntry(l.cod)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      )}
                     </motion.tr>
                   );
                 })}

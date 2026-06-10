@@ -465,3 +465,44 @@ $$;
 -- Habilitar Supabase Realtime para portal_lancamentos
 -- (execute este ALTER após criar/recriando o schema)
 alter publication supabase_realtime add table public.portal_lancamentos;
+
+-- ---------------------------------------------------------------------------
+-- Lançamentos editados/criados pelo financeiro direto no painel
+-- ---------------------------------------------------------------------------
+-- Cada linha aqui "sobrescreve" (merge por cód.) ou "adiciona" (cód. novo,
+-- prefixo MANUAL-...) um lançamento exibido na aba Lançamentos.
+-- Campos não preenchidos (null) mantêm o valor original da planilha.
+-- `deleted = true` esconde o lançamento (planilha ou manual) do painel.
+create table if not exists public.portal_lancamentos_overrides (
+  cod                   text primary key,
+  descricao             text,
+  nome                  text,
+  conta_caixa           text,
+  plano_contas          text,
+  plano_primario_contas text,
+  classificacao         text,
+  sub_classificacao     text,
+  forma_pagamento       text,
+  situacao              text,
+  ent_saida             text,
+  rec_desp              text,
+  tratativa             text,
+  evento                text,
+  valor                 numeric,
+  data_vencimento       date,
+  data_pagamento        date,
+  data_cred_deb         date,
+  manual                boolean not null default false,
+  deleted               boolean not null default false,
+  updated_at            timestamptz not null default now(),
+  updated_by            text
+);
+
+alter table public.portal_lancamentos_overrides enable row level security;
+
+drop policy if exists "portal_lancamentos_overrides_service_all" on public.portal_lancamentos_overrides;
+
+create policy "portal_lancamentos_overrides_service_all"
+  on public.portal_lancamentos_overrides for all using (true) with check (true);
+
+alter publication supabase_realtime add table public.portal_lancamentos_overrides;
