@@ -124,6 +124,32 @@ interface LancSupabase {
   rec_desp?: string;
 }
 
+interface LedgerRow {
+  cod: string | null;
+  descricao: string | null;
+  nome: string | null;
+  conta_caixa: string | null;
+  classificacao: string | null;
+  sub_classificacao: string | null;
+  forma_pagamento: string | null;
+  situacao: string | null;
+  rec_desp: string | null;
+  evento: string | null;
+  valor: number;
+  data_vencimento: string | null;
+  data_pagamento: string | null;
+}
+
+interface LedgerOpcoes {
+  contas: string[];
+  categorias: string[];
+  sub_categorias: string[];
+  eventos: string[];
+  situacoes: string[];
+}
+
+const EMPTY_OPCOES: LedgerOpcoes = { contas: [], categorias: [], sub_categorias: [], eventos: [], situacoes: [] };
+
 // ---------------------------------------------------------------------------
 // Hooks
 // ---------------------------------------------------------------------------
@@ -492,6 +518,7 @@ export default function FinanceiroPage() {
           <TabsTrigger value="receber">A receber</TabsTrigger>
           <TabsTrigger value="pagar">A pagar</TabsTrigger>
           <TabsTrigger value="margem">Resultado por evento</TabsTrigger>
+          <TabsTrigger value="lancamentos">Lançamentos</TabsTrigger>
         </TabsList>
 
         <AnimatePresence mode="wait">
@@ -533,6 +560,10 @@ export default function FinanceiroPage() {
 
             <TabsContent value="margem" className="mt-2">
               <MargemTab margens={margens} porEvento={porEvento} />
+            </TabsContent>
+
+            <TabsContent value="lancamentos" className="mt-2">
+              <LancamentosLedgerTab ano={anoFiltro} />
             </TabsContent>
           </motion.div>
         </AnimatePresence>
@@ -1410,6 +1441,332 @@ function LancamentosSupabaseTab({
                           : "text-foreground/85",
                       )}>
                         {recDesp === "Receitas" ? "+" : "−"}
+                        {formatCurrencyBRL(Number(l.valor) || 0).replace("R$", "R$ ")}
+                      </td>
+                    </motion.tr>
+                  );
+                })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {pages > 1 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            Página {page} de {pages} · {total.toLocaleString("pt-BR")} registros
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <span className="px-2 font-medium">{page}</span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={() => setPage((p) => Math.min(pages, p + 1))}
+              disabled={page === pages}
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Lançamentos — extrato completo (réplica e-Gestor)
+// ---------------------------------------------------------------------------
+
+const TODAS_OPCAO: SelectOption = { value: "", label: "Todos" };
+
+function toSelectOptions(values: string[]): SelectOption[] {
+  return [TODAS_OPCAO, ...values.map((v) => ({ value: v, label: v }))];
+}
+
+function LancamentosLedgerTab({ ano }: { ano: string }) {
+  const [page, setPage] = React.useState(1);
+  const [searchInput, setSearchInput] = React.useState("");
+  const [search, setSearch] = React.useState("");
+  const [conta, setConta] = React.useState("");
+  const [classificacao, setClassificacao] = React.useState("");
+  const [subClassificacao, setSubClassificacao] = React.useState("");
+  const [evento, setEvento] = React.useState("");
+  const [situacao, setSituacao] = React.useState("");
+  const [recDesp, setRecDesp] = React.useState("");
+
+  const [data, setData] = React.useState<LedgerRow[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [pages, setPages] = React.useState(0);
+  const [totais, setTotais] = React.useState({ receitas: 0, despesas: 0 });
+  const [opcoes, setOpcoes] = React.useState<LedgerOpcoes>(EMPTY_OPCOES);
+  const [loading, setLoading] = React.useState(false);
+  const [aviso, setAviso] = React.useState<string | null>(null);
+  const limit = 50;
+
+  // Debounce da busca
+  React.useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Reseta para a página 1 quando qualquer filtro muda
+  React.useEffect(() => {
+    setPage(1);
+  }, [ano, search, conta, classificacao, subClassificacao, evento, situacao, recDesp]);
+
+  const fetchData = React.useCallback(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (ano) params.set("ano", ano);
+    if (search) params.set("search", search);
+    if (conta) params.set("conta", conta);
+    if (classificacao) params.set("classificacao", classificacao);
+    if (subClassificacao) params.set("sub_classificacao", subClassificacao);
+    if (evento) params.set("evento", evento);
+    if (situacao) params.set("situacao", situacao);
+    if (recDesp) params.set("rec_desp", recDesp);
+
+    fetch(`/api/lancamentos/ledger?${params.toString()}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: any) => {
+        if (!d) return;
+        setData((d.data ?? []) as LedgerRow[]);
+        setTotal(d.total ?? 0);
+        setPages(d.pages ?? 0);
+        setTotais(d.totais ?? { receitas: 0, despesas: 0 });
+        setOpcoes(d.opcoes ?? EMPTY_OPCOES);
+        setAviso(d.aviso ?? null);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [page, ano, search, conta, classificacao, subClassificacao, evento, situacao, recDesp]);
+
+  React.useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const temFiltros = !!(search || conta || classificacao || subClassificacao || evento || situacao || recDesp);
+
+  const limparFiltros = () => {
+    setSearchInput("");
+    setSearch("");
+    setConta("");
+    setClassificacao("");
+    setSubClassificacao("");
+    setEvento("");
+    setSituacao("");
+    setRecDesp("");
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Totais do conjunto filtrado */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <Card className="px-4 py-3">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Receitas</div>
+          <div className="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
+            {formatCurrencyBRL(totais.receitas)}
+          </div>
+        </Card>
+        <Card className="px-4 py-3">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Despesas</div>
+          <div className="text-lg font-semibold tabular-nums text-foreground/85 mt-1">
+            {formatCurrencyBRL(totais.despesas)}
+          </div>
+        </Card>
+        <Card className="px-4 py-3">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Resultado</div>
+          <div className={cn(
+            "text-lg font-semibold tabular-nums mt-1",
+            totais.receitas - totais.despesas >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+          )}>
+            {formatCurrencyBRL(totais.receitas - totais.despesas)}
+          </div>
+        </Card>
+      </div>
+
+      {aviso && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          {aviso}
+        </div>
+      )}
+
+      {/* Filtros */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Buscar por nome, descrição, evento, categoria, código…"
+            className="pl-8"
+          />
+        </div>
+        <Select
+          value={recDesp}
+          onValueChange={setRecDesp}
+          options={[TODAS_OPCAO, { value: "Receitas", label: "Receitas" }, { value: "Despesas", label: "Despesas" }]}
+          triggerClassName="min-w-[120px]"
+        />
+        <Select
+          value={situacao}
+          onValueChange={setSituacao}
+          options={toSelectOptions(opcoes.situacoes)}
+          triggerClassName="min-w-[140px]"
+        />
+        <Select
+          value={conta}
+          onValueChange={setConta}
+          options={toSelectOptions(opcoes.contas)}
+          triggerClassName="min-w-[160px]"
+        />
+        <Select
+          value={classificacao}
+          onValueChange={(v) => { setClassificacao(v); setSubClassificacao(""); }}
+          options={toSelectOptions(opcoes.categorias)}
+          triggerClassName="min-w-[170px]"
+        />
+        <Select
+          value={subClassificacao}
+          onValueChange={setSubClassificacao}
+          options={toSelectOptions(opcoes.sub_categorias)}
+          triggerClassName="min-w-[170px]"
+        />
+        <Select
+          value={evento}
+          onValueChange={setEvento}
+          options={toSelectOptions(opcoes.eventos)}
+          triggerClassName="min-w-[160px]"
+        />
+        {temFiltros && (
+          <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs" onClick={limparFiltros}>
+            <X className="h-3 w-3" /> Limpar filtros
+          </Button>
+        )}
+        <span className="text-[11px] text-muted-foreground ml-auto hidden sm:block">
+          {total.toLocaleString("pt-BR")} registros{ano ? ` · ${ano}` : ""}
+        </span>
+      </div>
+
+      {/* Tabela */}
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[920px] text-sm">
+            <thead>
+              <tr className="bg-foreground/[0.02] dark:bg-white/[0.02] border-b border-border/50">
+                {[
+                  ["left", "Status"],
+                  ["left", "Vencimento"],
+                  ["left", "Pagamento"],
+                  ["left", "Nome / Descrição"],
+                  ["left", "Conta"],
+                  ["left", "Categoria"],
+                  ["left", "Evento"],
+                  ["left", "Forma pagto."],
+                  ["right", "Valor"],
+                ].map(([align, label]) => (
+                  <th
+                    key={label}
+                    className={cn(
+                      "px-4 py-2.5 text-[11px] uppercase tracking-wider text-muted-foreground font-medium whitespace-nowrap",
+                      `text-${align}`,
+                    )}
+                  >
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && Array.from({ length: 10 }).map((_, i) => (
+                <SkeletonRow key={i} cols={9} />
+              ))}
+              {!loading && data.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="text-center text-xs text-muted-foreground py-12">
+                    <div className="space-y-2">
+                      <div className="text-2xl opacity-20">🔍</div>
+                      <div>Nenhum lançamento encontrado{search ? ` para "${search}"` : ""}.</div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {!loading &&
+                data.map((l, idx) => {
+                  const rd: "Receitas" | "Despesas" = l.rec_desp === "Receitas" ? "Receitas" : "Despesas";
+                  const kind = getStatusKind(l.situacao ?? undefined, rd, l.data_vencimento ?? undefined);
+                  return (
+                    <motion.tr
+                      key={`${l.cod}-${idx}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: Math.min(idx, 20) * 0.012 }}
+                      className={cn(
+                        "border-t border-border/40 hover:bg-foreground/[0.02] dark:hover:bg-white/[0.015] transition-colors",
+                        ROW_BORDER[kind],
+                      )}
+                    >
+                      <td className="px-4 py-3">
+                        <StatusPill situacao={l.situacao ?? undefined} recDesp={rd} dataVencimento={l.data_vencimento ?? undefined} />
+                      </td>
+                      <td className="px-4 py-3 text-xs tabular-nums whitespace-nowrap">
+                        {l.data_vencimento ? (
+                          <span className={cn(kind === "overdue" && "text-rose-600 dark:text-rose-400 font-medium")}>
+                            {formatDateBR(l.data_vencimento)}
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-xs tabular-nums whitespace-nowrap">
+                        {l.data_pagamento ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">{formatDateBR(l.data_pagamento)}</span>
+                        ) : (
+                          <span className="text-muted-foreground/40">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 max-w-[240px]">
+                        <div className="text-sm font-medium truncate">
+                          {l.nome || l.descricao || "—"}
+                        </div>
+                        {l.cod && (
+                          <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                            Cód. {l.cod}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px]">
+                        <div className="truncate">{l.conta_caixa || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[180px]">
+                        <div className="truncate">{l.classificacao || "—"}</div>
+                        {l.sub_classificacao && (
+                          <div className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
+                            {l.sub_classificacao}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px]">
+                        <div className="truncate">{l.evento || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[140px]">
+                        <div className="truncate">{l.forma_pagamento || "—"}</div>
+                      </td>
+                      <td className={cn(
+                        "px-4 py-3 text-right font-semibold tabular-nums text-sm whitespace-nowrap",
+                        rd === "Receitas"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-foreground/85",
+                      )}>
+                        {rd === "Receitas" ? "+" : "−"}
                         {formatCurrencyBRL(Number(l.valor) || 0).replace("R$", "R$ ")}
                       </td>
                     </motion.tr>
