@@ -12,17 +12,12 @@ import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { getPortalSectorFromEmail } from "@/lib/portal-sector";
-import {
-  findHeaderRowIndex,
-  buildColumnMap,
-  parseDateBR,
-  parseMoneyBR,
-} from "@/lib/google-sheets";
+import { transformSheetRows, upsertLancamentos } from "@/lib/lancamentos-transform";
+import { parseCSV, parseXLSX } from "@/lib/file-parsers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BATCH_SIZE = 500;
 const WRITE_SECTORS = new Set(["financeiro", "executivo"]);
 const MAX_FILE_MB = 50;
 
@@ -102,182 +97,40 @@ export async function POST(req: Request) {
       }).eq("id", logId);
     };
 
-    // ── Detecta cabeçalho ─────────────────────────────────────────────────────
-    const headerIdx = findHeaderRowIndex(rawRows);
-    const headers = rawRows[headerIdx] ?? [];
-    const colMap = buildColumnMap(headers);
-    const dataRows = rawRows.slice(headerIdx + 1);
+    // ── Transforma linhas ─────────────────────────────────────────────────────
+    const { records, rowsRead, columnsDetected } = transformSheetRows(rawRows);
 
-    if (colMap.cod === undefined && colMap.valor === undefined) {
-      await updateLog("error", 0, 0, "Colunas obrigatórias não encontradas (Cód. / Valor).");
+    if (records.length === 0) {
+      await updateLog("error", rowsRead, 0, "Nenhum registro válido encontrado.");
       return NextResponse.json(
         {
           error:
-            "Não foi possível detectar as colunas. Certifique-se de usar a aba " +
+            "Nenhum registro válido no arquivo. Certifique-se de usar a aba " +
             "'personalizadoFinanceiro (13)' exportada como CSV UTF-8.",
         },
         { status: 422 }
       );
     }
 
-    // ── Transforma linhas ─────────────────────────────────────────────────────
-    const now = new Date().toISOString();
-    const col = (row: string[], idx: number | undefined): string =>
-      idx !== undefined ? (row[idx] ?? "").trim() : "";
-
-    const records = [];
-
-    for (const row of dataRows) {
-      const cod = col(row, colMap.cod);
-      if (!cod || cod.toLowerCase().includes("total")) continue;
-
-      const rawValor = col(row, colMap.valor);
-      const valorRaw = parseMoneyBR(rawValor);
-
-      const recDespCol = col(row, colMap.rec_desp);
-      const recDesp =
-        recDespCol ||
-        (valorRaw < 0 ? "Despesas" : valorRaw > 0 ? "Receitas" : null);
-
-      const nomeX = col(row, colMap.nome_completo);
-      const nomeW = col(row, colMap.tratativa_oculta);
-      const nomeE = col(row, colMap.nome_razao_social);
-      const nomeDisplay =
-        (nomeX && nomeX !== "*NÃO INFORMADO*" ? nomeX : null) ||
-        (nomeW && nomeW !== "*NÃO INFORMADO*" ? nomeW : null) ||
-        (nomeE && nomeE !== "*NÃO INFORMADO*" ? nomeE : null) ||
-        null;
-
-      records.push({
-        cod,
-        descricao:             col(row, colMap.descricao)             || null,
-        conta_caixa:           col(row, colMap.conta_caixa)           || null,
-        plano_contas:          col(row, colMap.plano_contas)          || null,
-        nome_razao_social:     nomeDisplay,
-        forma_pagamento:       col(row, colMap.forma_pagamento)       || null,
-        situacao:              col(row, colMap.situacao)              || null,
-        valor:                 Math.abs(valorRaw),
-        data_vencimento:       parseDateBR(col(row, colMap.data_vencimento)),
-        data_pagamento:        parseDateBR(col(row, colMap.data_pagamento)),
-        data_cred_deb:         parseDateBR(col(row, colMap.data_cred_deb)),
-        plano_primario_contas: col(row, colMap.plano_primario_contas)  || null,
-        classificacao:         col(row, colMap.classificacao)          || null,
-        sub_classificacao:     col(row, colMap.sub_classificacao)      || null,
-        ent_saida:             col(row, colMap.ent_saida)              || null,
-        rec_desp:              recDesp,
-        tratativa:             col(row, colMap.tratativa)              || null,
-        tratativa_oculta:      col(row, colMap.tratativa_oculta)       || null,
-        evento:                col(row, colMap.evento)                 || null,
-        synced_at:             now,
-      });
-    }
-
-    if (records.length === 0) {
-      await updateLog("error", dataRows.length, 0, "Nenhum registro válido encontrado.");
-      return NextResponse.json({ error: "Nenhum registro válido no arquivo." }, { status: 422 });
-    }
-
     // ── Upsert em lotes ───────────────────────────────────────────────────────
     let totalUpserted = 0;
-    for (let i = 0; i < records.length; i += BATCH_SIZE) {
-      const batch = records.slice(i, i + BATCH_SIZE);
-      const { error } = await sb
-        .from("portal_lancamentos")
-        .upsert(batch, { onConflict: "cod" });
-
-      if (error) {
-        await updateLog("error", dataRows.length, totalUpserted, error.message);
-        return NextResponse.json(
-          { error: `Erro no lote ${Math.floor(i / BATCH_SIZE) + 1}: ${error.message}` },
-          { status: 500 }
-        );
-      }
-      totalUpserted += batch.length;
+    try {
+      totalUpserted = await upsertLancamentos(sb, records);
+    } catch (err: any) {
+      const partial = (err?.cause as { totalUpserted?: number } | undefined)?.totalUpserted ?? 0;
+      await updateLog("error", rowsRead, partial, err?.message);
+      return NextResponse.json({ error: err?.message }, { status: 500 });
     }
 
-    await updateLog("success", dataRows.length, totalUpserted);
+    await updateLog("success", rowsRead, totalUpserted);
 
     return NextResponse.json({
       ok: true,
-      rows_read: dataRows.length,
+      rows_read: rowsRead,
       rows_upserted: totalUpserted,
-      columns_detected: Object.keys(colMap),
+      columns_detected: columnsDetected,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Erro interno." }, { status: 500 });
   }
-}
-
-// ─── CSV parser (UTF-8, separador vírgula ou ponto-e-vírgula) ─────────────────
-
-function parseCSV(text: string): string[][] {
-  // Detecta separador (vírgula ou ponto-e-vírgula)
-  const firstLine = text.split("\n")[0] ?? "";
-  const sep = firstLine.split(";").length > firstLine.split(",").length ? ";" : ",";
-
-  const rows: string[][] = [];
-  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    rows.push(splitCSVLine(line, sep));
-  }
-  return rows;
-}
-
-function splitCSVLine(line: string, sep: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let inQuote = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuote && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuote = !inQuote;
-      }
-    } else if (ch === sep && !inQuote) {
-      result.push(current.trim());
-      current = "";
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current.trim());
-  return result;
-}
-
-// ─── XLSX parser (usa biblioteca xlsx já instalada) ───────────────────────────
-
-async function parseXLSX(buffer: Buffer): Promise<string[][]> {
-  const XLSX = await import("xlsx");
-  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
-
-  // Procura a aba na seguinte ordem de prioridade:
-  // 1. Nome exato configurado em GOOGLE_SHEETS_SHEET_NAME
-  // 2. Aba que contém "personalizadoFinanceiro" no nome
-  // 3. Primeira aba disponível
-  const configuredName = process.env.GOOGLE_SHEETS_SHEET_NAME ?? "personalizadoFinanceiro (13)";
-
-  const targetSheet =
-    workbook.SheetNames.find((n) => n === configuredName) ??
-    workbook.SheetNames.find((n) =>
-      n.toLowerCase().includes("personalizadofinanceiro") ||
-      n.toLowerCase().includes("personalizado")
-    ) ??
-    workbook.SheetNames[0];
-
-  if (!targetSheet) throw new Error("Nenhuma aba encontrada no arquivo.");
-
-  const sheet = workbook.Sheets[targetSheet];
-  const data = XLSX.utils.sheet_to_json<string[]>(sheet, {
-    header: 1,
-    defval: "",
-    raw: false,
-  }) as string[][];
-
-  return data;
 }

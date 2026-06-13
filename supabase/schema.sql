@@ -506,3 +506,44 @@ create policy "portal_lancamentos_overrides_service_all"
   on public.portal_lancamentos_overrides for all using (true) with check (true);
 
 alter publication supabase_realtime add table public.portal_lancamentos_overrides;
+
+-- ---------------------------------------------------------------------------
+-- Integração OneDrive — tokens OAuth2 da conta Microsoft conectada
+-- ---------------------------------------------------------------------------
+-- Linha única (id = 'onedrive') com o refresh_token de longa duração obtido
+-- via /api/integrations/onedrive/callback. O access_token é renovado
+-- automaticamente por lib/onedrive.ts quando expira.
+create table if not exists public.portal_integration_tokens (
+  id            text primary key,
+  access_token  text not null,
+  refresh_token text not null,
+  expires_at    timestamptz not null,
+  account_label text,
+  updated_at    timestamptz not null default now()
+);
+
+alter table public.portal_integration_tokens enable row level security;
+
+drop policy if exists "portal_integration_tokens_service_all" on public.portal_integration_tokens;
+
+create policy "portal_integration_tokens_service_all"
+  on public.portal_integration_tokens for all using (true) with check (true);
+
+-- ---------------------------------------------------------------------------
+-- Configurações gerais do portal (chave/valor)
+-- ---------------------------------------------------------------------------
+-- Usada para guardar, por exemplo, a URL da pasta/arquivo do OneDrive
+-- (key = 'onedrive_share_url') que deve ser sincronizada com
+-- portal_lancamentos.
+create table if not exists public.portal_settings (
+  key        text primary key,
+  value      text,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.portal_settings enable row level security;
+
+drop policy if exists "portal_settings_service_all" on public.portal_settings;
+
+create policy "portal_settings_service_all"
+  on public.portal_settings for all using (true) with check (true);

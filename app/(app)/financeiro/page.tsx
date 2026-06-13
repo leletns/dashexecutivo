@@ -47,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { PortalFinanceiroTabs } from "@/components/financeiro/portal-financeiro-tabs";
+import { OneDriveSyncPanel } from "@/components/financeiro/onedrive-sync-panel";
 import { usePortalSession } from "@/components/layout/portal-sector-context";
 import { useAppState, metricasEdicao, type FinanceLancamento } from "@/lib/app-state";
 import { useRegisterPageState } from "@/lib/page-state";
@@ -1859,6 +1860,13 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
 
   return (
     <div className="space-y-3">
+      {/* Sincronização com planilha do OneDrive (financeiro/executivo) */}
+      {canEdit && (
+        <React.Suspense fallback={null}>
+          <OneDriveSyncPanel />
+        </React.Suspense>
+      )}
+
       {/* Totais do conjunto filtrado */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Card className="px-4 py-3">
