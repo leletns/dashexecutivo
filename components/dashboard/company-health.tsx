@@ -113,7 +113,7 @@ function computeBullets(data: BapsSnapshot): string[] {
   return bullets;
 }
 
-function computeDepts(data: BapsSnapshot): DeptData[] {
+function computeDepts(data: BapsSnapshot, saldoReal: number | null): DeptData[] {
   const npsGrowth = npsWeightedGrowthPct(data);
   const churnHigh =
     data.associados_resumo.total_ativos > 0 &&
@@ -128,6 +128,7 @@ function computeDepts(data: BapsSnapshot): DeptData[] {
     data.institucional.atas_procuracoes_ok && data.institucional.regimento_interno_ok;
   const conform = conformidadeContratualPct(data);
   const fin = data.financeiro_resumo;
+  const saldo = saldoReal ?? fin.saldo_global;
 
   return [
     {
@@ -144,8 +145,8 @@ function computeDepts(data: BapsSnapshot): DeptData[] {
       label: "Financeiro",
       icon: DollarSign,
       href: "/financeiro",
-      status: fin.saldo_global < 0 ? "critico" : fin.deficit_q1 < -150000 ? "atencao" : "ok",
-      metric: formatCurrencyBRL(fin.saldo_global),
+      status: saldo < 0 ? "critico" : fin.deficit_q1 < -150000 ? "atencao" : "ok",
+      metric: formatCurrencyBRL(saldo),
     },
     {
       key: "jur",
@@ -165,7 +166,7 @@ function computeDepts(data: BapsSnapshot): DeptData[] {
       label: "Contábil",
       icon: BarChart3,
       href: "/contabil",
-      status: fin.saldo_global < 0 ? "critico" : certAlertas > 0 ? "atencao" : "ok",
+      status: saldo < 0 ? "critico" : certAlertas > 0 ? "atencao" : "ok",
       metric: certAlertas > 0 ? `${certAlertas} alerta${certAlertas > 1 ? "s" : ""}` : "Em dia",
     },
     {
@@ -237,9 +238,9 @@ const DEPT_DOT: Record<DeptStatus, string> = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function CompanyHealth({ data }: { data: BapsSnapshot }) {
+export function CompanyHealth({ data, saldoReal = null }: { data: BapsSnapshot; saldoReal?: number | null }) {
   const router = useRouter();
-  const depts = computeDepts(data);
+  const depts = computeDepts(data, saldoReal);
   const npsGrowth = npsWeightedGrowthPct(data);
 
   return (

@@ -27,6 +27,7 @@ import type { BapsSnapshot } from "@/lib/baps/types";
 import type { PortalSector } from "@/lib/portal-sector";
 import { sectorShortLabel, showZone } from "@/lib/portal-sector";
 import { formatCurrencyBRL, formatNumberBR, cn } from "@/lib/utils";
+import { todayBrasilia } from "@/lib/timezone";
 import { useRegisterPageState } from "@/lib/page-state";
 
 const fade = {
@@ -85,6 +86,12 @@ export function BapsDashboard({
     resultado_projetado: number;
     count_total: number;
   } | null>(null);
+  const [lancMesAtual, setLancMesAtual] = React.useState<{
+    label: string;
+    entradas: number;
+    saidas: number;
+    resultado: number;
+  } | null>(null);
 
   function fmtCompactBRL(value: number): string {
     const sign = value < 0 ? "-" : "";
@@ -123,6 +130,16 @@ export function BapsDashboard({
             .then((r) => (r.ok ? r.json() : null))
             .then((c) => setLancTotais({ ...d.totais, count_total: c?.total ?? 0 }))
             .catch(() => setLancTotais({ ...d.totais, count_total: 0 }));
+
+          // Resultado do mês atual (entradas - saídas já efetivadas neste mês)
+          const chaveAtual = todayBrasilia().slice(0, 7);
+          const mesAtual = (d.fluxo_mensal ?? []).find((m: any) => m.chave === chaveAtual);
+          setLancMesAtual({
+            label: mesAtual?.mes ?? "este mês",
+            entradas: mesAtual?.entradas ?? 0,
+            saidas: mesAtual?.saidas ?? 0,
+            resultado: mesAtual ? mesAtual.entradas - mesAtual.saidas : 0,
+          });
         })
         .catch(() => {});
     };
@@ -284,13 +301,13 @@ export function BapsDashboard({
 
       {sector === "executivo" && (
         <motion.div initial="hidden" animate="show" custom={1} variants={fade}>
-          <CompanyHealth data={data} />
+          <CompanyHealth data={data} saldoReal={lancTotais?.saldo_realizado ?? null} />
         </motion.div>
       )}
 
       {showZone(sector, "macro_executivo") && (
         <motion.div initial="hidden" animate="show" custom={2} variants={fade}>
-          <ExecutiveHero data={data} />
+          <ExecutiveHero data={data} saldoReal={lancTotais?.saldo_realizado ?? null} resultadoMes={lancMesAtual} />
         </motion.div>
       )}
 

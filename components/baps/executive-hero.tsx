@@ -38,7 +38,17 @@ async function saveField(table: string, payload: Record<string, unknown>) {
   }).catch(() => {});
 }
 
-export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
+export function ExecutiveHero({
+  data,
+  saldoReal,
+  resultadoMes,
+}: {
+  data: BapsSnapshot;
+  /** Saldo real calculado a partir dos lançamentos (portal_lancamentos + edições do financeiro). */
+  saldoReal?: number | null;
+  /** Resultado (entradas - saídas) do mês atual, calculado a partir dos lançamentos. */
+  resultadoMes?: { label: string; entradas: number; saidas: number; resultado: number } | null;
+}) {
   const fin = data.financeiro_resumo;
   const assoc = data.associados_resumo;
   const nps25 = weightedNpsForYear(data, 2025);
@@ -46,21 +56,22 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
   const conform = conformidadeContratualPct(data);
   const procCount = data.processos.length;
 
-  // — Card 1: Dinheiro em caixa (editável)
-  const [saldo, setSaldo] = React.useState(fin.saldo_global);
+  // — Card 1: Dinheiro em caixa — calculado automaticamente a partir dos
+  // lançamentos (aba Lançamentos do Financeiro). Se ainda não carregou,
+  // cai no valor manual de financeiro_resumo (editável) como fallback.
+  const temSaldoReal = saldoReal !== null && saldoReal !== undefined;
+  const saldo = temSaldoReal ? saldoReal! : fin.saldo_global;
   const [editSaldo, setEditSaldo] = React.useState(false);
   const [draftSaldo, setDraftSaldo] = React.useState("");
   const saldoRef = React.useRef<HTMLInputElement>(null);
-  React.useEffect(() => setSaldo(fin.saldo_global), [fin.saldo_global]);
 
   const beginSaldo = () => {
-    setDraftSaldo(String(saldo).replace(".", ","));
+    setDraftSaldo(String(fin.saldo_global).replace(".", ","));
     setEditSaldo(true);
     requestAnimationFrame(() => { saldoRef.current?.focus(); saldoRef.current?.select(); });
   };
   const commitSaldo = () => {
     const n = parseLooseNumber(draftSaldo);
-    setSaldo(n);
     setEditSaldo(false);
     saveField("financeiro_resumo", { saldo_global: n });
   };
@@ -101,7 +112,13 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
       ? `${formatNumberBR(assoc.vencimentos_mes)} renovações vencem este mês — atenção`
       : "Base estável neste ciclo";
 
-  const déficitSub = `Resultado do 1º trimestre: ${formatCompactBRLThousands(fin.deficit_q1)}`;
+  const saldoSub = temSaldoReal
+    ? resultadoMes
+      ? `Resultado de ${resultadoMes.label}: ${formatCompactBRLThousands(resultadoMes.resultado)}`
+      : "Calculando resultado do mês…"
+    : `Resultado do 1º trimestre: ${formatCompactBRLThousands(fin.deficit_q1)}`;
+
+  const npsSemDados = nps25 <= 0;
 
   const cardBase =
     "group relative overflow-hidden rounded-2xl border border-border/60 bg-card/75 backdrop-blur-sm shadow-sm print:break-inside-avoid print:border print:bg-white print:shadow-none";
@@ -119,7 +136,7 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
             <Landmark className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
             <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Dinheiro em caixa</span>
           </div>
-          {editSaldo ? (
+          {!temSaldoReal && editSaldo ? (
             <div className="flex items-center gap-2">
               <Input
                 ref={saldoRef}
@@ -141,6 +158,13 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
                 <Check className="h-4 w-4" />
               </button>
             </div>
+          ) : temSaldoReal ? (
+            <span
+              className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate"
+              title={formatCurrencyBRL(saldo)}
+            >
+              {fmtCompact(saldo)}
+            </span>
           ) : (
             <button
               onClick={beginSaldo}
@@ -156,9 +180,9 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
               <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />
             </button>
           )}
-          <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{déficitSub}</p>
+          <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{saldoSub}</p>
           <a href="/financeiro" className="text-[10px] text-muted-foreground/60 hover:text-foreground transition-colors self-start leading-none">
-            Ver detalhes →
+            {temSaldoReal ? "Ver por mês, conta e categoria →" : "Ver detalhes →"}
           </a>
         </div>
       </motion.div>
@@ -172,11 +196,13 @@ export function ExecutiveHero({ data }: { data: BapsSnapshot }) {
             <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Satisfação dos membros</span>
           </div>
           <p className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate">
-            {nps25.toFixed(1).replace(".", ",")}
+            {npsSemDados ? "Sem dados" : nps25.toFixed(1).replace(".", ",")}
           </p>
-          <p className="text-[12px] text-muted-foreground leading-snug mt-auto">{growthSub}</p>
+          <p className="text-[12px] text-muted-foreground leading-snug mt-auto">
+            {npsSemDados ? "Cadastre as notas de satisfação em Entrada de dados" : growthSub}
+          </p>
           <span className="text-[10px] text-muted-foreground/60 leading-none">
-            Gráfico visível no painel
+            {npsSemDados ? "Pesquisa de satisfação ainda não cadastrada" : "Gráfico visível no painel"}
           </span>
         </div>
       </motion.div>
