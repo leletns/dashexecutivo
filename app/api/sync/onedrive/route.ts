@@ -25,6 +25,7 @@ import {
   findSpreadsheetItem,
   downloadDriveItemContent,
   disconnect,
+  OneDriveReauthRequiredError,
 } from "@/lib/onedrive";
 
 export const runtime = "nodejs";
@@ -95,7 +96,15 @@ export async function POST(req: Request) {
     );
   }
 
-  const accessToken = await getValidAccessToken(sb);
+  let accessToken: string | null;
+  try {
+    accessToken = await getValidAccessToken(sb);
+  } catch (err: any) {
+    if (err instanceof OneDriveReauthRequiredError) {
+      return NextResponse.json({ error: err.message }, { status: 401 });
+    }
+    return NextResponse.json({ error: err?.message ?? "Erro interno." }, { status: 500 });
+  }
   if (!accessToken) {
     return NextResponse.json(
       { error: "Conta Microsoft não conectada. Clique em 'Conectar conta Microsoft'." },

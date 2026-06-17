@@ -23,6 +23,8 @@ interface OneDriveStatus {
   } | null;
 }
 
+const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+
 function formatRelative(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
   if (diff < 60) return "agora mesmo";
@@ -72,34 +74,54 @@ export function OneDriveSyncPanel() {
     router.replace(url.pathname + (url.search ? `?${url.searchParams.toString()}` : ""));
   }, [searchParams, router, fetchStatus]);
 
-  const handleSync = async () => {
+  const runSync = React.useCallback(
+    async (url: string, opts?: { silent?: boolean }) => {
+      setSyncing(true);
+      try {
+        const res = await fetch("/api/sync/onedrive", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ share_url: url }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          toast.error(json?.error ?? "Falha ao sincronizar.");
+          await fetchStatus();
+          return;
+        }
+        if (!opts?.silent) {
+          toast.success(
+            `Concluído! ${json.rows_upserted.toLocaleString("pt-BR")} movimentações atualizadas de "${json.file_name}".`
+          );
+        }
+        window.dispatchEvent(new CustomEvent("portal:data-updated"));
+        await fetchStatus();
+      } catch (err: any) {
+        if (!opts?.silent) toast.error(err?.message ?? "Falha ao sincronizar.");
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [fetchStatus]
+  );
+
+  const handleSync = () => {
     if (!shareUrl.trim()) {
       toast.error("Cole o link da pasta ou arquivo do OneDrive.");
       return;
     }
-    setSyncing(true);
-    try {
-      const res = await fetch("/api/sync/onedrive", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ share_url: shareUrl.trim() }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        toast.error(json?.error ?? "Falha ao sincronizar.");
-        return;
-      }
-      toast.success(
-        `Concluído! ${json.rows_upserted.toLocaleString("pt-BR")} movimentações atualizadas de "${json.file_name}".`
-      );
-      window.dispatchEvent(new CustomEvent("portal:data-updated"));
-      await fetchStatus();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Falha ao sincronizar.");
-    } finally {
-      setSyncing(false);
-    }
+    runSync(shareUrl.trim());
   };
+
+  // Sincronização automática em segundo plano enquanto a conta estiver
+  // conectada e houver um link salvo — evita depender de clique manual.
+  React.useEffect(() => {
+    if (!status?.connected || !status.share_url) return;
+    const interval = setInterval(() => {
+      if (!syncing) runSync(status.share_url!, { silent: true });
+    }, AUTO_SYNC_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [status?.connected, status?.share_url, syncing, runSync]);
 
   const handleDisconnect = async () => {
     setSyncing(true);

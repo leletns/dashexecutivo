@@ -70,6 +70,14 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
   return res.json() as Promise<TokenResponse>;
 }
 
+/** Lançado quando o refresh_token foi revogado/expirado — a conta precisa ser reconectada. */
+export class OneDriveReauthRequiredError extends Error {
+  constructor(detail: string) {
+    super(`Conexão com a Microsoft expirou ou foi revogada. Reconecte a conta. (${detail})`);
+    this.name = "OneDriveReauthRequiredError";
+  }
+}
+
 async function refreshTokens(refreshToken: string): Promise<TokenResponse> {
   const res = await fetch(`https://login.microsoftonline.com/${tenant()}/oauth2/v2.0/token`, {
     method: "POST",
@@ -83,7 +91,19 @@ async function refreshTokens(refreshToken: string): Promise<TokenResponse> {
       scope: SCOPES,
     }),
   });
-  if (!res.ok) throw new Error(`Falha ao renovar token da Microsoft: ${await res.text()}`);
+  if (!res.ok) {
+    const text = await res.text();
+    let code = "";
+    try {
+      code = JSON.parse(text)?.error ?? "";
+    } catch {
+      // resposta não-JSON — ignora
+    }
+    if (code === "invalid_grant" || code === "interaction_required") {
+      throw new OneDriveReauthRequiredError(text);
+    }
+    throw new Error(`Falha ao renovar token da Microsoft: ${text}`);
+  }
   return res.json() as Promise<TokenResponse>;
 }
 
@@ -127,9 +147,16 @@ export async function getValidAccessToken(sb: SupabaseClient): Promise<string | 
     return row.access_token;
   }
 
-  const refreshed = await refreshTokens(row.refresh_token);
-  await storeTokens(sb, refreshed, row.account_label);
-  return refreshed.access_token;
+  try {
+    const refreshed = await refreshTokens(row.refresh_token);
+    await storeTokens(sb, refreshed, row.account_label);
+    return refreshed.access_token;
+  } catch (err) {
+    if (err instanceof OneDriveReauthRequiredError) {
+      await disconnect(sb);
+    }
+    throw err;
+  }
 }
 
 export async function getConnectionInfo(

@@ -18,6 +18,7 @@ import {
   resolveSharedItem,
   findSpreadsheetItem,
   downloadDriveItemContent,
+  OneDriveReauthRequiredError,
 } from "@/lib/onedrive";
 
 export const runtime = "nodejs";
@@ -55,7 +56,15 @@ async function handleSync(req: Request) {
     return NextResponse.json({ error: "Nenhum link do OneDrive configurado." }, { status: 422 });
   }
 
-  const accessToken = await getValidAccessToken(sb);
+  let accessToken: string | null;
+  try {
+    accessToken = await getValidAccessToken(sb);
+  } catch (err: any) {
+    if (err instanceof OneDriveReauthRequiredError) {
+      return NextResponse.json({ error: err.message }, { status: 401 });
+    }
+    return NextResponse.json({ error: err?.message ?? "Erro interno." }, { status: 500 });
+  }
   if (!accessToken) {
     return NextResponse.json({ error: "Conta Microsoft não conectada." }, { status: 401 });
   }
