@@ -48,6 +48,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { PortalFinanceiroTabs } from "@/components/financeiro/portal-financeiro-tabs";
 import { OneDriveSyncPanel } from "@/components/financeiro/onedrive-sync-panel";
+import { DropboxSyncPanel } from "@/components/financeiro/dropbox-sync-panel";
 import { usePortalSession } from "@/components/layout/portal-sector-context";
 import { useAppState, metricasEdicao, type FinanceLancamento } from "@/lib/app-state";
 import { useRegisterPageState } from "@/lib/page-state";
@@ -1864,6 +1865,13 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
       {canEdit && (
         <React.Suspense fallback={null}>
           <OneDriveSyncPanel />
+        </React.Suspense>
+      )}
+
+      {/* Sincronização com planilha do Dropbox (financeiro/executivo) */}
+      {canEdit && (
+        <React.Suspense fallback={null}>
+          <DropboxSyncPanel />
         </React.Suspense>
       )}
 

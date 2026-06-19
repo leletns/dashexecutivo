@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/sync-onedrive",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/sync-dropbox",
+      "schedule": "0 21 * * *"
     }
   ]
 }
