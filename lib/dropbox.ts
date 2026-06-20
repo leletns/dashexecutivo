@@ -1,28 +1,28 @@
 /**
  * Integração com Dropbox — lê a planilha financeira (XLSX/CSV) mais recente
- * de uma pasta do Dropbox, usada quando o cliente mantém a planilha-mestre
- * lá em vez do Google Sheets/OneDrive.
+ * de uma pasta compartilhada do Dropbox, usada quando o cliente mantém a
+ * planilha-mestre lá em vez do Google Sheets/OneDrive.
  *
- * Bem mais simples que a integração com Microsoft Graph: não exige registro
- * de aplicativo corporativo nem fluxo OAuth por usuário. Basta gerar um
- * access token direto no painel do Dropbox (dropbox.com/developers/apps →
- * app → Settings → OAuth 2 → Generate) e configurá-lo como variável de
- * ambiente.
+ * O cliente compartilha um link de pasta do Dropbox (ex.: o que o Miguel
+ * enviou: dropbox.com/scl/fo/...). Não é necessário que essa pasta esteja
+ * na conta do BAPS — a API do Dropbox permite listar/baixar o conteúdo de
+ * qualquer link compartilhado usando um access token de qualquer conta
+ * Dropbox (gerado no painel do app, sem fluxo OAuth por usuário).
  *
  * Variáveis de ambiente:
- *   DROPBOX_ACCESS_TOKEN — token gerado no painel do app Dropbox
- *   DROPBOX_FOLDER_PATH  — opcional; pasta a vigiar (padrão: raiz da pasta do app)
+ *   DROPBOX_ACCESS_TOKEN   — token gerado no painel do app Dropbox (Settings → OAuth 2 → Generate)
+ *   DROPBOX_SHARED_LINK_URL — link da pasta compartilhada enviado pelo cliente
  */
 
 const DROPBOX_API = "https://api.dropboxapi.com/2";
 const DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2";
 
 export function isDropboxConfigured(): boolean {
-  return !!process.env.DROPBOX_ACCESS_TOKEN;
+  return !!(process.env.DROPBOX_ACCESS_TOKEN && process.env.DROPBOX_SHARED_LINK_URL);
 }
 
-function folderPath(): string {
-  return process.env.DROPBOX_FOLDER_PATH ?? "";
+function sharedLinkUrl(): string {
+  return process.env.DROPBOX_SHARED_LINK_URL ?? "";
 }
 
 export interface DropboxEntry {
@@ -41,6 +41,7 @@ function toEntry(raw: any): DropboxEntry {
   };
 }
 
+/** Lista o conteúdo da pasta apontada pelo link compartilhado configurado. */
 async function listFolder(): Promise<DropboxEntry[]> {
   const token = process.env.DROPBOX_ACCESS_TOKEN;
   const res = await fetch(`${DROPBOX_API}/files/list_folder`, {
@@ -49,7 +50,7 @@ async function listFolder(): Promise<DropboxEntry[]> {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ path: folderPath() }),
+    body: JSON.stringify({ path: "", shared_link: { url: sharedLinkUrl() } }),
   });
   if (!res.ok) {
     throw new Error(`Falha ao listar pasta do Dropbox (${res.status}): ${await res.text()}`);
@@ -58,7 +59,7 @@ async function listFolder(): Promise<DropboxEntry[]> {
   return (json.entries ?? []).map(toEntry);
 }
 
-/** Encontra a planilha (.xlsx/.xls/.csv) modificada mais recentemente na pasta configurada. */
+/** Encontra a planilha (.xlsx/.xls/.csv) modificada mais recentemente na pasta compartilhada. */
 export async function findLatestSpreadsheet(): Promise<DropboxEntry | null> {
   const entries = await listFolder();
   const candidates = entries.filter(
@@ -74,14 +75,14 @@ export async function findLatestSpreadsheet(): Promise<DropboxEntry | null> {
   return candidates[0];
 }
 
-/** Faz o download do conteúdo binário de um arquivo do Dropbox. */
+/** Faz o download do conteúdo binário de um arquivo dentro da pasta compartilhada. */
 export async function downloadFileContent(pathLower: string): Promise<Buffer> {
   const token = process.env.DROPBOX_ACCESS_TOKEN;
-  const res = await fetch(`${DROPBOX_CONTENT_API}/files/download`, {
+  const res = await fetch(`${DROPBOX_CONTENT_API}/sharing/get_shared_link_file`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
-      "Dropbox-API-Arg": JSON.stringify({ path: pathLower }),
+      "Dropbox-API-Arg": JSON.stringify({ url: sharedLinkUrl(), path: pathLower }),
     },
   });
   if (!res.ok) {
