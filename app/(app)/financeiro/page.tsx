@@ -1868,7 +1868,7 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
         </React.Suspense>
       )}
 
-      {/* Sincronização com planilha do Dropbox (financeiro/executivo) */}
+      {/* Sincronização silenciosa com a planilha do Dropbox — sem UI visível */}
       {canEdit && (
         <React.Suspense fallback={null}>
           <DropboxSyncPanel />
