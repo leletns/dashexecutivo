@@ -66,6 +66,7 @@ export async function GET(req: Request) {
     // ── 1. Fluxo mensal (lançamentos realizados, com data_pagamento) ──────────
     let totalEntradas = 0;
     let totalSaidas = 0;
+    let countRealizados = 0;
     const fluxoMap = new Map<string, { entradas: number; saidas: number }>();
 
     for (const row of lancamentos) {
@@ -74,6 +75,7 @@ export async function GET(req: Request) {
       if (!row.data_pagamento || row.data_pagamento > today) continue;
       if (!dentroPeriodo(row.data_pagamento)) continue;
 
+      countRealizados += 1;
       const rd  = (row.rec_desp ?? "").toLowerCase().trim();
       const val = Number(row.valor) || 0;
       const key = row.data_pagamento.slice(0, 7);
@@ -219,6 +221,7 @@ export async function GET(req: Request) {
         resultado_projetado:  totalEntradas - totalSaidas + aReceber - aPagar,
         total_a_receber:      aReceber,
         total_a_pagar:        aPagar,
+        count_total:          countRealizados,
       },
     });
   } catch (err: any) {

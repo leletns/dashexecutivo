@@ -176,11 +176,7 @@ export function BapsDashboard({
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           if (!d?.totais) return;
-          // fetch count separately
-          fetch("/api/lancamentos?limit=1", { cache: "no-store" })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((c) => setLancTotais({ ...d.totais, count_total: c?.total ?? 0 }))
-            .catch(() => setLancTotais({ ...d.totais, count_total: 0 }));
+          setLancTotais({ ...d.totais, count_total: d.totais.count_total ?? 0 });
 
           // Resultado do mês atual (entradas - saídas já efetivadas neste mês)
           const chaveAtual = todayBrasilia().slice(0, 7);
