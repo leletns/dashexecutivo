@@ -38,7 +38,23 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const ano = searchParams.get("ano")?.trim() ?? "";
+    const from = searchParams.get("from")?.trim() ?? "";
+    const to = searchParams.get("to")?.trim() ?? "";
     const today = todayBrasilia();
+
+    // Filtro de período: aceita ano completo (ano=2026) OU intervalo de datas
+    // (from=2026-01-01&to=2026-03-31), usado pelo seletor "todo o período /
+    // este mês / trimestre / bimestre / ano" do painel principal. Sem nenhum
+    // filtro ativo, mantém o comportamento original (todas as datas contam).
+    const periodoAtivo = Boolean(ano || from || to);
+    function dentroPeriodo(date: string | null | undefined): boolean {
+      if (!periodoAtivo) return true;
+      if (!date) return false;
+      if (ano && date.slice(0, 4) !== ano) return false;
+      if (from && date < from) return false;
+      if (to && date > to) return false;
+      return true;
+    }
 
     const { rows: lancamentos, fonte, aviso: avisoFonteInicial } = await getLancamentos();
     let avisoFonte = avisoFonteInicial;
@@ -56,7 +72,7 @@ export async function GET(req: Request) {
       const sit = (row.situacao ?? "").toLowerCase().trim();
       if (sit !== "recebido" && sit !== "pago") continue;
       if (!row.data_pagamento || row.data_pagamento > today) continue;
-      if (ano && row.data_pagamento.slice(0, 4) !== ano) continue;
+      if (!dentroPeriodo(row.data_pagamento)) continue;
 
       const rd  = (row.rec_desp ?? "").toLowerCase().trim();
       const val = Number(row.valor) || 0;
@@ -88,7 +104,7 @@ export async function GET(req: Request) {
     let aReceber = 0;
     let aPagar   = 0;
     for (const row of lancamentos) {
-      if (ano && (!row.data_vencimento || row.data_vencimento.slice(0, 4) !== ano)) continue;
+      if (!dentroPeriodo(row.data_vencimento)) continue;
 
       const sit = (row.situacao ?? "").toLowerCase().trim();
       const val = Number(row.valor) || 0;
@@ -100,7 +116,7 @@ export async function GET(req: Request) {
     const eventoMap = new Map<string, { receita: number; despesa: number }>();
     for (const row of lancamentos) {
       if (!row.evento) continue;
-      if (ano && (!row.data_vencimento || row.data_vencimento.slice(0, 4) !== ano)) continue;
+      if (!dentroPeriodo(row.data_vencimento)) continue;
 
       const cur = eventoMap.get(row.evento) ?? { receita: 0, despesa: 0 };
       const rd  = (row.rec_desp ?? "").toLowerCase().trim();
@@ -143,7 +159,7 @@ export async function GET(req: Request) {
     const categoriaMap = new Map<string, { receita: number; despesa: number }>();
     for (const row of lancamentos) {
       if (!row.classificacao) continue;
-      if (ano && (!row.data_vencimento || row.data_vencimento.slice(0, 4) !== ano)) continue;
+      if (!dentroPeriodo(row.data_vencimento)) continue;
 
       const cur = categoriaMap.get(row.classificacao) ?? { receita: 0, despesa: 0 };
       const rd  = (row.rec_desp ?? "").toLowerCase().trim();

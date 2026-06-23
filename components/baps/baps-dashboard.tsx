@@ -7,6 +7,7 @@ import { ArrowUpRight, Database } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, type SelectOption } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -59,6 +60,49 @@ const RISCO_VARIANT: Record<string, "success" | "warning" | "destructive"> = {
   alto: "destructive",
 };
 
+type Periodo = "todo" | "mes" | "bimestre" | "trimestre" | "semestre" | "ano";
+
+const PERIODO_OPTIONS: SelectOption[] = [
+  { value: "todo", label: "Todo o período" },
+  { value: "mes", label: "Este mês" },
+  { value: "bimestre", label: "Este bimestre" },
+  { value: "trimestre", label: "Este trimestre" },
+  { value: "semestre", label: "Este semestre" },
+  { value: "ano", label: "Este ano" },
+];
+
+function lastDayOfMonth(ano: number, mes: number): number {
+  return new Date(ano, mes, 0).getDate();
+}
+
+function periodoRange(periodo: Periodo, today: string): { from?: string; to?: string } {
+  if (periodo === "todo") return {};
+  const ano = Number(today.slice(0, 4));
+  const mes = Number(today.slice(5, 7));
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  let startMes = 1;
+  let endMes = 12;
+  if (periodo === "mes") {
+    startMes = mes;
+    endMes = mes;
+  } else if (periodo === "bimestre") {
+    startMes = mes % 2 === 0 ? mes - 1 : mes;
+    endMes = startMes + 1;
+  } else if (periodo === "trimestre") {
+    startMes = Math.floor((mes - 1) / 3) * 3 + 1;
+    endMes = startMes + 2;
+  } else if (periodo === "semestre") {
+    startMes = mes <= 6 ? 1 : 7;
+    endMes = startMes + 5;
+  }
+
+  return {
+    from: `${ano}-${pad(startMes)}-01`,
+    to: `${ano}-${pad(endMes)}-${pad(lastDayOfMonth(ano, endMes))}`,
+  };
+}
+
 function certidaoAlertaMeses(previsaoIso: string): "calmo" | "alerta" | "vencido" {
   const alvo = new Date(previsaoIso + "T12:00:00");
   const hoje = new Date();
@@ -92,6 +136,7 @@ export function BapsDashboard({
     saidas: number;
     resultado: number;
   } | null>(null);
+  const [periodo, setPeriodo] = React.useState<Periodo>("todo");
 
   function fmtCompactBRL(value: number): string {
     const sign = value < 0 ? "-" : "";
@@ -121,7 +166,13 @@ export function BapsDashboard({
   React.useEffect(() => {
     if (!["financeiro", "contabil", "administrativo", "executivo"].includes(sector)) return;
     const load = () => {
-      fetch("/api/lancamentos/fluxo", { cache: "no-store" })
+      const { from, to } = periodoRange(periodo, todayBrasilia());
+      const qs = new URLSearchParams();
+      if (from) qs.set("from", from);
+      if (to) qs.set("to", to);
+      const url = qs.toString() ? `/api/lancamentos/fluxo?${qs}` : "/api/lancamentos/fluxo";
+
+      fetch(url, { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           if (!d?.totais) return;
@@ -150,7 +201,7 @@ export function BapsDashboard({
       clearInterval(interval);
       window.removeEventListener("portal:data-updated", load);
     };
-  }, [sector]);
+  }, [sector, periodo]);
 
   const demandas = data.contratos.filter((c) => c.status !== "ativo");
   const ativos = data.contratos.filter((c) => c.status === "ativo");
@@ -345,53 +396,61 @@ export function BapsDashboard({
       )}
 
       {showZone(sector, "macro_financeiro") && (
-        <motion.section
-          initial="hidden"
-          animate="show"
-          custom={1}
-          variants={fade}
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-2"
-        >
-          {lancTotais ? (
-            <>
-              <Kpi
-                label="Receitas recebidas"
-                value={fmtCompactBRL(lancTotais.total_receitas_pagas)}
-                fullValue={formatCurrencyBRL(lancTotais.total_receitas_pagas)}
-                hint={lancTotais.count_total > 0 ? `${lancTotais.count_total.toLocaleString("pt-BR")} movimentações` : "Total recebido no período"}
-                accent="emerald"
-              />
-              <Kpi
-                label="Despesas pagas"
-                value={fmtCompactBRL(lancTotais.total_despesas_pagas)}
-                fullValue={formatCurrencyBRL(lancTotais.total_despesas_pagas)}
-                hint="Total de pagamentos realizados"
-                accent="rose"
-              />
-              <Kpi
-                label="Saldo realizado"
-                value={fmtCompactBRL(lancTotais.saldo_realizado)}
-                fullValue={formatCurrencyBRL(lancTotais.saldo_realizado)}
-                hint="Receitas − despesas pagas"
-                accent={lancTotais.saldo_realizado < 0 ? "rose" : "emerald"}
-              />
-              <Kpi
-                label="Resultado projetado"
-                value={fmtCompactBRL(lancTotais.resultado_projetado)}
-                fullValue={formatCurrencyBRL(lancTotais.resultado_projetado)}
-                hint="Saldo + a receber − a pagar"
-                accent={lancTotais.resultado_projetado < 0 ? "rose" : "emerald"}
-              />
-            </>
-          ) : (
-            <>
-              <Kpi label="Receitas recebidas" value="—" hint="Carregando dados do e-Gestor…" />
-              <Kpi label="Despesas pagas" value="—" hint="Carregando dados do e-Gestor…" />
-              <Kpi label="Saldo realizado" value="—" hint="Aguardando…" />
-              <Kpi label="Resultado projetado" value="—" hint="Aguardando…" />
-            </>
-          )}
-        </motion.section>
+        <motion.div initial="hidden" animate="show" custom={1} variants={fade} className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
+              Visão financeira
+            </p>
+            <Select
+              value={periodo}
+              onValueChange={(v) => setPeriodo(v as Periodo)}
+              options={PERIODO_OPTIONS}
+              triggerClassName="min-w-[170px]"
+              align="end"
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-2">
+            {lancTotais ? (
+              <>
+                <Kpi
+                  label="Receitas recebidas"
+                  value={fmtCompactBRL(lancTotais.total_receitas_pagas)}
+                  fullValue={formatCurrencyBRL(lancTotais.total_receitas_pagas)}
+                  hint={lancTotais.count_total > 0 ? `${lancTotais.count_total.toLocaleString("pt-BR")} movimentações` : "Total recebido no período"}
+                  accent="emerald"
+                />
+                <Kpi
+                  label="Despesas pagas"
+                  value={fmtCompactBRL(lancTotais.total_despesas_pagas)}
+                  fullValue={formatCurrencyBRL(lancTotais.total_despesas_pagas)}
+                  hint="Total de pagamentos realizados"
+                  accent="rose"
+                />
+                <Kpi
+                  label="Saldo realizado"
+                  value={fmtCompactBRL(lancTotais.saldo_realizado)}
+                  fullValue={formatCurrencyBRL(lancTotais.saldo_realizado)}
+                  hint="Receitas − despesas pagas"
+                  accent={lancTotais.saldo_realizado < 0 ? "rose" : "emerald"}
+                />
+                <Kpi
+                  label="Resultado projetado"
+                  value={fmtCompactBRL(lancTotais.resultado_projetado)}
+                  fullValue={formatCurrencyBRL(lancTotais.resultado_projetado)}
+                  hint="Saldo + a receber − a pagar"
+                  accent={lancTotais.resultado_projetado < 0 ? "rose" : "emerald"}
+                />
+              </>
+            ) : (
+              <>
+                <Kpi label="Receitas recebidas" value="—" hint="Carregando dados do e-Gestor…" />
+                <Kpi label="Despesas pagas" value="—" hint="Carregando dados do e-Gestor…" />
+                <Kpi label="Saldo realizado" value="—" hint="Aguardando…" />
+                <Kpi label="Resultado projetado" value="—" hint="Aguardando…" />
+              </>
+            )}
+          </div>
+        </motion.div>
       )}
 
       {showZone(sector, "macro_marketing") && (
