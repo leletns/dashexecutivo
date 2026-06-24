@@ -49,7 +49,7 @@ function splitCSVLine(line: string, sep: string): string[] {
 
 export async function parseXLSX(buffer: Buffer): Promise<string[][]> {
   const XLSX = await import("xlsx");
-  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
+  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
 
   // Procura a aba na seguinte ordem de prioridade:
   // 1. Nome exato configurado em GOOGLE_SHEETS_SHEET_NAME
@@ -73,6 +73,32 @@ export async function parseXLSX(buffer: Buffer): Promise<string[][]> {
     defval: "",
     raw: false,
   }) as string[][];
+
+  // Colunas de data (L/M/N — vencimento, pagamento, créd/déb; ver
+  // buildColumnMap em lib/google-sheets.ts). `parseDateBR` adivinha se o
+  // texto formatado é "m/d/yyyy" (americano, como o Google Sheets exporta)
+  // ou "d/m/yyyy" (brasileiro, como o e-Gestor exporta nativo) — mas um
+  // arquivo .xlsx baixado direto do Dropbox vem no formato brasileiro, e
+  // para dias 1-12 essa adivinhação inverte dia/mês silenciosamente,
+  // jogando o lançamento no mês errado (ex.: pagamentos do início do mês
+  // atual somem do mês atual e aparecem em outro). Como `cellDates: true`
+  // faz o XLSX guardar a data real da célula (sem depender do texto
+  // formatado), pegamos esse valor direto quando disponível — sem
+  // ambiguidade de formato.
+  const DATE_COLS = [11, 12, 13];
+  const range = XLSX.utils.decode_range(sheet["!ref"] ?? "A1");
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const rowIdx = r - range.s.r;
+    if (!data[rowIdx]) continue;
+    for (const c of DATE_COLS) {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+      if (cell?.t === "d" && cell.v instanceof Date) {
+        const d = cell.v;
+        data[rowIdx][c] =
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      }
+    }
+  }
 
   return data;
 }
