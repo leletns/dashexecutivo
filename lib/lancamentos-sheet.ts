@@ -9,6 +9,8 @@
 import * as XLSX from "xlsx";
 import { findHeaderRowIndex, buildColumnMap, parseDateBR, parseMoneyBR } from "@/lib/google-sheets";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { isDropboxConfigured } from "@/lib/dropbox";
+import { isOneDriveConfigured } from "@/lib/onedrive";
 
 const CACHE_TTL_MS = 45_000;
 
@@ -275,12 +277,22 @@ function mergeOverrides(rows: LancamentoRow[], overrides: LancamentoOverride[]):
   return merged;
 }
 
-/** Lê a planilha com fallback automático para o Supabase, mesclando as edições do financeiro. */
+/**
+ * Lê a planilha com fallback automático para o Supabase, mesclando as edições do financeiro.
+ *
+ * Quando o Dropbox ou o OneDrive estão configurados, eles são a fonte de
+ * verdade ativa (alimentam o Supabase via sincronização) — por isso o
+ * Google Sheets só é consultado se nenhum dos dois estiver em uso. Sem essa
+ * checagem, deixar GOOGLE_SHEETS_SPREADSHEET_ID configurado de uma migração
+ * antiga faz o painel mostrar para sempre os dados velhos da planilha do
+ * Google, ignorando qualquer sincronização nova feita pelo cliente.
+ */
 export async function getLancamentos(): Promise<{ rows: LancamentoRow[]; fonte: "planilha" | "supabase"; aviso: string | null }> {
   let result: { rows: LancamentoRow[]; fonte: "planilha" | "supabase"; aviso: string | null };
+  const usaArmazenamentoEmNuvem = isDropboxConfigured() || isOneDriveConfigured();
 
   try {
-    const rows = await getLancamentosFromSheet();
+    const rows = usaArmazenamentoEmNuvem ? null : await getLancamentosFromSheet();
     if (rows) {
       result = { rows, fonte: "planilha", aviso: null };
     } else {
