@@ -86,6 +86,17 @@ export async function parseXLSX(buffer: Buffer): Promise<string[][]> {
   // formatado), pegamos esse valor direto quando disponível — sem
   // ambiguidade de formato.
   const DATE_COLS = [11, 12, 13];
+  // Coluna Valor (I — índice 8). `parseMoneyBR` espera texto no formato
+  // brasileiro ("1.234,56"), que é como o Google Sheets exporta o valor
+  // FORMATADO. Mas um número nativo de célula .xlsx (tipo "n") vem aqui como
+  // texto americano puro via `raw:false` (ex.: "1234.56", já que o formato
+  // "General" do Excel não usa separador de milhar nem vírgula decimal) — ao
+  // passar isso por `parseMoneyBR`, o ponto decimal é removido como se fosse
+  // separador de milhar e o valor sai 100x maior (1234.56 → 123456). Como o
+  // tipo da célula nos diz, sem ambiguidade, que é um número puro, formatamos
+  // nós mesmos no padrão brasileiro a partir do valor real — sem depender do
+  // texto que o Excel decidiu exibir.
+  const VALOR_COL = 8;
   const range = XLSX.utils.decode_range(sheet["!ref"] ?? "A1");
   for (let r = range.s.r; r <= range.e.r; r++) {
     const rowIdx = r - range.s.r;
@@ -97,6 +108,13 @@ export async function parseXLSX(buffer: Buffer): Promise<string[][]> {
         data[rowIdx][c] =
           `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       }
+    }
+    const valorCell = sheet[XLSX.utils.encode_cell({ r, c: VALOR_COL })];
+    if (valorCell?.t === "n" && typeof valorCell.v === "number") {
+      data[rowIdx][VALOR_COL] = valorCell.v.toLocaleString("pt-BR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
     }
   }
 
