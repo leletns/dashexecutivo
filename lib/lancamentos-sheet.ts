@@ -302,58 +302,59 @@ function mergeOverrides(rows: LancamentoRow[], overrides: LancamentoOverride[]):
 }
 
 /**
- * Lê a planilha com fallback automático para o Supabase, mesclando as edições do financeiro.
+ * Lê os lançamentos e mescla as edições do financeiro.
  *
- * Quando o Dropbox ou o OneDrive estão configurados, eles são a fonte de
- * verdade ativa (alimentam o Supabase via sincronização) — por isso o
- * Google Sheets só é consultado se nenhum dos dois estiver em uso. Sem essa
- * checagem, deixar GOOGLE_SHEETS_SPREADSHEET_ID configurado de uma migração
- * antiga faz o painel mostrar para sempre os dados velhos da planilha do
- * Google, ignorando qualquer sincronização nova feita pelo cliente.
+ * Estratégia à prova de tela-zerada: tenta TODAS as fontes possíveis, cada
+ * uma protegida por seu próprio try/catch, e usa a primeira que realmente
+ * traz dados. Nenhuma falha de uma fonte derruba o painel para zero enquanto
+ * outra fonte tiver dados.
+ *
+ * Ordem de preferência:
+ *   1. Supabase  — destino da sincronização do Dropbox/OneDrive (dados frescos).
+ *   2. Planilha do Google (CSV público) — fonte legada, usada como rede de
+ *      segurança quando o Supabase está vazio/indisponível.
+ *
+ * Quando Dropbox/OneDrive NÃO estão configurados, a planilha do Google vem
+ * primeiro (continua sendo a fonte ativa nesse cenário antigo).
  */
 export async function getLancamentos(): Promise<{ rows: LancamentoRow[]; fonte: "planilha" | "supabase"; aviso: string | null }> {
-  let result: { rows: LancamentoRow[]; fonte: "planilha" | "supabase"; aviso: string | null };
   const usaArmazenamentoEmNuvem = isDropboxConfigured() || isOneDriveConfigured();
 
-  try {
-    if (usaArmazenamentoEmNuvem) {
-      // Dropbox/OneDrive são a fonte ativa — leem do Supabase (destino da
-      // sincronização). MAS, se o Supabase ainda estiver vazio (a sincronização
-      // nunca rodou com sucesso, ou falhou), NÃO deixamos o painel em branco:
-      // caímos para a planilha do Google como último recurso, para sempre
-      // mostrar algum dado em vez de uma tela vazia.
-      const supabaseRows = await getLancamentosFromSupabase();
-      if (supabaseRows.length > 0) {
-        result = { rows: supabaseRows, fonte: "supabase", aviso: null };
-      } else {
-        const sheetRows = await getLancamentosFromSheet().catch(() => null);
-        result = sheetRows && sheetRows.length > 0
-          ? {
-              rows: sheetRows,
-              fonte: "planilha",
-              aviso: "A sincronização do Dropbox ainda não trouxe dados — mostrando a planilha anterior enquanto isso. Rode a sincronização para atualizar.",
-            }
-          : { rows: supabaseRows, fonte: "supabase", aviso: null };
-      }
-    } else {
-      const rows = await getLancamentosFromSheet();
-      if (rows) {
-        result = { rows, fonte: "planilha", aviso: null };
-      } else {
-        const fallback = await getLancamentosFromSupabase();
-        result = { rows: fallback, fonte: "supabase", aviso: null };
-      }
+  const lerSupabase = async (): Promise<LancamentoRow[]> =>
+    getLancamentosFromSupabase().catch(() => [] as LancamentoRow[]);
+  const lerPlanilha = async (): Promise<LancamentoRow[]> =>
+    getLancamentosFromSheet().then((r) => r ?? []).catch(() => [] as LancamentoRow[]);
+
+  // Fontes na ordem de preferência conforme o cenário configurado.
+  const fontes: Array<{ nome: "supabase" | "planilha"; ler: () => Promise<LancamentoRow[]> }> =
+    usaArmazenamentoEmNuvem
+      ? [{ nome: "supabase", ler: lerSupabase }, { nome: "planilha", ler: lerPlanilha }]
+      : [{ nome: "planilha", ler: lerPlanilha }, { nome: "supabase", ler: lerSupabase }];
+
+  let result: { rows: LancamentoRow[]; fonte: "planilha" | "supabase"; aviso: string | null } = {
+    rows: [],
+    fonte: usaArmazenamentoEmNuvem ? "supabase" : "planilha",
+    aviso: null,
+  };
+
+  for (let i = 0; i < fontes.length; i++) {
+    const rows = await fontes[i].ler();
+    if (rows.length > 0) {
+      // Se a fonte preferida (índice 0) veio vazia e estamos usando a de
+      // reserva, avisamos — mas o painel já mostra dados em vez de zero.
+      const usandoReserva = i > 0;
+      result = {
+        rows,
+        fonte: fontes[i].nome,
+        aviso: usandoReserva
+          ? "Mostrando a planilha anterior — a sincronização mais recente ainda não trouxe dados novos."
+          : null,
+      };
+      break;
     }
-  } catch (err: any) {
-    const fallback = await getLancamentosFromSupabase().catch(() => [] as LancamentoRow[]);
-    result = {
-      rows: fallback,
-      fonte: "supabase",
-      aviso: `A planilha não pôde ser usada agora: ${err?.message ?? "erro desconhecido"} — mostrando os últimos dados salvos.`,
-    };
   }
 
-  const overrides = await getLancamentosOverrides();
+  const overrides = await getLancamentosOverrides().catch(() => [] as LancamentoOverride[]);
   if (overrides.length === 0) return result;
 
   return { ...result, rows: mergeOverrides(result.rows, overrides) };
