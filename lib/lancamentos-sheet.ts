@@ -36,6 +36,7 @@ export type LancamentoRow = {
 };
 
 let sheetCache: { at: number; rows: LancamentoRow[] } | null = null;
+let supabaseCache: { at: number; rows: LancamentoRow[] } | null = null;
 
 /** Busca o export CSV público da aba — funciona com a planilha "compartilhada por link". */
 async function fetchPublicSheetRows(spreadsheetId: string, sheetName: string): Promise<string[][]> {
@@ -152,15 +153,35 @@ export async function getLancamentosFromSupabase(): Promise<LancamentoRow[]> {
   const sb = createSupabaseAdmin();
   if (!sb) return [];
 
-  const { data } = await sb
-    .from("portal_lancamentos")
-    .select(
-      "cod, descricao, nome_razao_social, conta_caixa, plano_contas, plano_primario_contas, " +
-        "classificacao, sub_classificacao, forma_pagamento, situacao, ent_saida, rec_desp, " +
-        "tratativa, evento, valor, data_vencimento, data_pagamento, data_cred_deb"
-    );
+  if (supabaseCache && Date.now() - supabaseCache.at < CACHE_TTL_MS) {
+    return supabaseCache.rows;
+  }
 
-  return (data ?? []).map((r: any) => ({
+  const COLUNAS =
+    "cod, descricao, nome_razao_social, conta_caixa, plano_contas, plano_primario_contas, " +
+    "classificacao, sub_classificacao, forma_pagamento, situacao, ent_saida, rec_desp, " +
+    "tratativa, evento, valor, data_vencimento, data_pagamento, data_cred_deb";
+
+  // O Supabase/PostgREST limita CADA consulta a no máximo 1.000 linhas. Como a
+  // base tem dezenas de milhares de lançamentos, sem paginar o painel só
+  // enxergava os primeiros 1.000 — totais errados e "sem dados". Buscamos em
+  // páginas de 1.000 com .range() até esgotar.
+  const PAGE = 1000;
+  const data: any[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data: page, error } = await sb
+      .from("portal_lancamentos")
+      .select(COLUNAS)
+      .order("cod", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+
+    if (error) throw new Error(`Supabase: ${error.message}`);
+    if (!page || page.length === 0) break;
+    data.push(...page);
+    if (page.length < PAGE) break;
+  }
+
+  const rows = (data ?? []).map((r: any) => ({
     cod: r.cod ?? null,
     descricao: r.descricao ?? null,
     nome: r.nome_razao_social ?? null,
@@ -180,6 +201,9 @@ export async function getLancamentosFromSupabase(): Promise<LancamentoRow[]> {
     data_pagamento: r.data_pagamento ?? null,
     data_cred_deb: r.data_cred_deb ?? null,
   })) as LancamentoRow[];
+
+  supabaseCache = { at: Date.now(), rows };
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -292,15 +316,36 @@ export async function getLancamentos(): Promise<{ rows: LancamentoRow[]; fonte: 
   const usaArmazenamentoEmNuvem = isDropboxConfigured() || isOneDriveConfigured();
 
   try {
-    const rows = usaArmazenamentoEmNuvem ? null : await getLancamentosFromSheet();
-    if (rows) {
-      result = { rows, fonte: "planilha", aviso: null };
+    if (usaArmazenamentoEmNuvem) {
+      // Dropbox/OneDrive são a fonte ativa — leem do Supabase (destino da
+      // sincronização). MAS, se o Supabase ainda estiver vazio (a sincronização
+      // nunca rodou com sucesso, ou falhou), NÃO deixamos o painel em branco:
+      // caímos para a planilha do Google como último recurso, para sempre
+      // mostrar algum dado em vez de uma tela vazia.
+      const supabaseRows = await getLancamentosFromSupabase();
+      if (supabaseRows.length > 0) {
+        result = { rows: supabaseRows, fonte: "supabase", aviso: null };
+      } else {
+        const sheetRows = await getLancamentosFromSheet().catch(() => null);
+        result = sheetRows && sheetRows.length > 0
+          ? {
+              rows: sheetRows,
+              fonte: "planilha",
+              aviso: "A sincronização do Dropbox ainda não trouxe dados — mostrando a planilha anterior enquanto isso. Rode a sincronização para atualizar.",
+            }
+          : { rows: supabaseRows, fonte: "supabase", aviso: null };
+      }
     } else {
-      const fallback = await getLancamentosFromSupabase();
-      result = { rows: fallback, fonte: "supabase", aviso: null };
+      const rows = await getLancamentosFromSheet();
+      if (rows) {
+        result = { rows, fonte: "planilha", aviso: null };
+      } else {
+        const fallback = await getLancamentosFromSupabase();
+        result = { rows: fallback, fonte: "supabase", aviso: null };
+      }
     }
   } catch (err: any) {
-    const fallback = await getLancamentosFromSupabase();
+    const fallback = await getLancamentosFromSupabase().catch(() => [] as LancamentoRow[]);
     result = {
       rows: fallback,
       fonte: "supabase",
