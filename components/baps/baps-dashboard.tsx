@@ -137,10 +137,6 @@ export function BapsDashboard({
     resultado: number;
   } | null>(null);
   const [periodo, setPeriodo] = React.useState<Periodo>("todo");
-  const [lancDiag, setLancDiag] = React.useState<{ fonte: string | null; aviso: string | null }>({
-    fonte: null,
-    aviso: null,
-  });
 
   function fmtCompactBRL(value: number): string {
     const sign = value < 0 ? "-" : "";
@@ -179,12 +175,13 @@ export function BapsDashboard({
       fetch(url, { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
-          if (!d?.totais) {
-            // Resposta sem totais = erro no endpoint (ex.: banco não configurado).
-            setLancDiag({ fonte: d?.fonte ?? null, aviso: d?.aviso ?? d?.error ?? "Não foi possível carregar os dados financeiros agora." });
-            return;
+          // Diagnóstico silencioso no console do navegador (sem nada visível no
+          // painel) — ajuda a entender uma eventual divergência sem poluir a UI.
+          if (d?.fonte || d?.aviso || d?.error) {
+            // eslint-disable-next-line no-console
+            console.info("[financeiro] fonte:", d?.fonte ?? "—", "| aviso:", d?.aviso ?? d?.error ?? "—");
           }
-          setLancDiag({ fonte: d.fonte ?? null, aviso: d.aviso ?? null });
+          if (!d?.totais) return;
           setLancTotais({ ...d.totais, count_total: d.totais.count_total ?? 0 });
 
           // Resultado do mês atual (entradas - saídas já efetivadas neste mês)
@@ -414,11 +411,6 @@ export function BapsDashboard({
               align="end"
             />
           </div>
-          {lancDiag.aviso && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] leading-snug text-amber-700 dark:text-amber-300">
-              {lancDiag.aviso}
-            </div>
-          )}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-2">
             {lancTotais ? (
               <>
