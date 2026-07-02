@@ -11,7 +11,7 @@ import {
   npsWeightedGrowthPct,
   weightedNpsForYear,
 } from "@/lib/baps/executive-metrics";
-import { formatCurrencyBRL, formatNumberBR, parseLooseNumber, cn } from "@/lib/utils";
+import { formatCurrencyBRL, formatCompactBRL, formatNumberBR, parseLooseNumber, cn } from "@/lib/utils";
 
 const fade = {
   hidden: { opacity: 0, y: 12 },
@@ -21,14 +21,6 @@ const fade = {
     transition: { delay: i * 0.05, duration: 0.4, ease: [0.22, 1, 0.36, 1] },
   }),
 };
-
-function fmtCompact(value: number): string {
-  const sign = value < 0 ? "-" : "";
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `${sign}R$ ${(abs / 1_000_000).toFixed(2).replace(".", ",")}M`;
-  if (abs >= 1_000) return `${sign}R$ ${(abs / 1_000).toFixed(1).replace(".", ",")}k`;
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
-}
 
 async function saveField(table: string, payload: Record<string, unknown>) {
   await fetch("/api/baps/mutate", {
@@ -163,7 +155,7 @@ export function ExecutiveHero({
               className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate"
               title={formatCurrencyBRL(saldo)}
             >
-              {fmtCompact(saldo)}
+              {formatCompactBRL(saldo)}
             </span>
           ) : (
             <button
@@ -175,7 +167,7 @@ export function ExecutiveHero({
                 className="text-2xl sm:text-[1.65rem] font-semibold tracking-tight text-foreground tabular-nums leading-tight truncate"
                 title={formatCurrencyBRL(saldo)}
               >
-                {fmtCompact(saldo)}
+                {formatCompactBRL(saldo)}
               </span>
               <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />
             </button>

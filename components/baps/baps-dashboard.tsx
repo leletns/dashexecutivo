@@ -397,7 +397,7 @@ export function BapsDashboard({
               align="end"
             />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 print:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6 print:grid-cols-3">
             {lancTotais ? (
               <>
                 <Kpi
@@ -914,46 +914,7 @@ export function BapsDashboard({
         </motion.section>
       )}
 
-      {sector === "executivo" && (
-        <motion.section initial="hidden" animate="show" custom={10} variants={fade}>
-          <CeoHelpCard />
-        </motion.section>
-      )}
     </div>
-  );
-}
-
-function CeoHelpCard() {
-  const items = [
-    {
-      q: 'O que é "Dinheiro em caixa"?',
-      a: "É o valor total disponível nas contas da organização agora. Clique no número para atualizar.",
-    },
-    {
-      q: 'O que é "Satisfação dos membros"?',
-      a: "É uma nota de 0 a 100 que mede o quanto os associados estão satisfeitos com a BAPS. Quanto maior, melhor. A meta é 70 ou mais.",
-    },
-    {
-      q: 'O que é "Total de associados"?',
-      a: "O número de pessoas ativas como membros da BAPS hoje. Clique no número para atualizar.",
-    },
-    {
-      q: "Como atualizar os outros dados?",
-      a: 'Use o botão "Inserir dados" no topo da página para atualizar finanças, eventos, jurídico e muito mais.',
-    },
-  ];
-  return (
-    <Card className="p-5 sm:p-6 rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm shadow-sm print:break-inside-avoid">
-      <h2 className="text-sm font-semibold tracking-tight">Como usar este painel</h2>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        {items.map((item) => (
-          <div key={item.q} className="rounded-xl border border-border/40 bg-foreground/[0.02] px-4 py-3">
-            <p className="text-sm font-medium text-foreground leading-snug">{item.q}</p>
-            <p className="mt-1.5 text-[12px] text-muted-foreground leading-relaxed">{item.a}</p>
-          </div>
-        ))}
-      </div>
-    </Card>
   );
 }
 
