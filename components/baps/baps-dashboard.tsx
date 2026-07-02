@@ -77,14 +77,17 @@ function lastDayOfMonth(ano: number, mes: number): number {
   return new Date(ano, mes, 0).getDate();
 }
 
-function periodoRange(periodo: Periodo, today: string): { from?: string; to?: string } {
+// `ref` é o mês de referência "YYYY-MM" — o mês ATUAL do financeiro (último mês
+// com movimentações), não necessariamente o mês do calendário. Assim os botões
+// "Este mês / bimestre / …" sempre caem sobre dados reais.
+function periodoRange(periodo: Periodo, ref: string): { from?: string; to?: string } {
   if (periodo === "todo") return {};
-  const ano = Number(today.slice(0, 4));
-  const mes = Number(today.slice(5, 7));
+  const ano = Number(ref.slice(0, 4));
+  const mes = Number(ref.slice(5, 7));
   const pad = (n: number) => String(n).padStart(2, "0");
 
-  // "Até o mês atual": acumulado do ano do 1º de janeiro até o fim do mês
-  // corrente — o fluxo de caixa até agora (base para bater com a planilha).
+  // "Até o mês atual": acumulado do ano do 1º de janeiro até o fim do mês de
+  // referência — o fluxo de caixa até agora (base para bater com a planilha).
   if (periodo === "ate_mes") {
     return { from: `${ano}-01-01`, to: `${ano}-${pad(mes)}-${pad(lastDayOfMonth(ano, mes))}` };
   }
@@ -150,6 +153,9 @@ export function BapsDashboard({
     atualizado_em: string | null;
   } | null>(null);
   const [periodo, setPeriodo] = React.useState<Periodo>("ate_mes");
+  // Mês de referência = último mês com movimentações (o "mês atual" real do
+  // financeiro). Vazio até a 1ª resposta; aí os botões de período se ancoram nele.
+  const [mesReferencia, setMesReferencia] = React.useState("");
 
   React.useEffect(() => {
     let cancelled = false;
@@ -171,7 +177,8 @@ export function BapsDashboard({
   React.useEffect(() => {
     if (!["financeiro", "contabil", "administrativo", "executivo"].includes(sector)) return;
     const load = () => {
-      const { from, to } = periodoRange(periodo, todayBrasilia());
+      const ref = mesReferencia || todayBrasilia().slice(0, 7);
+      const { from, to } = periodoRange(periodo, ref);
       const qs = new URLSearchParams();
       if (from) qs.set("from", from);
       if (to) qs.set("to", to);
@@ -187,12 +194,19 @@ export function BapsDashboard({
             console.info("[financeiro] fonte:", d?.fonte ?? "—", "| aviso:", d?.aviso ?? d?.error ?? "—");
           }
           if (d?.saldo_planilha) setSaldoPlanilha(d.saldo_planilha);
+
+          // Atualiza o mês de referência para o último mês com movimentações
+          // (monotônico — só cresce), para os botões de período baterem em dados.
+          const chaves = (d?.fluxo_mensal ?? []).map((m: any) => m.chave).filter(Boolean).sort();
+          const ultimo = chaves[chaves.length - 1];
+          if (ultimo) setMesReferencia((prev) => (ultimo > prev ? ultimo : prev));
+
           if (!d?.totais) return;
           setLancTotais({ ...d.totais, count_total: d.totais.count_total ?? 0 });
 
-          // Resultado do mês atual (entradas - saídas já efetivadas neste mês)
-          const chaveAtual = todayBrasilia().slice(0, 7);
-          const mesAtual = (d.fluxo_mensal ?? []).find((m: any) => m.chave === chaveAtual);
+          // Resultado do mês de referência (último mês com movimentações).
+          const chaveRef = ultimo ?? (mesReferencia || todayBrasilia().slice(0, 7));
+          const mesAtual = (d.fluxo_mensal ?? []).find((m: any) => m.chave === chaveRef);
           setLancMesAtual({
             label: mesAtual?.mes ?? "este mês",
             entradas: mesAtual?.entradas ?? 0,
@@ -209,7 +223,7 @@ export function BapsDashboard({
       clearInterval(interval);
       window.removeEventListener("portal:data-updated", load);
     };
-  }, [sector, periodo]);
+  }, [sector, periodo, mesReferencia]);
 
   // "Saldo do dia" e "Saldo projetado" — vêm da própria planilha (números que
   // o financeiro mantém à mão), para bater exatamente com ela. Se ainda não
