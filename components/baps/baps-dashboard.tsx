@@ -27,7 +27,7 @@ import { CongressOperacaoPanel } from "@/components/baps/congress-operacao-panel
 import type { BapsSnapshot } from "@/lib/baps/types";
 import type { PortalSector } from "@/lib/portal-sector";
 import { sectorShortLabel, showZone } from "@/lib/portal-sector";
-import { formatCurrencyBRL, formatNumberBR, cn } from "@/lib/utils";
+import { formatCurrencyBRL, formatNumberBR, formatCompactBRL, cn } from "@/lib/utils";
 import { todayBrasilia } from "@/lib/timezone";
 import { useRegisterPageState } from "@/lib/page-state";
 
@@ -137,14 +137,6 @@ export function BapsDashboard({
     resultado: number;
   } | null>(null);
   const [periodo, setPeriodo] = React.useState<Periodo>("todo");
-
-  function fmtCompactBRL(value: number): string {
-    const sign = value < 0 ? "-" : "";
-    const abs = Math.abs(value);
-    if (abs >= 1_000_000) return `${sign}R$ ${(abs / 1_000_000).toFixed(1).replace(".", ",")}M`;
-    if (abs >= 1_000) return `${sign}R$ ${(abs / 1_000).toFixed(0)}k`;
-    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(value);
-  }
 
   React.useEffect(() => {
     let cancelled = false;
@@ -364,12 +356,6 @@ export function BapsDashboard({
         </motion.div>
       )}
 
-      {sector === "executivo" && (
-        <motion.div initial="hidden" animate="show" custom={3} variants={fade}>
-          <LancamentosKpiStrip />
-        </motion.div>
-      )}
-
       {showZone(sector, "macro_juridico") && (
         <motion.section
           initial="hidden"
@@ -411,44 +397,49 @@ export function BapsDashboard({
               align="end"
             />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 print:grid-cols-3">
             {lancTotais ? (
               <>
                 <Kpi
                   label="Receitas recebidas"
-                  value={fmtCompactBRL(lancTotais.total_receitas_pagas)}
+                  value={formatCompactBRL(lancTotais.total_receitas_pagas)}
                   fullValue={formatCurrencyBRL(lancTotais.total_receitas_pagas)}
-                  hint={lancTotais.count_total > 0 ? `${lancTotais.count_total.toLocaleString("pt-BR")} movimentações` : "Total recebido no período"}
                   accent="emerald"
                 />
                 <Kpi
                   label="Despesas pagas"
-                  value={fmtCompactBRL(lancTotais.total_despesas_pagas)}
+                  value={formatCompactBRL(lancTotais.total_despesas_pagas)}
                   fullValue={formatCurrencyBRL(lancTotais.total_despesas_pagas)}
-                  hint="Total de pagamentos realizados"
                   accent="rose"
                 />
                 <Kpi
                   label="Saldo realizado"
-                  value={fmtCompactBRL(lancTotais.saldo_realizado)}
+                  value={formatCompactBRL(lancTotais.saldo_realizado)}
                   fullValue={formatCurrencyBRL(lancTotais.saldo_realizado)}
-                  hint="Receitas − despesas pagas"
                   accent={lancTotais.saldo_realizado < 0 ? "rose" : "emerald"}
                 />
                 <Kpi
+                  label="A receber"
+                  value={formatCompactBRL(lancTotais.total_a_receber)}
+                  fullValue={formatCurrencyBRL(lancTotais.total_a_receber)}
+                />
+                <Kpi
+                  label="A pagar"
+                  value={formatCompactBRL(lancTotais.total_a_pagar)}
+                  fullValue={formatCurrencyBRL(lancTotais.total_a_pagar)}
+                />
+                <Kpi
                   label="Resultado projetado"
-                  value={fmtCompactBRL(lancTotais.resultado_projetado)}
+                  value={formatCompactBRL(lancTotais.resultado_projetado)}
                   fullValue={formatCurrencyBRL(lancTotais.resultado_projetado)}
-                  hint="Saldo + a receber − a pagar"
                   accent={lancTotais.resultado_projetado < 0 ? "rose" : "emerald"}
                 />
               </>
             ) : (
               <>
-                <Kpi label="Receitas recebidas" value="—" hint="Carregando dados do e-Gestor…" />
-                <Kpi label="Despesas pagas" value="—" hint="Carregando dados do e-Gestor…" />
-                <Kpi label="Saldo realizado" value="—" hint="Aguardando…" />
-                <Kpi label="Resultado projetado" value="—" hint="Aguardando…" />
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Kpi key={i} label="—" value="—" />
+                ))}
               </>
             )}
           </div>
@@ -1055,106 +1046,5 @@ function ContratoTable({ rows, empty }: { rows: BapsSnapshot["contratos"]; empty
         ))}
       </TableBody>
     </Table>
-  );
-}
-
-// ─── LancamentosKpiStrip ──────────────────────────────────────────────────────
-// Mostra KPIs financeiros reais no painel da presidência.
-// Atualiza sempre que o financeiro faz upload.
-
-interface LancTotais {
-  total_receitas_pagas: number;
-  total_despesas_pagas: number;
-  total_a_receber: number;
-  total_a_pagar: number;
-  saldo_realizado: number;
-  resultado_projetado: number;
-  count_total: number;
-}
-
-function LancamentosKpiStrip() {
-  const [totais, setTotais] = React.useState<LancTotais | null>(null);
-  const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
-
-  const loadData = React.useCallback(() => {
-    fetch("/api/lancamentos/resumo", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d?.totais?.[0]) setTotais(d.totais[0]); })
-      .catch(() => {});
-    fetch("/api/sync/sheets", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d?.last_sync?.finished_at && setUpdatedAt(d.last_sync.finished_at))
-      .catch(() => {});
-  }, []);
-
-  React.useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 30_000);
-    window.addEventListener("portal:data-updated", loadData);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("portal:data-updated", loadData);
-    };
-  }, [loadData]);
-
-  if (!totais || !totais.count_total) return null;
-
-  const rel = (iso: string) => {
-    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-    if (diff < 3600) return `${Math.floor(diff / 60)} min atrás`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} h atrás`;
-    return `${Math.floor(diff / 86400)} dias atrás`;
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-            Resumo financeiro
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {totais.count_total.toLocaleString("pt-BR")} movimentações registradas
-            {updatedAt && ` · atualizado ${rel(updatedAt)}`}
-          </p>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <LancKpi
-          label="Receitas recebidas"
-          value={formatCurrencyBRL(totais.total_receitas_pagas)}
-          color="text-emerald-600 dark:text-emerald-400"
-        />
-        <LancKpi
-          label="Despesas pagas"
-          value={formatCurrencyBRL(totais.total_despesas_pagas)}
-          color="text-rose-600 dark:text-rose-400"
-        />
-        <LancKpi
-          label="Saldo realizado"
-          value={formatCurrencyBRL(totais.saldo_realizado)}
-          color={totais.saldo_realizado >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}
-        />
-        <LancKpi
-          label="A receber"
-          value={formatCurrencyBRL(totais.total_a_receber)}
-          color="text-amber-600 dark:text-amber-400"
-        />
-        <LancKpi
-          label="A pagar"
-          value={formatCurrencyBRL(totais.total_a_pagar)}
-          color="text-orange-600 dark:text-orange-400"
-        />
-      </div>
-    </div>
-  );
-}
-
-function LancKpi({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <Card className="p-4">
-      <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground font-medium">{label}</p>
-      <p className={cn("mt-1.5 text-lg font-semibold tabular-nums leading-none", color)}>{value}</p>
-    </Card>
   );
 }
