@@ -7,6 +7,7 @@ import {
   Megaphone,
   CalendarRange,
   ClipboardList,
+  Bell,
   type LucideIcon,
 } from "lucide-react";
 import { useAppState } from "@/lib/app-state";
@@ -34,6 +35,7 @@ export const STATIC_NAV: NavItem[] = [
   { href: "/juridico", label: "Jurídico", icon: Scale },
   { href: "/contabil", label: "Contábil", icon: CalculatorIcon },
   { href: "/marketing", label: "Marketing", icon: Megaphone },
+  { href: "/notificacoes", label: "Notificações", icon: Bell },
 ];
 
 export const EVENTOS_NAV: Omit<NavItem, "children"> = {

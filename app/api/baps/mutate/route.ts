@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getPortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { getPortalSectorFromEmail } from "@/lib/portal-sector";
+import { logAudit, nomeAmigavel } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -122,6 +124,28 @@ export async function POST(req: Request) {
       default:
         return NextResponse.json({ error: "Tipo inválido" }, { status: 400 });
     }
+
+    const nome = nomeAmigavel(session.user.email);
+    const rotulo: Record<string, string> = {
+      contrato: "um contrato",
+      processo: "um processo",
+      certidao: "uma certidão",
+      financeiro_resumo: "o resumo financeiro",
+      financeiro_evento: "um evento financeiro",
+      financeiro_evento_save: "um evento financeiro",
+      associados_resumo: "o resumo de associados",
+      institucional: "os dados institucionais",
+      congresso_disponibilidade: "a disponibilidade do congresso",
+    };
+    await logAudit(admin, {
+      userEmail: session.user.email,
+      userName: nome,
+      sector: getPortalSectorFromEmail(session.user.email),
+      action: "editou",
+      entity: body.kind,
+      summary: `${nome} atualizou ${rotulo[body.kind] ?? body.kind}`,
+    });
+
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Falha ao gravar";

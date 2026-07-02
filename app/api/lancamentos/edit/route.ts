@@ -19,6 +19,7 @@ import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { getPortalSectorFromEmail } from "@/lib/portal-sector";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { logAudit, nomeAmigavel } from "@/lib/audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -94,6 +95,19 @@ export async function POST(req: Request) {
     const { error } = await sb.from("portal_lancamentos_overrides").upsert(row, { onConflict: "cod" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+    const nome = nomeAmigavel(portal.email);
+    const refLanc = (fields.descricao as string) || (fields.nome as string) || cod;
+    await logAudit(sb, {
+      userEmail: portal.email,
+      userName: nome,
+      sector,
+      action: manual ? "criou" : "editou",
+      entity: "lancamento",
+      entityId: cod,
+      summary: `${nome} ${manual ? "criou" : "editou"} o lançamento "${refLanc}"`,
+      details: { campos: Object.keys(fields) },
+    });
+
     return NextResponse.json({ ok: true, cod });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Erro interno." }, { status: 500 });
@@ -122,6 +136,17 @@ export async function DELETE(req: Request) {
       { onConflict: "cod" },
     );
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    const nome = nomeAmigavel(portal.email);
+    await logAudit(sb, {
+      userEmail: portal.email,
+      userName: nome,
+      sector,
+      action: "excluiu",
+      entity: "lancamento",
+      entityId: cod,
+      summary: `${nome} excluiu o lançamento ${cod}`,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {

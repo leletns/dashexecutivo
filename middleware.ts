@@ -40,5 +40,6 @@ export const config = {
     "/contabil/:path*",
     "/marketing/:path*",
     "/eventos/:path*",
+    "/notificacoes/:path*",
   ],
 };
