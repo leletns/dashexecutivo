@@ -30,6 +30,15 @@ import { ImpostosFolhaChart } from "@/components/dashboard/impostos-folha-chart"
 import { useRegisterPageState } from "@/lib/page-state";
 import { formatCurrencyBRL } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { Select, type SelectOption } from "@/components/ui/select";
+import { todayBrasilia } from "@/lib/timezone";
+import {
+  type Periodo,
+  periodoParams,
+  periodoQuery,
+  periodoSufixo,
+  mesSelectOptions,
+} from "@/lib/periodo-financeiro";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -120,7 +129,9 @@ function KpiReal({
 
 // ─── Hook: dados reais do e-Gestor ────────────────────────────────────────────
 
-function useDadosEGestor(ano: string) {
+function useDadosEGestor(periodo: Periodo) {
+  const query = periodoQuery(periodo);
+  const paramsStr = new URLSearchParams(periodoParams(periodo)).toString();
   const [totais, setTotais] = React.useState<FluxoTotais | null>(null);
   const [classificacoes, setClassificacoes] = React.useState<ClassificacaoRow[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -128,10 +139,9 @@ function useDadosEGestor(ano: string) {
 
   React.useEffect(() => {
     setLoading(true);
-    const qs = ano ? `?ano=${encodeURIComponent(ano)}` : "";
 
     // Busca totais do fluxo
-    fetch(`/api/lancamentos/fluxo${qs}`, { cache: "no-store" })
+    fetch(`/api/lancamentos/fluxo${query}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
         if (d?.totais) setTotais(d.totais as FluxoTotais);
@@ -140,13 +150,13 @@ function useDadosEGestor(ano: string) {
       .catch(() => setLoading(false));
 
     // Busca total de lançamentos
-    fetch(`/api/lancamentos?limit=1${ano ? `&ano=${ano}` : ""}`, { cache: "no-store" })
+    fetch(`/api/lancamentos?limit=1${paramsStr ? `&${paramsStr}` : ""}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => { if (d?.total != null) setTotalLanc(Number(d.total)); })
       .catch(() => {});
 
     // Busca lançamentos para agrupamento por classificação (top despesas)
-    fetch(`/api/lancamentos?rec_desp=Despesas&limit=200${qs ? `&${qs.slice(1)}` : ""}`, { cache: "no-store" })
+    fetch(`/api/lancamentos?rec_desp=Despesas&limit=200${paramsStr ? `&${paramsStr}` : ""}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
         const rows: any[] = d?.data ?? [];
@@ -165,7 +175,7 @@ function useDadosEGestor(ano: string) {
         setClassificacoes(sorted);
       })
       .catch(() => {});
-  }, [ano]);
+  }, [query, paramsStr]);
 
   return { totais, classificacoes, loading, totalLanc };
 }
@@ -175,8 +185,8 @@ function useDadosEGestor(ano: string) {
 const ANOS = ["", "2026", "2025", "2024", "2023", "2022"];
 
 export default function ContabilPage() {
-  const [anoFiltro, setAnoFiltro] = React.useState("2026");
-  const { totais, classificacoes, loading, totalLanc } = useDadosEGestor(anoFiltro);
+  const [periodo, setPeriodo] = React.useState<Periodo>(() => ({ ano: todayBrasilia().slice(0, 4), mes: -1 }));
+  const { totais, classificacoes, loading, totalLanc } = useDadosEGestor(periodo);
 
   const regulares = CERTIDOES.filter((c) => c.situacao === "regular").length;
 
@@ -204,20 +214,20 @@ export default function ContabilPage() {
           <h1 className="text-xl font-semibold tracking-tight">Contábil</h1>
           <p className="text-xs text-muted-foreground">
             {totalLanc > 0
-              ? `${totalLanc.toLocaleString("pt-BR")} movimentações · dados em tempo real do e-Gestor`
+              ? `${totalLanc.toLocaleString("pt-BR")} movimentações${periodoSufixo(periodo)} · dados em tempo real do e-Gestor`
               : "Apurações, encargos e obrigações fiscais consolidadas"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Filtro de ano */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Filtro de período: ano + mês (com "Até o mês atual") */}
           <div className="flex gap-1 flex-wrap">
             {ANOS.map((a) => (
               <button
                 key={a || "todos"}
-                onClick={() => setAnoFiltro(a)}
+                onClick={() => setPeriodo({ ano: a, mes: a ? periodo.mes : 0 })}
                 className={cn(
                   "px-2.5 py-1 rounded-full text-[11px] font-medium transition-all",
-                  anoFiltro === a
+                  periodo.ano === a
                     ? "bg-foreground text-background"
                     : "bg-foreground/[0.06] hover:bg-foreground/[0.11] text-muted-foreground"
                 )}
@@ -226,6 +236,15 @@ export default function ContabilPage() {
               </button>
             ))}
           </div>
+          {periodo.ano && (
+            <Select
+              value={String(periodo.mes)}
+              onValueChange={(v) => setPeriodo({ ...periodo, mes: Number(v) })}
+              options={mesSelectOptions() as SelectOption[]}
+              triggerClassName="min-w-[130px] h-7 text-[12px]"
+              align="end"
+            />
+          )}
           <Badge
             variant={CERTIDOES.length === 0 ? "outline" : "success"}
             className="gap-1.5 shrink-0"
@@ -309,7 +328,7 @@ export default function ContabilPage() {
                 <Activity className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-semibold tracking-tight">
                   Top despesas por classificação
-                  {anoFiltro ? ` · ${anoFiltro}` : ""}
+                  {periodoSufixo(periodo).replace(" — ", " · ")}
                 </span>
               </div>
               <span className="text-xs text-muted-foreground">

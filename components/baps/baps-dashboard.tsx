@@ -61,15 +61,16 @@ const RISCO_VARIANT: Record<string, "success" | "warning" | "destructive"> = {
   alto: "destructive",
 };
 
-type Periodo = "todo" | "mes" | "bimestre" | "trimestre" | "semestre" | "ano";
+type Periodo = "ate_mes" | "todo" | "mes" | "bimestre" | "trimestre" | "semestre" | "ano";
 
 const PERIODO_OPTIONS: SelectOption[] = [
-  { value: "todo", label: "Todo o período" },
+  { value: "ate_mes", label: "Até o mês atual" },
   { value: "mes", label: "Este mês" },
   { value: "bimestre", label: "Este bimestre" },
   { value: "trimestre", label: "Este trimestre" },
   { value: "semestre", label: "Este semestre" },
   { value: "ano", label: "Este ano" },
+  { value: "todo", label: "Todo o período" },
 ];
 
 function lastDayOfMonth(ano: number, mes: number): number {
@@ -81,6 +82,12 @@ function periodoRange(periodo: Periodo, today: string): { from?: string; to?: st
   const ano = Number(today.slice(0, 4));
   const mes = Number(today.slice(5, 7));
   const pad = (n: number) => String(n).padStart(2, "0");
+
+  // "Até o mês atual": acumulado do ano do 1º de janeiro até o fim do mês
+  // corrente — o fluxo de caixa até agora (base para bater com a planilha).
+  if (periodo === "ate_mes") {
+    return { from: `${ano}-01-01`, to: `${ano}-${pad(mes)}-${pad(lastDayOfMonth(ano, mes))}` };
+  }
 
   let startMes = 1;
   let endMes = 12;
@@ -142,7 +149,7 @@ export function BapsDashboard({
     saldo_projetado: number | null;
     atualizado_em: string | null;
   } | null>(null);
-  const [periodo, setPeriodo] = React.useState<Periodo>("todo");
+  const [periodo, setPeriodo] = React.useState<Periodo>("ate_mes");
 
   React.useEffect(() => {
     let cancelled = false;

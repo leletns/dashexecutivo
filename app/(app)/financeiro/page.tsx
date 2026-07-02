@@ -54,44 +54,17 @@ import { useAppState, metricasEdicao, type FinanceLancamento } from "@/lib/app-s
 import { useRegisterPageState } from "@/lib/page-state";
 import { cn, formatCurrencyBRL } from "@/lib/utils";
 import { todayBrasilia } from "@/lib/timezone";
+import {
+  type Periodo,
+  periodoParams,
+  periodoQuery,
+  periodoSufixo,
+  mesSelectOptions,
+} from "@/lib/periodo-financeiro";
 import { getSupabaseBrowser } from "@/lib/supabase/browser";
 
 const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-const MESES_LONGO = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const ANOS = ["2022", "2023", "2024", "2025", "2026"];
-
-// Período unificado do Financeiro: ano + mês (mes 0 = ano inteiro / todos).
-export type Periodo = { ano: string; mes: number };
-
-/** Converte o período em parâmetros de query (?ano OU ?from&to). */
-function periodoParams(p: Periodo): Record<string, string> {
-  if (p.ano && p.mes > 0) {
-    const mm = String(p.mes).padStart(2, "0");
-    const ultimoDia = new Date(Number(p.ano), p.mes, 0).getDate();
-    return { from: `${p.ano}-${mm}-01`, to: `${p.ano}-${mm}-${String(ultimoDia).padStart(2, "0")}` };
-  }
-  if (p.ano) return { ano: p.ano };
-  return {};
-}
-
-function periodoQuery(p: Periodo): string {
-  const qs = new URLSearchParams(periodoParams(p)).toString();
-  return qs ? `?${qs}` : "";
-}
-
-/** Rótulo curto do período para exibição (ex.: "Junho/2026", "2026", "Todos"). */
-function periodoLabel(p: Periodo): string {
-  if (p.ano && p.mes > 0) return `${MESES_LONGO[p.mes - 1]}/${p.ano}`;
-  if (p.ano) return p.ano;
-  return "Todos os períodos";
-}
-
-/** Sufixo " — <label>" para títulos, vazio quando é "Todos". */
-function periodoSufixo(p: Periodo): string {
-  if (p.ano && p.mes > 0) return ` — ${MESES_LONGO[p.mes - 1]}/${p.ano}`;
-  if (p.ano) return ` — ${p.ano}`;
-  return "";
-}
 
 // ---------------------------------------------------------------------------
 // Compact BRL
@@ -403,10 +376,7 @@ function SkeletonKpi() {
 // ---------------------------------------------------------------------------
 
 function PeriodoSelector({ value, onChange }: { value: Periodo; onChange: (p: Periodo) => void }) {
-  const mesOptions: SelectOption[] = [
-    { value: "0", label: "Ano todo" },
-    ...MESES_LONGO.map((m, i) => ({ value: String(i + 1), label: m })),
-  ];
+  const mesOptions: SelectOption[] = mesSelectOptions();
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <div className="flex items-center gap-1 flex-wrap">
@@ -445,7 +415,7 @@ function PeriodoSelector({ value, onChange }: { value: Periodo; onChange: (p: Pe
 
 export default function FinanceiroPage() {
   const { state } = useAppState();
-  const [periodo, setPeriodo] = React.useState<Periodo>(() => ({ ano: todayBrasilia().slice(0, 4), mes: 0 }));
+  const [periodo, setPeriodo] = React.useState<Periodo>(() => ({ ano: todayBrasilia().slice(0, 4), mes: -1 }));
   const [activeTab, setActiveTab] = React.useState("overview");
 
   const { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt } = useLancamentosFluxo(periodo);
