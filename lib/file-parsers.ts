@@ -128,3 +128,53 @@ export async function parseSpreadsheetFile(fileName: string, buffer: Buffer): Pr
   if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) return parseXLSX(buffer);
   throw new Error("Formato não suportado. Use um arquivo .csv ou .xlsx.");
 }
+
+export interface PlanilhaResumo {
+  saldoDia: number | null;
+  saldoProjetado: number | null;
+}
+
+/**
+ * Extrai os saldos-resumo mantidos no topo da aba financeira (ex.: células
+ * "Saldo do Dia" e "Saldo Projetado" da planilha do e-Gestor). Esses números
+ * são controlados manualmente pelo financeiro e não aparecem nas linhas de
+ * lançamento — então o painel precisa lê-los daqui para bater com a planilha.
+ * Procura pelos rótulos nas primeiras linhas e pega o valor da célula ao lado.
+ */
+export async function extractPlanilhaResumo(fileName: string, buffer: Buffer): Promise<PlanilhaResumo> {
+  const lower = fileName.toLowerCase();
+  if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
+    return { saldoDia: null, saldoProjetado: null };
+  }
+  const XLSX = await import("xlsx");
+  const wb = XLSX.read(buffer, { type: "buffer", cellFormula: true });
+  const configured = process.env.GOOGLE_SHEETS_SHEET_NAME ?? "personalizadoFinanceiro (13)";
+  const target =
+    wb.SheetNames.find((n) => n === configured) ??
+    wb.SheetNames.find((n) => n.toLowerCase().includes("personalizadofinanceiro")) ??
+    wb.SheetNames[0];
+  const ws = target ? wb.Sheets[target] : undefined;
+  if (!ws) return { saldoDia: null, saldoProjetado: null };
+
+  const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  const numAt = (r: number, c: number): number | null => {
+    const cell = ws[XLSX.utils.encode_cell({ r, c })];
+    if (!cell) return null;
+    const v = typeof cell.v === "number" ? cell.v : Number(cell.v);
+    return Number.isFinite(v) ? Math.round(v * 100) / 100 : null;
+  };
+
+  let saldoDia: number | null = null;
+  let saldoProjetado: number | null = null;
+  // Varre as primeiras linhas procurando os rótulos; o valor fica na célula à direita.
+  for (let r = 0; r <= 5 && (saldoDia === null || saldoProjetado === null); r++) {
+    for (let c = 0; c <= 20; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (!cell) continue;
+      const label = norm(String(cell.w ?? cell.v ?? ""));
+      if (saldoDia === null && label === "saldo do dia") saldoDia = numAt(r, c + 1);
+      else if (saldoProjetado === null && label === "saldo projetado") saldoProjetado = numAt(r, c + 1);
+    }
+  }
+  return { saldoDia, saldoProjetado };
+}

@@ -137,6 +137,11 @@ export function BapsDashboard({
     saidas: number;
     resultado: number;
   } | null>(null);
+  const [saldoPlanilha, setSaldoPlanilha] = React.useState<{
+    saldo_dia: number | null;
+    saldo_projetado: number | null;
+    atualizado_em: string | null;
+  } | null>(null);
   const [periodo, setPeriodo] = React.useState<Periodo>("todo");
 
   React.useEffect(() => {
@@ -174,6 +179,7 @@ export function BapsDashboard({
             // eslint-disable-next-line no-console
             console.info("[financeiro] fonte:", d?.fonte ?? "—", "| aviso:", d?.aviso ?? d?.error ?? "—");
           }
+          if (d?.saldo_planilha) setSaldoPlanilha(d.saldo_planilha);
           if (!d?.totais) return;
           setLancTotais({ ...d.totais, count_total: d.totais.count_total ?? 0 });
 
@@ -197,6 +203,12 @@ export function BapsDashboard({
       window.removeEventListener("portal:data-updated", load);
     };
   }, [sector, periodo]);
+
+  // "Saldo do dia" e "Saldo projetado" — vêm da própria planilha (números que
+  // o financeiro mantém à mão), para bater exatamente com ela. Se ainda não
+  // sincronizou, cai no valor calculado dos lançamentos.
+  const saldoDia = saldoPlanilha?.saldo_dia ?? lancTotais?.saldo_realizado ?? null;
+  const saldoProjetado = saldoPlanilha?.saldo_projetado ?? lancTotais?.resultado_projetado ?? null;
 
   const demandas = data.contratos.filter((c) => c.status !== "ativo");
   const ativos = data.contratos.filter((c) => c.status === "ativo");
@@ -350,13 +362,13 @@ export function BapsDashboard({
 
       {sector === "executivo" && (
         <motion.div initial="hidden" animate="show" custom={1} variants={fade}>
-          <CompanyHealth data={data} saldoReal={lancTotais?.saldo_realizado ?? null} />
+          <CompanyHealth data={data} saldoReal={saldoDia} />
         </motion.div>
       )}
 
       {showZone(sector, "macro_executivo") && (
         <motion.div initial="hidden" animate="show" custom={2} variants={fade}>
-          <ExecutiveHero data={data} saldoReal={lancTotais?.saldo_realizado ?? null} resultadoMes={lancMesAtual} />
+          <ExecutiveHero data={data} saldoReal={saldoDia} resultadoMes={lancMesAtual} />
         </motion.div>
       )}
 
@@ -405,6 +417,20 @@ export function BapsDashboard({
             {lancTotais ? (
               <>
                 <Kpi
+                  label="Saldo do dia"
+                  value={saldoDia !== null ? formatCompactBRL(saldoDia) : "—"}
+                  fullValue={saldoDia !== null ? formatCurrencyBRL(saldoDia) : undefined}
+                  hint={saldoPlanilha?.saldo_dia != null ? "conforme a planilha" : "calculado"}
+                  accent={saldoDia !== null && saldoDia < 0 ? "rose" : "emerald"}
+                />
+                <Kpi
+                  label="Saldo projetado"
+                  value={saldoProjetado !== null ? formatCompactBRL(saldoProjetado) : "—"}
+                  fullValue={saldoProjetado !== null ? formatCurrencyBRL(saldoProjetado) : undefined}
+                  hint={saldoPlanilha?.saldo_projetado != null ? "conforme a planilha" : "calculado"}
+                  accent={saldoProjetado !== null && saldoProjetado < 0 ? "rose" : "emerald"}
+                />
+                <Kpi
                   label="Receitas recebidas"
                   value={formatCompactBRL(lancTotais.total_receitas_pagas)}
                   fullValue={formatCurrencyBRL(lancTotais.total_receitas_pagas)}
@@ -417,12 +443,6 @@ export function BapsDashboard({
                   accent="rose"
                 />
                 <Kpi
-                  label="Saldo realizado"
-                  value={formatCompactBRL(lancTotais.saldo_realizado)}
-                  fullValue={formatCurrencyBRL(lancTotais.saldo_realizado)}
-                  accent={lancTotais.saldo_realizado < 0 ? "rose" : "emerald"}
-                />
-                <Kpi
                   label="A receber"
                   value={formatCompactBRL(lancTotais.total_a_receber)}
                   fullValue={formatCurrencyBRL(lancTotais.total_a_receber)}
@@ -431,12 +451,6 @@ export function BapsDashboard({
                   label="A pagar"
                   value={formatCompactBRL(lancTotais.total_a_pagar)}
                   fullValue={formatCurrencyBRL(lancTotais.total_a_pagar)}
-                />
-                <Kpi
-                  label="Resultado projetado"
-                  value={formatCompactBRL(lancTotais.resultado_projetado)}
-                  fullValue={formatCurrencyBRL(lancTotais.resultado_projetado)}
-                  accent={lancTotais.resultado_projetado < 0 ? "rose" : "emerald"}
                 />
               </>
             ) : (

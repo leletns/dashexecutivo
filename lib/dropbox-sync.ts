@@ -12,7 +12,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { transformSheetRows, upsertLancamentos } from "@/lib/lancamentos-transform";
-import { parseSpreadsheetFile } from "@/lib/file-parsers";
+import { parseSpreadsheetFile, extractPlanilhaResumo } from "@/lib/file-parsers";
 import { findLatestSpreadsheet, downloadFileContent } from "@/lib/dropbox";
 
 export interface DropboxSyncResult {
@@ -94,6 +94,27 @@ export async function runDropboxSync(
     }
 
     const totalUpserted = await upsertLancamentos(sb, records);
+
+    // Captura os saldos-resumo mantidos manualmente no topo da planilha
+    // ("Saldo do Dia" / "Saldo Projetado") para o painel bater com a planilha.
+    try {
+      const resumo = await extractPlanilhaResumo(file.name, buffer);
+      if (resumo.saldoDia !== null || resumo.saldoProjetado !== null) {
+        await sb.from("portal_planilha_resumo").upsert(
+          {
+            id: 1,
+            saldo_dia: resumo.saldoDia,
+            saldo_projetado: resumo.saldoProjetado,
+            arquivo: file.name,
+            atualizado_em: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
+      }
+    } catch {
+      // resumo é complementar — não falha a sincronização principal
+    }
+
     await updateLog("success", rowsRead, totalUpserted);
     return { ok: true, file_name: file.name, rows_read: rowsRead, rows_upserted: totalUpserted };
   } catch (err: any) {

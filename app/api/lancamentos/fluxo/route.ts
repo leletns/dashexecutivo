@@ -25,6 +25,7 @@ import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { todayBrasilia } from "@/lib/timezone";
 import { getLancamentos } from "@/lib/lancamentos-sheet";
+import { createSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -207,6 +208,31 @@ export async function GET(req: Request) {
       }
     }
 
+    // Saldos-resumo controlados na própria planilha ("Saldo do Dia" /
+    // "Saldo Projetado") — números manuais do financeiro, para o painel bater
+    // exatamente com a planilha. Independem do filtro de período (é o retrato
+    // atual do caixa).
+    let saldoPlanilha: { saldo_dia: number | null; saldo_projetado: number | null; atualizado_em: string | null } | null = null;
+    try {
+      const sb = createSupabaseAdmin();
+      if (sb) {
+        const { data } = await sb
+          .from("portal_planilha_resumo")
+          .select("saldo_dia, saldo_projetado, atualizado_em")
+          .eq("id", 1)
+          .maybeSingle();
+        if (data) {
+          saldoPlanilha = {
+            saldo_dia: data.saldo_dia !== null ? Number(data.saldo_dia) : null,
+            saldo_projetado: data.saldo_projetado !== null ? Number(data.saldo_projetado) : null,
+            atualizado_em: data.atualizado_em ?? null,
+          };
+        }
+      }
+    } catch {
+      /* resumo é complementar */
+    }
+
     return NextResponse.json({
       fonte,
       aviso: avisoFonte,
@@ -214,6 +240,7 @@ export async function GET(req: Request) {
       por_evento,
       por_conta,
       por_categoria,
+      saldo_planilha: saldoPlanilha,
       totais: {
         total_receitas_pagas: totalEntradas,
         total_despesas_pagas: totalSaidas,
