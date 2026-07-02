@@ -43,6 +43,8 @@ export async function GET(req: Request) {
 
     const search = searchParams.get("search")?.trim() ?? "";
     const ano = searchParams.get("ano")?.trim() ?? "";
+    const from = searchParams.get("from")?.trim() ?? "";
+    const to = searchParams.get("to")?.trim() ?? "";
     const conta = searchParams.get("conta")?.trim() ?? "";
     const classificacao = searchParams.get("classificacao")?.trim() ?? "";
     const subClassificacao = searchParams.get("sub_classificacao")?.trim() ?? "";
@@ -69,7 +71,13 @@ export async function GET(req: Request) {
     // ── Filtragem ──────────────────────────────────────────────────────────
     const searchNorm = search ? norm(search) : "";
     const filtered = rows.filter((r) => {
-      if (ano) {
+      // Intervalo (mês/bimestre/…) tem prioridade sobre o ano; casa por
+      // vencimento OU pagamento dentro do período.
+      if (from || to) {
+        const dentro = (d: string | null | undefined) =>
+          !!d && (!from || d >= from) && (!to || d <= to);
+        if (!dentro(r.data_vencimento) && !dentro(r.data_pagamento)) return false;
+      } else if (ano) {
         const okVenc = r.data_vencimento?.slice(0, 4) === ano;
         const okPag = r.data_pagamento?.slice(0, 4) === ano;
         if (!okVenc && !okPag) return false;

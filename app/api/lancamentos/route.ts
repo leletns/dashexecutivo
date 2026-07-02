@@ -39,6 +39,8 @@ export async function GET(req: Request) {
     const situacao = searchParams.get("situacao")?.trim() ?? "";
     const recDesp = searchParams.get("rec_desp")?.trim() ?? "";
     const ano = searchParams.get("ano")?.trim() ?? "";
+    const from = searchParams.get("from")?.trim() ?? "";
+    const to = searchParams.get("to")?.trim() ?? "";
     const conta = searchParams.get("conta")?.trim() ?? "";
 
     // ── Query base ────────────────────────────────────────────────────────────
@@ -61,7 +63,11 @@ export async function GET(req: Request) {
     if (situacao) query = query.eq("situacao", situacao);
     if (recDesp) query = query.eq("rec_desp", recDesp);
     if (conta) query = query.eq("conta_caixa", conta);
-    if (ano) {
+    // Filtro por intervalo (mês/bimestre/…) tem prioridade sobre o ano.
+    if (from || to) {
+      if (from) query = query.gte("data_vencimento", from);
+      if (to) query = query.lte("data_vencimento", to);
+    } else if (ano) {
       query = query
         .gte("data_vencimento", `${ano}-01-01`)
         .lte("data_vencimento", `${ano}-12-31`);

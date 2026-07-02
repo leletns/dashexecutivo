@@ -57,7 +57,41 @@ import { todayBrasilia } from "@/lib/timezone";
 import { getSupabaseBrowser } from "@/lib/supabase/browser";
 
 const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const MESES_LONGO = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const ANOS = ["2022", "2023", "2024", "2025", "2026"];
+
+// Período unificado do Financeiro: ano + mês (mes 0 = ano inteiro / todos).
+export type Periodo = { ano: string; mes: number };
+
+/** Converte o período em parâmetros de query (?ano OU ?from&to). */
+function periodoParams(p: Periodo): Record<string, string> {
+  if (p.ano && p.mes > 0) {
+    const mm = String(p.mes).padStart(2, "0");
+    const ultimoDia = new Date(Number(p.ano), p.mes, 0).getDate();
+    return { from: `${p.ano}-${mm}-01`, to: `${p.ano}-${mm}-${String(ultimoDia).padStart(2, "0")}` };
+  }
+  if (p.ano) return { ano: p.ano };
+  return {};
+}
+
+function periodoQuery(p: Periodo): string {
+  const qs = new URLSearchParams(periodoParams(p)).toString();
+  return qs ? `?${qs}` : "";
+}
+
+/** Rótulo curto do período para exibição (ex.: "Junho/2026", "2026", "Todos"). */
+function periodoLabel(p: Periodo): string {
+  if (p.ano && p.mes > 0) return `${MESES_LONGO[p.mes - 1]}/${p.ano}`;
+  if (p.ano) return p.ano;
+  return "Todos os períodos";
+}
+
+/** Sufixo " — <label>" para títulos, vazio quando é "Todos". */
+function periodoSufixo(p: Periodo): string {
+  if (p.ano && p.mes > 0) return ` — ${MESES_LONGO[p.mes - 1]}/${p.ano}`;
+  if (p.ano) return ` — ${p.ano}`;
+  return "";
+}
 
 // ---------------------------------------------------------------------------
 // Compact BRL
@@ -158,7 +192,8 @@ const EMPTY_OPCOES: LedgerOpcoes = { contas: [], categorias: [], sub_categorias:
 // Hooks
 // ---------------------------------------------------------------------------
 
-function useLancamentosFluxo(ano: string) {
+function useLancamentosFluxo(periodo: Periodo) {
+  const query = periodoQuery(periodo);
   const [fluxoSupabase, setFluxoSupabase] = React.useState<FluxoRow[]>([]);
   const [porEvento, setPorEvento] = React.useState<EventoRow[]>([]);
   const [porConta, setPorConta] = React.useState<ContaRow[]>([]);
@@ -177,7 +212,7 @@ function useLancamentosFluxo(ano: string) {
   // Totais calculados 100% via JS na API Route — não depende do RPC do Supabase
   const fetchData = React.useCallback(() => {
     const seq = ++requestSeqRef.current;
-    const url = `/api/lancamentos/fluxo${ano ? `?ano=${encodeURIComponent(ano)}` : ""}`;
+    const url = `/api/lancamentos/fluxo${query}`;
     fetch(url, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => {
@@ -192,7 +227,7 @@ function useLancamentosFluxo(ano: string) {
         setUpdatedAt(new Date().toISOString());
       })
       .catch(() => {});
-  }, [ano]);
+  }, [query]);
 
   React.useEffect(() => {
     fetchData();
@@ -234,15 +269,16 @@ function useLancamentosFluxo(ano: string) {
   return { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt, realtimeConnected, aviso };
 }
 
-function useTotalCount(ano: string) {
+function useTotalCount(periodo: Periodo) {
+  const query = periodoQuery(periodo);
   const [count, setCount] = React.useState<number | null>(null);
   React.useEffect(() => {
-    const qs = ano ? `?ano=${encodeURIComponent(ano)}&limit=1` : "?limit=1";
-    fetch(`/api/lancamentos${qs}`, { cache: "no-store" })
+    const sep = query ? "&" : "?";
+    fetch(`/api/lancamentos${query}${sep}limit=1`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: any) => { if (d?.total != null) setCount(Number(d.total)); })
       .catch(() => {});
-  }, [ano]);
+  }, [query]);
   return count;
 }
 
@@ -366,23 +402,38 @@ function SkeletonKpi() {
 // Year selector
 // ---------------------------------------------------------------------------
 
-function AnoSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function PeriodoSelector({ value, onChange }: { value: Periodo; onChange: (p: Periodo) => void }) {
+  const mesOptions: SelectOption[] = [
+    { value: "0", label: "Ano todo" },
+    ...MESES_LONGO.map((m, i) => ({ value: String(i + 1), label: m })),
+  ];
   return (
-    <div className="flex items-center gap-1 flex-wrap">
-      {(["", ...ANOS] as string[]).map((a) => (
-        <button
-          key={a || "todos"}
-          onClick={() => onChange(a)}
-          className={cn(
-            "px-2.5 py-1 rounded-full text-[11px] font-medium transition-all whitespace-nowrap",
-            value === a
-              ? "bg-foreground text-background shadow-sm"
-              : "bg-foreground/[0.06] hover:bg-foreground/[0.11] text-muted-foreground",
-          )}
-        >
-          {a || "Todos"}
-        </button>
-      ))}
+    <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-1 flex-wrap">
+        {(["", ...ANOS] as string[]).map((a) => (
+          <button
+            key={a || "todos"}
+            onClick={() => onChange({ ano: a, mes: a ? value.mes : 0 })}
+            className={cn(
+              "px-2.5 py-1 rounded-full text-[11px] font-medium transition-all whitespace-nowrap",
+              value.ano === a
+                ? "bg-foreground text-background shadow-sm"
+                : "bg-foreground/[0.06] hover:bg-foreground/[0.11] text-muted-foreground",
+            )}
+          >
+            {a || "Todos"}
+          </button>
+        ))}
+      </div>
+      {value.ano && (
+        <Select
+          value={String(value.mes)}
+          onValueChange={(v) => onChange({ ...value, mes: Number(v) })}
+          options={mesOptions}
+          triggerClassName="min-w-[130px] h-7 text-[12px]"
+          align="end"
+        />
+      )}
     </div>
   );
 }
@@ -394,11 +445,11 @@ function AnoSelector({ value, onChange }: { value: string; onChange: (v: string)
 
 export default function FinanceiroPage() {
   const { state } = useAppState();
-  const [anoFiltro, setAnoFiltro] = React.useState<string>(() => todayBrasilia().slice(0, 4));
+  const [periodo, setPeriodo] = React.useState<Periodo>(() => ({ ano: todayBrasilia().slice(0, 4), mes: 0 }));
   const [activeTab, setActiveTab] = React.useState("overview");
 
-  const { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt } = useLancamentosFluxo(anoFiltro);
-  const totalCount = useTotalCount(anoFiltro);
+  const { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt } = useLancamentosFluxo(periodo);
+  const totalCount = useTotalCount(periodo);
 
   const margens = React.useMemo(
     () => computeMargensPorEdicao(state.edicoes, state.financeiro),
@@ -463,12 +514,12 @@ export default function FinanceiroPage() {
           <h1 className="text-xl font-semibold tracking-tight">Financeiro</h1>
           <p className="text-xs text-muted-foreground">
             {totalCount != null
-              ? `${totalCount.toLocaleString("pt-BR")} movimentações${anoFiltro ? ` em ${anoFiltro}` : ""}${updatedAt ? ` · atualizado ${relTime(updatedAt)}` : ""}`
+              ? `${totalCount.toLocaleString("pt-BR")} movimentações${periodoSufixo(periodo).replace(" — ", " em ")}${updatedAt ? ` · atualizado ${relTime(updatedAt)}` : ""}`
               : "Entradas, saídas e saldo · dados em tempo real"}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <AnoSelector value={anoFiltro} onChange={setAnoFiltro} />
+          <PeriodoSelector value={periodo} onChange={setPeriodo} />
         </div>
       </motion.div>
 
@@ -505,7 +556,7 @@ export default function FinanceiroPage() {
                 fluxoMensal={fluxoMensal}
                 margens={margens}
                 porEvento={porEvento}
-                ano={anoFiltro}
+                periodo={periodo}
               />
             </TabsContent>
 
@@ -517,15 +568,15 @@ export default function FinanceiroPage() {
             </TabsContent>
 
             <TabsContent value="contas" className="mt-2">
-              <ContasTab porConta={porConta} porCategoria={porCategoria} ano={anoFiltro} />
+              <ContasTab porConta={porConta} porCategoria={porCategoria} periodo={periodo} />
             </TabsContent>
 
             <TabsContent value="receber" className="mt-2">
-              <LancamentosSupabaseTab recDesp="Receitas" ano={anoFiltro} />
+              <LancamentosSupabaseTab recDesp="Receitas" periodo={periodo} />
             </TabsContent>
 
             <TabsContent value="pagar" className="mt-2">
-              <LancamentosSupabaseTab recDesp="Despesas" ano={anoFiltro} />
+              <LancamentosSupabaseTab recDesp="Despesas" periodo={periodo} />
             </TabsContent>
 
             <TabsContent value="margem" className="mt-2">
@@ -533,7 +584,7 @@ export default function FinanceiroPage() {
             </TabsContent>
 
             <TabsContent value="lancamentos" className="mt-2">
-              <LancamentosLedgerTab ano={anoFiltro} />
+              <LancamentosLedgerTab periodo={periodo} />
             </TabsContent>
           </motion.div>
         </AnimatePresence>
@@ -709,13 +760,13 @@ function OverviewTab({
   fluxoMensal,
   margens,
   porEvento,
-  ano,
+  periodo,
 }: {
   totals: Totals;
   fluxoMensal: FluxoMensal[];
   margens: MargemEdicao[];
   porEvento: EventoRow[];
-  ano: string;
+  periodo: Periodo;
 }) {
   const barData =
     porEvento.length > 0
@@ -733,7 +784,7 @@ function OverviewTab({
         <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
           <div>
             <div className="text-sm font-semibold tracking-tight">
-              Fluxo de caixa{ano ? ` — ${ano}` : ""}
+              Fluxo de caixa{periodoSufixo(periodo)}
             </div>
             <div className="text-[11px] text-muted-foreground">
               Movimentações realizadas · dados do sistema financeiro
@@ -1046,11 +1097,11 @@ function FluxoTab({
 function ContasTab({
   porConta,
   porCategoria,
-  ano,
+  periodo,
 }: {
   porConta: ContaRow[];
   porCategoria: CategoriaRow[];
-  ano: string;
+  periodo: Periodo;
 }) {
   const totalSaldo = porConta.reduce((s, c) => s + c.saldo, 0);
   const contasComSaldo = porConta.filter((c) => Math.abs(c.saldo) >= 0.01);
@@ -1174,7 +1225,7 @@ function ContasTab({
         <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
           <div>
             <div className="text-sm font-semibold tracking-tight">
-              Receitas e despesas por categoria{ano ? ` — ${ano}` : ""}
+              Receitas e despesas por categoria{periodoSufixo(periodo)}
             </div>
             <div className="text-[11px] text-muted-foreground">
               Classificação de contas dos lançamentos · top {porCategoria.length}
@@ -1228,11 +1279,12 @@ function ContasTab({
 
 function LancamentosSupabaseTab({
   recDesp,
-  ano,
+  periodo,
 }: {
   recDesp: "Receitas" | "Despesas";
-  ano: string;
+  periodo: Periodo;
 }) {
+  const periodoQ = periodoQuery(periodo);
   const [page, setPage] = React.useState(1);
   const [search, setSearch] = React.useState("");
   const [situacao, setSituacao] = React.useState("");
@@ -1250,8 +1302,8 @@ function LancamentosSupabaseTab({
       rec_desp: recDesp,
       page: String(page),
       limit: String(limit),
+      ...periodoParams(periodo),
     });
-    if (ano) params.set("ano", ano);
     if (search.trim()) params.set("search", search.trim());
     if (situacao) params.set("situacao", situacao);
 
@@ -1265,11 +1317,11 @@ function LancamentosSupabaseTab({
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [recDesp, page, ano, search, situacao]);
+  }, [recDesp, page, periodoQ, search, situacao]);
 
   React.useEffect(() => {
     setPage(1);
-  }, [ano, search, situacao, recDesp]);
+  }, [periodoQ, search, situacao, recDesp]);
 
   React.useEffect(() => {
     fetchData();
@@ -1308,7 +1360,7 @@ function LancamentosSupabaseTab({
           triggerClassName="min-w-[160px]"
         />
         <span className="text-[11px] text-muted-foreground ml-auto hidden sm:block">
-          {total.toLocaleString("pt-BR")} registros{ano ? ` · ${ano}` : ""}
+          {total.toLocaleString("pt-BR")} registros{periodoSufixo(periodo).replace(" — ", " · ")}
         </span>
       </div>
 
@@ -1686,7 +1738,8 @@ function LancamentoEditForm({
   );
 }
 
-function LancamentosLedgerTab({ ano }: { ano: string }) {
+function LancamentosLedgerTab({ periodo }: { periodo: Periodo }) {
+  const periodoQ = periodoQuery(periodo);
   const [page, setPage] = React.useState(1);
   const [searchInput, setSearchInput] = React.useState("");
   const [search, setSearch] = React.useState("");
@@ -1721,12 +1774,11 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
   // Reseta para a página 1 quando qualquer filtro muda
   React.useEffect(() => {
     setPage(1);
-  }, [ano, search, conta, classificacao, subClassificacao, evento, situacao, recDesp]);
+  }, [periodoQ, search, conta, classificacao, subClassificacao, evento, situacao, recDesp]);
 
   const fetchData = React.useCallback(() => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-    if (ano) params.set("ano", ano);
+    const params = new URLSearchParams({ page: String(page), limit: String(limit), ...periodoParams(periodo) });
     if (search) params.set("search", search);
     if (conta) params.set("conta", conta);
     if (classificacao) params.set("classificacao", classificacao);
@@ -1747,7 +1799,7 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [page, ano, search, conta, classificacao, subClassificacao, evento, situacao, recDesp]);
+  }, [page, periodoQ, search, conta, classificacao, subClassificacao, evento, situacao, recDesp]);
 
   React.useEffect(() => {
     fetchData();
@@ -1962,7 +2014,7 @@ function LancamentosLedgerTab({ ano }: { ano: string }) {
           </Button>
         )}
         <span className="text-[11px] text-muted-foreground ml-auto hidden sm:block">
-          {total.toLocaleString("pt-BR")} registros{ano ? ` · ${ano}` : ""}
+          {total.toLocaleString("pt-BR")} registros{periodoSufixo(periodo).replace(" — ", " · ")}
         </span>
       </div>
 
