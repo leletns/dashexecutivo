@@ -9,18 +9,17 @@ import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { getPortalSectorFromEmail } from "@/lib/portal-sector";
-import { transformSheetRows, upsertLancamentos } from "@/lib/lancamentos-transform";
-import { parseSpreadsheetFile } from "@/lib/file-parsers";
-import {
-  isDropboxConfigured,
-  findLatestSpreadsheet,
-  downloadFileContent,
-} from "@/lib/dropbox";
+import { isDropboxConfigured } from "@/lib/dropbox";
+import { runDropboxSync, DropboxSyncError } from "@/lib/dropbox-sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const WRITE_SECTORS = new Set(["financeiro", "executivo"]);
+// Auto-sync ao abrir o painel não deve repetir trabalho pesado: se já rodou
+// nos últimos 120s, pula (a menos que ?force=1, usado no botão "sincronizar agora").
+const DEBOUNCE_MS = 120_000;
 
 // ─── GET — status ─────────────────────────────────────────────────────────────
 
@@ -47,7 +46,7 @@ export async function GET() {
 
 // ─── POST — sincronizar ──────────────────────────────────────────────────────
 
-export async function POST() {
+export async function POST(req: Request) {
   const portal = await requirePortalSession();
   if (!portal) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
 
@@ -66,71 +65,26 @@ export async function POST() {
     );
   }
 
-  const { data: logRow } = await sb
-    .from("portal_sheets_sync_log")
-    .insert({
-      started_at: new Date().toISOString(),
-      status: "running",
-      triggered_by: `dropbox:${(portal as any).email ?? "desconhecido"}`,
-    })
-    .select("id")
-    .single();
-  const logId = logRow?.id as string | undefined;
-
-  const updateLog = async (
-    status: "success" | "error",
-    rowsRead: number,
-    rowsUpserted: number,
-    errorMessage?: string
-  ) => {
-    if (!logId) return;
-    await sb.from("portal_sheets_sync_log").update({
-      finished_at: new Date().toISOString(),
-      status,
-      rows_read: rowsRead,
-      rows_upserted: rowsUpserted,
-      error_message: errorMessage ?? null,
-    }).eq("id", logId);
-  };
+  // Debounce: o painel dispara este sync ao abrir; se já rodou há pouco, pula
+  // (a menos que ?force=1, usado no botão manual "sincronizar agora").
+  const force = new URL(req.url).searchParams.get("force") === "1";
+  if (!force) {
+    const desde = new Date(Date.now() - DEBOUNCE_MS).toISOString();
+    const { data: recente } = await sb
+      .from("portal_sheets_sync_log")
+      .select("id")
+      .like("triggered_by", "dropbox%")
+      .gte("started_at", desde)
+      .limit(1)
+      .maybeSingle();
+    if (recente) return NextResponse.json({ ok: true, skipped: "sincronizado_recentemente" });
+  }
 
   try {
-    const file = await findLatestSpreadsheet();
-    if (!file) {
-      await updateLog("error", 0, 0, "Nenhuma planilha (.xlsx/.csv) encontrada na pasta do Dropbox.");
-      return NextResponse.json(
-        { error: "Nenhuma planilha (.xlsx/.csv) encontrada na pasta do Dropbox." },
-        { status: 422 }
-      );
-    }
-
-    const buffer = await downloadFileContent(file.pathLower);
-    const rawRows = await parseSpreadsheetFile(file.name, buffer);
-
-    if (rawRows.length < 2) {
-      await updateLog("error", 0, 0, "Planilha vazia ou sem dados.");
-      return NextResponse.json({ error: "Planilha vazia ou sem dados." }, { status: 422 });
-    }
-
-    const { records, rowsRead, columnsDetected } = transformSheetRows(rawRows);
-
-    if (records.length === 0) {
-      await updateLog("error", rowsRead, 0, "Nenhum registro válido encontrado na planilha.");
-      return NextResponse.json({ error: "Nenhum registro válido encontrado na planilha." }, { status: 422 });
-    }
-
-    const totalUpserted = await upsertLancamentos(sb, records);
-    await updateLog("success", rowsRead, totalUpserted);
-
-    return NextResponse.json({
-      ok: true,
-      file_name: file.name,
-      rows_read: rowsRead,
-      rows_upserted: totalUpserted,
-      columns_detected: columnsDetected,
-    });
-  } catch (err: any) {
-    const partial = (err?.cause as { totalUpserted?: number } | undefined)?.totalUpserted ?? 0;
-    await updateLog("error", 0, partial, err?.message);
-    return NextResponse.json({ error: err?.message ?? "Erro interno." }, { status: 500 });
+    const result = await runDropboxSync(sb, `dropbox:${(portal as any).email ?? "desconhecido"}`);
+    return NextResponse.json(result);
+  } catch (err) {
+    const e = err as DropboxSyncError;
+    return NextResponse.json({ error: e?.message ?? "Erro interno." }, { status: e?.status ?? 500 });
   }
 }

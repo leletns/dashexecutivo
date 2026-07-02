@@ -24,6 +24,7 @@ import { NpsComposedChart } from "@/components/baps/nps-composed-chart";
 import { InstitutionalRiskPanel } from "@/components/baps/institutional-risk-panel";
 import { CongressNucleiTable } from "@/components/baps/congress-nuclei-table";
 import { CongressOperacaoPanel } from "@/components/baps/congress-operacao-panel";
+import { DropboxSyncPanel } from "@/components/financeiro/dropbox-sync-panel";
 import type { BapsSnapshot } from "@/lib/baps/types";
 import type { PortalSector } from "@/lib/portal-sector";
 import { sectorShortLabel, showZone } from "@/lib/portal-sector";
@@ -278,6 +279,9 @@ export function BapsDashboard({
 
   return (
     <div className="space-y-8 pb-16 print:space-y-4">
+      {/* Sincronização silenciosa da planilha do Dropbox ao abrir o painel
+          (setores com permissão de escrita). Sem UI; com debounce no servidor. */}
+      {(sector === "executivo" || sector === "financeiro") && <DropboxSyncPanel />}
       <div className="hidden print:block print:mb-5 print:pb-4 print:border-b print:border-neutral-200">
         <p className="text-[10px] uppercase tracking-[0.28em] text-neutral-500 font-medium">
           BAPS · relatório executivo

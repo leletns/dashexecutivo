@@ -9,16 +9,12 @@
 
 import { NextResponse } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { transformSheetRows, upsertLancamentos } from "@/lib/lancamentos-transform";
-import { parseSpreadsheetFile } from "@/lib/file-parsers";
-import {
-  isDropboxConfigured,
-  findLatestSpreadsheet,
-  downloadFileContent,
-} from "@/lib/dropbox";
+import { isDropboxConfigured } from "@/lib/dropbox";
+import { runDropboxSync, DropboxSyncError } from "@/lib/dropbox-sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(req: Request) {
   return handleSync(req);
@@ -47,62 +43,11 @@ async function handleSync(req: Request) {
   const sb = createSupabaseAdmin();
   if (!sb) return NextResponse.json({ error: "Supabase não configurado." }, { status: 503 });
 
-  const { data: logRow } = await sb
-    .from("portal_sheets_sync_log")
-    .insert({
-      started_at: new Date().toISOString(),
-      status: "running",
-      triggered_by: "dropbox:cron",
-    })
-    .select("id")
-    .single();
-  const logId = logRow?.id as string | undefined;
-
-  const updateLog = async (
-    status: "success" | "error",
-    rowsRead: number,
-    rowsUpserted: number,
-    errorMessage?: string
-  ) => {
-    if (!logId) return;
-    await sb.from("portal_sheets_sync_log").update({
-      finished_at: new Date().toISOString(),
-      status,
-      rows_read: rowsRead,
-      rows_upserted: rowsUpserted,
-      error_message: errorMessage ?? null,
-    }).eq("id", logId);
-  };
-
   try {
-    const file = await findLatestSpreadsheet();
-    if (!file) {
-      await updateLog("error", 0, 0, "Nenhuma planilha (.xlsx/.csv) encontrada na pasta do Dropbox.");
-      return NextResponse.json({ error: "Nenhuma planilha encontrada na pasta do Dropbox." }, { status: 422 });
-    }
-
-    const buffer = await downloadFileContent(file.pathLower);
-    const rawRows = await parseSpreadsheetFile(file.name, buffer);
-
-    if (rawRows.length < 2) {
-      await updateLog("error", 0, 0, "Planilha vazia ou sem dados.");
-      return NextResponse.json({ error: "Planilha vazia ou sem dados." }, { status: 422 });
-    }
-
-    const { records, rowsRead } = transformSheetRows(rawRows);
-    const totalUpserted = await upsertLancamentos(sb, records);
-    await updateLog("success", rowsRead, totalUpserted);
-
-    return NextResponse.json({
-      ok: true,
-      file_name: file.name,
-      rows_read: rowsRead,
-      rows_upserted: totalUpserted,
-      triggered_at: new Date().toISOString(),
-    });
-  } catch (err: any) {
-    const partial = (err?.cause as { totalUpserted?: number } | undefined)?.totalUpserted ?? 0;
-    await updateLog("error", 0, partial, err?.message);
-    return NextResponse.json({ error: err?.message ?? "Erro interno." }, { status: 500 });
+    const result = await runDropboxSync(sb, "dropbox:cron");
+    return NextResponse.json({ ...result, triggered_at: new Date().toISOString() });
+  } catch (err) {
+    const e = err as DropboxSyncError;
+    return NextResponse.json({ error: e?.message ?? "Erro interno." }, { status: e?.status ?? 500 });
   }
 }
