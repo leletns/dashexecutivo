@@ -32,6 +32,25 @@ export const dynamic = "force-dynamic";
 
 const MESES_PT = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
+/**
+ * Classifica o lançamento no fluxo operacional EXATAMENTE como a planilha:
+ * pelo campo "Tratativa". Só "Receitas" e "Despesas" entram no fluxo —
+ * TRANSFERÊNCIAS entre contas e EMPRÉSTIMOS ficam de fora (são movimentos
+ * internos, não receita/despesa; incluí-los inflava os totais em ~R$ 22 mi
+ * de cada lado, embora o saldo líquido não mudasse). Sem Tratativa clara,
+ * cai no Rec./Desp. como reserva.
+ */
+function tipoFluxo(row: { tratativa?: string | null; rec_desp?: string | null }): "receita" | "despesa" | null {
+  const t = (row.tratativa ?? "").toLowerCase().trim();
+  if (t === "receitas") return "receita";
+  if (t === "despesas") return "despesa";
+  if (t.startsWith("transfer") || t.startsWith("emprést") || t.startsWith("emprest")) return null;
+  const rd = (row.rec_desp ?? "").toLowerCase().trim();
+  if (rd === "receitas") return "receita";
+  if (rd === "despesas") return "despesa";
+  return null;
+}
+
 export async function GET(req: Request) {
   try {
     const portal = await requirePortalSession();
@@ -76,13 +95,15 @@ export async function GET(req: Request) {
       if (!row.data_pagamento || row.data_pagamento > today) continue;
       if (!dentroPeriodo(row.data_pagamento)) continue;
 
+      const tipo = tipoFluxo(row);
+      if (!tipo) continue; // transferências/empréstimos ficam fora do fluxo
+
       countRealizados += 1;
-      const rd  = (row.rec_desp ?? "").toLowerCase().trim();
       const val = Number(row.valor) || 0;
       const key = row.data_pagamento.slice(0, 7);
       const cur = fluxoMap.get(key) ?? { entradas: 0, saidas: 0 };
 
-      if (rd === "receitas") {
+      if (tipo === "receita") {
         cur.entradas += val;
         totalEntradas += val;
       } else {
@@ -110,9 +131,10 @@ export async function GET(req: Request) {
       if (!dentroPeriodo(row.data_vencimento)) continue;
 
       const sit = (row.situacao ?? "").toLowerCase().trim();
+      const tipo = tipoFluxo(row);
       const val = Number(row.valor) || 0;
-      if (sit === "a receber") aReceber += val;
-      else if (sit === "a pagar") aPagar += val;
+      if (sit === "a receber" && tipo === "receita") aReceber += val;
+      else if (sit === "a pagar" && tipo === "despesa") aPagar += val;
     }
 
     // ── 3. Por evento ─────────────────────────────────────────────────────────
@@ -121,9 +143,10 @@ export async function GET(req: Request) {
       if (!row.evento) continue;
       if (!dentroPeriodo(row.data_vencimento)) continue;
 
+      const tipo = tipoFluxo(row);
+      if (!tipo) continue;
       const cur = eventoMap.get(row.evento) ?? { receita: 0, despesa: 0 };
-      const rd  = (row.rec_desp ?? "").toLowerCase().trim();
-      if (rd === "receitas") cur.receita += Number(row.valor) || 0;
+      if (tipo === "receita") cur.receita += Number(row.valor) || 0;
       else cur.despesa += Number(row.valor) || 0;
       eventoMap.set(row.evento, cur);
     }
@@ -164,9 +187,10 @@ export async function GET(req: Request) {
       if (!row.classificacao) continue;
       if (!dentroPeriodo(row.data_vencimento)) continue;
 
+      const tipo = tipoFluxo(row);
+      if (!tipo) continue;
       const cur = categoriaMap.get(row.classificacao) ?? { receita: 0, despesa: 0 };
-      const rd  = (row.rec_desp ?? "").toLowerCase().trim();
-      if (rd === "receitas") cur.receita += Number(row.valor) || 0;
+      if (tipo === "receita") cur.receita += Number(row.valor) || 0;
       else cur.despesa += Number(row.valor) || 0;
       categoriaMap.set(row.classificacao, cur);
     }
