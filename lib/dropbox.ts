@@ -25,6 +25,8 @@
  *     DROPBOX_ACCESS_TOKEN  — token fixo do botão "Generate access token"
  */
 
+import { unzipSync } from "fflate";
+
 const DROPBOX_API = "https://api.dropboxapi.com/2";
 const DROPBOX_CONTENT_API = "https://content.dropboxapi.com/2";
 const DROPBOX_OAUTH_TOKEN = "https://api.dropbox.com/oauth2/token";
@@ -37,13 +39,65 @@ function hasRefreshConfig(): boolean {
   );
 }
 
+/**
+ * Basta o link da pasta compartilhada: a sincronização baixa a planilha pelo
+ * link PÚBLICO (como um navegador), sem token — então nunca expira. Token/
+ * refresh token continuam aceitos como método alternativo.
+ */
 export function isDropboxConfigured(): boolean {
-  if (!process.env.DROPBOX_SHARED_LINK_URL) return false;
-  return hasRefreshConfig() || !!process.env.DROPBOX_ACCESS_TOKEN;
+  return !!process.env.DROPBOX_SHARED_LINK_URL;
 }
 
 function sharedLinkUrl(): string {
   return process.env.DROPBOX_SHARED_LINK_URL ?? "";
+}
+
+/** Link de download direto (dl=1) da pasta/arquivo compartilhado. */
+function sharedLinkDownloadUrl(): string {
+  const raw = sharedLinkUrl();
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    u.searchParams.set("dl", "1");
+    return u.toString();
+  } catch {
+    return raw.includes("dl=") ? raw.replace(/dl=\d/, "dl=1") : `${raw}${raw.includes("?") ? "&" : "?"}dl=1`;
+  }
+}
+
+/**
+ * Baixa a planilha mais recente SEM token, pelo link público da pasta.
+ * O Dropbox devolve a pasta como um .zip (dl=1); extraímos a maior planilha
+ * (.xlsx/.xls/.csv) de dentro. Se o link apontar para um único arquivo, usa-o
+ * direto. Retorna null se nada for encontrado.
+ */
+export async function fetchSpreadsheetViaPublicLink(): Promise<{ name: string; buffer: Buffer } | null> {
+  const url = sharedLinkDownloadUrl();
+  if (!url) return null;
+
+  const res = await fetch(url, { redirect: "follow", cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`Falha ao baixar a pasta pública do Dropbox (${res.status}).`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+
+  // Assinatura "PK" (0x50 0x4b) = arquivo .zip (pasta compactada pelo Dropbox).
+  const isZip = buf.length >= 2 && buf[0] === 0x50 && buf[1] === 0x4b;
+  if (!isZip) {
+    // Link de arquivo único: o próprio conteúdo veio direto.
+    return { name: "planilha.xlsx", buffer: buf };
+  }
+
+  const files = unzipSync(new Uint8Array(buf));
+  let best: { name: string; data: Uint8Array } | null = null;
+  for (const [name, data] of Object.entries(files)) {
+    if (!/\.(xlsx|xls|csv)$/i.test(name)) continue;
+    // Sem data de modificação confiável no zip → escolhe a maior planilha
+    // (a base de lançamentos é, de longe, o maior arquivo da pasta).
+    if (!best || data.length > best.data.length) best = { name, data };
+  }
+  if (!best) return null;
+  return { name: best.name.split("/").pop() || "planilha.xlsx", buffer: Buffer.from(best.data) };
 }
 
 // Cache em memória do access token gerado a partir do refresh token, para não
@@ -150,6 +204,26 @@ export async function downloadFileContent(pathLower: string): Promise<Buffer> {
   }
   const ab = await res.arrayBuffer();
   return Buffer.from(ab);
+}
+
+/**
+ * Obtém a planilha mais recente pronta para sincronizar. Prioriza o link
+ * PÚBLICO (sem token, nunca expira); se falhar e houver token/refresh token
+ * configurado, cai na API do Dropbox como reserva.
+ */
+export async function getLatestSpreadsheetFile(): Promise<{ name: string; buffer: Buffer } | null> {
+  try {
+    const viaPublic = await fetchSpreadsheetViaPublicLink();
+    if (viaPublic) return viaPublic;
+  } catch (err) {
+    // O link público falhou (ex.: pasta muito grande ou rede) — tenta a API.
+    if (!process.env.DROPBOX_ACCESS_TOKEN && !hasRefreshConfig()) throw err;
+  }
+
+  const file = await findLatestSpreadsheet();
+  if (!file) return null;
+  const buffer = await downloadFileContent(file.pathLower);
+  return { name: file.name, buffer };
 }
 
 // ─── Fluxo de conexão (obter o refresh token uma única vez) ────────────────────

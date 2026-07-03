@@ -12,8 +12,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { transformSheetRows, upsertLancamentos } from "@/lib/lancamentos-transform";
-import { parseSpreadsheetFile, extractPlanilhaResumo } from "@/lib/file-parsers";
-import { findLatestSpreadsheet, downloadFileContent } from "@/lib/dropbox";
+import { parseSpreadsheetAndResumo } from "@/lib/file-parsers";
+import { getLatestSpreadsheetFile } from "@/lib/dropbox";
 
 export interface DropboxSyncResult {
   ok: true;
@@ -74,14 +74,14 @@ export async function runDropboxSync(
   };
 
   try {
-    const file = await findLatestSpreadsheet();
+    const file = await getLatestSpreadsheetFile();
     if (!file) {
       await updateLog("error", 0, 0, "Nenhuma planilha (.xlsx/.csv) encontrada na pasta do Dropbox.");
       throw new DropboxSyncError("Nenhuma planilha (.xlsx/.csv) encontrada na pasta do Dropbox.", 422);
     }
 
-    const buffer = await downloadFileContent(file.pathLower);
-    const rawRows = await parseSpreadsheetFile(file.name, buffer);
+    // Lê a planilha UMA vez só (arquivo grande) → linhas + saldos-resumo.
+    const { rows: rawRows, resumo } = await parseSpreadsheetAndResumo(file.name, file.buffer);
     if (rawRows.length < 2) {
       await updateLog("error", 0, 0, "Planilha vazia ou sem dados.");
       throw new DropboxSyncError("Planilha vazia ou sem dados.", 422);
@@ -95,10 +95,9 @@ export async function runDropboxSync(
 
     const totalUpserted = await upsertLancamentos(sb, records);
 
-    // Captura os saldos-resumo mantidos manualmente no topo da planilha
-    // ("Saldo do Dia" / "Saldo Projetado") para o painel bater com a planilha.
+    // Saldos-resumo mantidos manualmente no topo da planilha ("Saldo do Dia" /
+    // "Saldo Projetado") — para o painel bater com a planilha.
     try {
-      const resumo = await extractPlanilhaResumo(file.name, buffer);
       if (resumo.saldoDia !== null || resumo.saldoProjetado !== null) {
         await sb.from("portal_planilha_resumo").upsert(
           {
