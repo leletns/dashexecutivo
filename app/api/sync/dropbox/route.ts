@@ -14,7 +14,7 @@ import { runDropboxSync, DropboxSyncError } from "@/lib/dropbox-sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const WRITE_SECTORS = new Set(["financeiro", "executivo"]);
 // Auto-sync ao abrir o painel não deve repetir trabalho pesado: se já rodou

@@ -15,7 +15,9 @@ import {
   parseMoneyBR,
 } from "@/lib/google-sheets";
 
-const BATCH_SIZE = 500;
+// Lotes grandes reduzem o nº de idas ao banco — ~26 lotes p/ 50 mil linhas em
+// vez de ~100 — para a sincronização caber no tempo limite do servidor.
+const BATCH_SIZE = 2000;
 
 export interface LancamentoRecord {
   cod: string;

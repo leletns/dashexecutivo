@@ -93,10 +93,9 @@ export async function runDropboxSync(
       throw new DropboxSyncError("Nenhum registro válido encontrado na planilha.", 422);
     }
 
-    const totalUpserted = await upsertLancamentos(sb, records);
-
-    // Saldos-resumo mantidos manualmente no topo da planilha ("Saldo do Dia" /
-    // "Saldo Projetado") — para o painel bater com a planilha.
+    // Salva os saldos-resumo ("Saldo do Dia"/"Saldo Projetado") ANTES do upsert
+    // pesado — assim o número mais visível do painel atualiza mesmo que a
+    // gravação dos 50 mil lançamentos demore.
     try {
       if (resumo.saldoDia !== null || resumo.saldoProjetado !== null) {
         await sb.from("portal_planilha_resumo").upsert(
@@ -114,6 +113,7 @@ export async function runDropboxSync(
       // resumo é complementar — não falha a sincronização principal
     }
 
+    const totalUpserted = await upsertLancamentos(sb, records);
     await updateLog("success", rowsRead, totalUpserted);
     return { ok: true, file_name: file.name, rows_read: rowsRead, rows_upserted: totalUpserted };
   } catch (err: any) {
