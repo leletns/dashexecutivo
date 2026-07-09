@@ -132,8 +132,9 @@ function resumoFromWorksheet(XLSX: typeof import("xlsx"), ws: any): PlanilhaResu
       const cell = ws[XLSX.utils.encode_cell({ r, c })];
       if (!cell) continue;
       const label = norm(String(cell.w ?? cell.v ?? ""));
-      if (saldoDia === null && label === "saldo do dia") saldoDia = numAt(r, c + 1);
-      else if (saldoProjetado === null && label === "saldo projetado") saldoProjetado = numAt(r, c + 1);
+      // startsWith tolera variações do rótulo (ex.: "Saldo Projetado 1").
+      if (saldoDia === null && label.startsWith("saldo do dia")) saldoDia = numAt(r, c + 1);
+      else if (saldoProjetado === null && label.startsWith("saldo projetado")) saldoProjetado = numAt(r, c + 1);
     }
   }
   return { saldoDia, saldoProjetado };

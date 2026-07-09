@@ -92,7 +92,9 @@ export async function GET(req: Request) {
     for (const row of lancamentos) {
       const sit = (row.situacao ?? "").toLowerCase().trim();
       if (sit !== "recebido" && sit !== "pago") continue;
-      if (!row.data_pagamento || row.data_pagamento > today) continue;
+      // Conta tudo marcado como realizado (recebido/pago), independente da data
+      // ser futura — é como a planilha calcula o caixa. Só exige ter data.
+      if (!row.data_pagamento) continue;
       if (!dentroPeriodo(row.data_pagamento)) continue;
 
       const tipo = tipoFluxo(row);
@@ -169,7 +171,7 @@ export async function GET(req: Request) {
       if (!row.conta_caixa) continue;
       const sit = (row.situacao ?? "").toLowerCase().trim();
       if (sit !== "recebido" && sit !== "pago") continue;
-      if (!row.data_pagamento || row.data_pagamento > today) continue;
+      if (!row.data_pagamento) continue;
 
       const rd  = (row.rec_desp ?? "").toLowerCase().trim();
       const val = Number(row.valor) || 0;

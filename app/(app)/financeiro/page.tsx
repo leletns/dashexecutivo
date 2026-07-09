@@ -172,6 +172,7 @@ function useLancamentosFluxo(periodo: Periodo) {
   const [porConta, setPorConta] = React.useState<ContaRow[]>([]);
   const [porCategoria, setPorCategoria] = React.useState<CategoriaRow[]>([]);
   const [totaisSupabase, setTotaisSupabase] = React.useState<FluxoTotais | null>(null);
+  const [saldoPlanilha, setSaldoPlanilha] = React.useState<{ saldo_dia: number | null; saldo_projetado: number | null } | null>(null);
   const [updatedAt, setUpdatedAt] = React.useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = React.useState(false);
   const [aviso, setAviso] = React.useState<string | null>(null);
@@ -196,6 +197,7 @@ function useLancamentosFluxo(periodo: Periodo) {
         setPorConta((d.por_conta ?? []) as ContaRow[]);
         setPorCategoria((d.por_categoria ?? []) as CategoriaRow[]);
         if (d.totais) setTotaisSupabase(d.totais as FluxoTotais);
+        if (d.saldo_planilha) setSaldoPlanilha(d.saldo_planilha);
         setAviso(d.aviso ?? null);
         setUpdatedAt(new Date().toISOString());
       })
@@ -239,7 +241,7 @@ function useLancamentosFluxo(periodo: Periodo) {
     };
   }, [fetchData]);
 
-  return { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt, realtimeConnected, aviso };
+  return { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, saldoPlanilha, updatedAt, realtimeConnected, aviso };
 }
 
 function useTotalCount(periodo: Periodo) {
@@ -418,7 +420,7 @@ export default function FinanceiroPage() {
   const [periodo, setPeriodo] = React.useState<Periodo>(() => ({ ano: todayBrasilia().slice(0, 4), mes: -1 }));
   const [activeTab, setActiveTab] = React.useState("overview");
 
-  const { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, updatedAt } = useLancamentosFluxo(periodo);
+  const { fluxoSupabase, porEvento, porConta, porCategoria, totaisSupabase, saldoPlanilha, updatedAt } = useLancamentosFluxo(periodo);
   const totalCount = useTotalCount(periodo);
 
   const margens = React.useMemo(
@@ -442,14 +444,16 @@ export default function FinanceiroPage() {
     saidasPeriodo: fluxoMensal.reduce((s, r) => s + r.saidas, 0),
   }), [fluxoMensal]);
 
-  // Fonte única de verdade: Supabase (portal_lancamentos)
+  // Fonte única de verdade: Supabase (portal_lancamentos). Saldo em caixa e
+  // Saldo projetado vêm da própria planilha (números oficiais do financeiro) —
+  // igual ao painel principal — para bater exatamente. Fallback no calculado.
   const displayTotals: Totals = {
-    saldoConferido:     totaisSupabase?.saldo_realizado    ?? autoTotais.entradasPeriodo - autoTotais.saidasPeriodo,
+    saldoConferido:     saldoPlanilha?.saldo_dia ?? totaisSupabase?.saldo_realizado ?? autoTotais.entradasPeriodo - autoTotais.saidasPeriodo,
     aReceber:           totaisSupabase?.total_a_receber    ?? 0,
     aReceberCount:      0,
     aPagar:             totaisSupabase?.total_a_pagar      ?? 0,
     aPagarCount:        0,
-    resultadoProjetado: totaisSupabase?.resultado_projetado ?? 0,
+    resultadoProjetado: saldoPlanilha?.saldo_projetado ?? totaisSupabase?.resultado_projetado ?? 0,
     entradasPeriodo:    autoTotais.entradasPeriodo,
     saidasPeriodo:      autoTotais.saidasPeriodo,
   };
