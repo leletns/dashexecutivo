@@ -140,25 +140,40 @@ export async function GET(req: Request) {
     }
 
     // ── 3. Por evento ─────────────────────────────────────────────────────────
-    const eventoMap = new Map<string, { receita: number; despesa: number }>();
+    // Total lançado (por vencimento, inclui a receber/a pagar) + REALIZADO
+    // (só Recebido/Pago) — pedido do financeiro: ver o histórico efetivado de
+    // cada plano/evento separado do projetado, já que despesas futuras entram
+    // lançadas mas receitas associativas só quando realizadas.
+    const eventoMap = new Map<string, { receita: number; despesa: number; receitaReal: number; despesaReal: number }>();
     for (const row of lancamentos) {
       if (!row.evento) continue;
       if (!dentroPeriodo(row.data_vencimento)) continue;
 
       const tipo = tipoFluxo(row);
       if (!tipo) continue;
-      const cur = eventoMap.get(row.evento) ?? { receita: 0, despesa: 0 };
-      if (tipo === "receita") cur.receita += Number(row.valor) || 0;
-      else cur.despesa += Number(row.valor) || 0;
+      const cur = eventoMap.get(row.evento) ?? { receita: 0, despesa: 0, receitaReal: 0, despesaReal: 0 };
+      const val = Number(row.valor) || 0;
+      const sit = (row.situacao ?? "").toLowerCase().trim();
+      const realizado = (sit === "recebido" || sit === "pago") && !!row.data_pagamento;
+      if (tipo === "receita") {
+        cur.receita += val;
+        if (realizado) cur.receitaReal += val;
+      } else {
+        cur.despesa += val;
+        if (realizado) cur.despesaReal += val;
+      }
       eventoMap.set(row.evento, cur);
     }
 
     const por_evento = Array.from(eventoMap.entries())
-      .map(([nome, { receita, despesa }]) => ({
+      .map(([nome, { receita, despesa, receitaReal, despesaReal }]) => ({
         nome,
         Receita: receita,
         Despesa: despesa,
         resultado: receita - despesa,
+        receita_realizada: receitaReal,
+        despesa_realizada: despesaReal,
+        resultado_realizado: receitaReal - despesaReal,
       }))
       .sort((a, b) => b.Receita - a.Receita)
       .slice(0, 12);
@@ -257,6 +272,14 @@ export async function GET(req: Request) {
       }
     } catch {
       /* resumo é complementar */
+    }
+
+    // Rede de segurança: se a captura do "Saldo Projetado" falhar (ex.: o
+    // financeiro renomear a célula na planilha), derivamos um substituto são a
+    // partir do Saldo do Dia — nunca exibir nulo/negativo sem sentido.
+    if (saldoPlanilha && saldoPlanilha.saldo_dia !== null && saldoPlanilha.saldo_projetado === null) {
+      saldoPlanilha.saldo_projetado =
+        Math.round((saldoPlanilha.saldo_dia + aReceber - aPagar) * 100) / 100;
     }
 
     return NextResponse.json({

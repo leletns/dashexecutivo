@@ -113,6 +113,10 @@ interface EventoRow {
   Receita: number;
   Despesa: number;
   resultado: number;
+  /** Somente Recebido/Pago (efetivado) — separado do total lançado. */
+  receita_realizada?: number;
+  despesa_realizada?: number;
+  resultado_realizado?: number;
 }
 
 type CategoriaRow = EventoRow;
@@ -2269,6 +2273,25 @@ function MargemTab({ margens, porEvento }: { margens: MargemEdicao[]; porEvento:
                     accent={ev.resultado >= 0 ? "emerald" : "rose"}
                   />
                 </div>
+
+                {/* Efetivado (só Recebido/Pago) — separado do total lançado, que
+                    inclui despesas futuras já lançadas e receitas a receber. */}
+                {ev.receita_realizada !== undefined && (
+                  <div className="mt-3 border-t border-border/50 pt-3">
+                    <div className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+                      Realizado (pago/recebido)
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <Stat label="Receitas" value={ev.receita_realizada ?? 0} accent="emerald" />
+                      <Stat label="Despesas" value={ev.despesa_realizada ?? 0} accent="rose" />
+                      <Stat
+                        label="Resultado"
+                        value={ev.resultado_realizado ?? 0}
+                        accent={(ev.resultado_realizado ?? 0) >= 0 ? "emerald" : "rose"}
+                      />
+                    </div>
+                  </div>
+                )}
               </Card>
             </motion.div>
           );
