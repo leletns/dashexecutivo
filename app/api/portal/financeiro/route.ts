@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { getPortalSectorFromEmail } from "@/lib/portal-sector";
+import { getPortalSectorFromEmail, WRITE_SECTORS } from "@/lib/portal-sector";
 import {
   EMPTY_SNAPSHOT,
   type PortalFinanceiroSnapshot,
@@ -78,7 +78,6 @@ const ALLOWED_TABLES = new Set([
   "portal_custos_departamento",
 ]);
 
-const WRITE_SECTORS = new Set(["financeiro", "executivo"]);
 
 export async function POST(req: Request) {
   try {

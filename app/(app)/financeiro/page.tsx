@@ -448,16 +448,17 @@ export default function FinanceiroPage() {
     saidasPeriodo: fluxoMensal.reduce((s, r) => s + r.saidas, 0),
   }), [fluxoMensal]);
 
-  // Fonte única de verdade: Supabase (portal_lancamentos). Saldo em caixa e
-  // Saldo projetado vêm da própria planilha (números oficiais do financeiro) —
-  // igual ao painel principal — para bater exatamente. Fallback no calculado.
+  // "Saldo em caixa" = Saldo do Dia oficial da planilha (retrato do caixa AGORA,
+  // ponto no tempo — não varia com o filtro). Já o "Resultado projetado" varia
+  // conforme o período filtrado (saldo + a receber − a pagar daquele período) —
+  // pedido do financeiro, para refletir a projeção do recorte selecionado.
   const displayTotals: Totals = {
     saldoConferido:     saldoPlanilha?.saldo_dia ?? totaisSupabase?.saldo_realizado ?? autoTotais.entradasPeriodo - autoTotais.saidasPeriodo,
     aReceber:           totaisSupabase?.total_a_receber    ?? 0,
     aReceberCount:      0,
     aPagar:             totaisSupabase?.total_a_pagar      ?? 0,
     aPagarCount:        0,
-    resultadoProjetado: saldoPlanilha?.saldo_projetado ?? totaisSupabase?.resultado_projetado ?? 0,
+    resultadoProjetado: totaisSupabase?.resultado_projetado ?? 0,
     entradasPeriodo:    autoTotais.entradasPeriodo,
     saidasPeriodo:      autoTotais.saidasPeriodo,
   };

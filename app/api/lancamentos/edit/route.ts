@@ -17,14 +17,13 @@
 
 import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
-import { getPortalSectorFromEmail } from "@/lib/portal-sector";
+import { getPortalSectorFromEmail, WRITE_SECTORS } from "@/lib/portal-sector";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { logAudit, nomeAmigavel } from "@/lib/audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const WRITE_SECTORS = new Set(["financeiro", "executivo"]);
 
 const EDITABLE_FIELDS = [
   "descricao",

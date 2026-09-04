@@ -14,13 +14,12 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { requirePortalSession } from "@/lib/auth-server";
-import { getPortalSectorFromEmail } from "@/lib/portal-sector";
+import { getPortalSectorFromEmail, WRITE_SECTORS } from "@/lib/portal-sector";
 import { buildDropboxAuthorizeUrl, hasDropboxAppCredentials } from "@/lib/dropbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const WRITE_SECTORS = new Set(["financeiro", "executivo"]);
 const STATE_COOKIE = "dropbox_oauth_state";
 
 export async function GET(req: Request) {

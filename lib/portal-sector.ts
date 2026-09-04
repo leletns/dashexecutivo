@@ -2,10 +2,27 @@ export type PortalSector =
   | "executivo"
   | "juridico"
   | "financeiro"
+  | "tesouraria"
   | "contabil"
   | "marketing"
   | "administrativo"
   | "eventos";
+
+/**
+ * Setores com permissão de ESCRITA nos dados financeiros (editar/lançar,
+ * sincronizar planilha, disparar integrações). Fonte única de verdade —
+ * usada por todas as rotas de API para não haver divergência.
+ */
+export const WRITE_SECTORS: ReadonlySet<PortalSector> = new Set<PortalSector>([
+  "financeiro",
+  "executivo",
+  "tesouraria",
+]);
+
+/** Setor pode escrever/editar dados financeiros e disparar sincronizações. */
+export function canWriteFinanceiro(sector: PortalSector): boolean {
+  return WRITE_SECTORS.has(sector);
+}
 
 /** Ludymilla enxerga o conjunto completo; demais logins enxergam só o próprio setor. */
 export function getPortalSectorFromEmail(
@@ -24,6 +41,9 @@ export function getPortalSectorFromEmail(
     e === "andressa@portal.com"
   )
     return "financeiro";
+  // Tesouraria — Eduardo Maia (assistente da tesouraria)
+  if (e === "tesouraria@portal.com" || e === "eduardomaia@portal.com" || e === "eduardo@portal.com")
+    return "tesouraria";
   // Contábil — Delta Contabilidade
   if (e === "contabil@portal.com" || e === "delta@portal.com") return "contabil";
   // Marketing
@@ -40,6 +60,7 @@ export function sectorShortLabel(sector: PortalSector): string {
     executivo: "Visão executiva",
     juridico: "Jurídico",
     financeiro: "Financeiro",
+    tesouraria: "Tesouraria",
     contabil: "Contábil",
     marketing: "Marketing",
     administrativo: "Administrativo",
@@ -64,8 +85,8 @@ export function isRouteAllowedForSector(pathname: string, sector: PortalSector):
 
   const rules: [string, PortalSector[]][] = [
     ["/juridico",      ["juridico"]],
-    ["/financeiro",    ["financeiro", "administrativo", "contabil"]],
-    ["/contabil",      ["contabil", "financeiro"]],
+    ["/financeiro",    ["financeiro", "administrativo", "contabil", "tesouraria"]],
+    ["/contabil",      ["contabil", "financeiro", "tesouraria"]],
     ["/marketing",     ["marketing"]],
     ["/administrativo",["administrativo"]],
     ["/eventos",       ["eventos", "marketing"]],
@@ -138,6 +159,13 @@ const BY_SECTOR: Record<PortalSector, DashboardZone[]> = {
     "bloco_certidoes",
   ],
   financeiro: [
+    "macro_financeiro",
+    "bloco_financeiro_narrativa",
+    "bloco_financeiro_eventos",
+    "bloco_institucional",
+  ],
+  // Tesouraria — mesma visão financeira do setor Financeiro.
+  tesouraria: [
     "macro_financeiro",
     "bloco_financeiro_narrativa",
     "bloco_financeiro_eventos",

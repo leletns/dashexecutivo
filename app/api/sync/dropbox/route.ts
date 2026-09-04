@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { getPortalSectorFromEmail } from "@/lib/portal-sector";
+import { getPortalSectorFromEmail, WRITE_SECTORS } from "@/lib/portal-sector";
 import { isDropboxConfigured } from "@/lib/dropbox";
 import { runDropboxSync, DropboxSyncError } from "@/lib/dropbox-sync";
 
@@ -16,7 +16,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const WRITE_SECTORS = new Set(["financeiro", "executivo"]);
 // Auto-sync ao abrir o painel não deve repetir trabalho pesado: se já rodou
 // nos últimos 120s, pula (a menos que ?force=1, usado no botão "sincronizar agora").
 const DEBOUNCE_MS = 120_000;

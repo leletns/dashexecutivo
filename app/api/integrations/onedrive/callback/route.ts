@@ -7,14 +7,13 @@
 
 import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
-import { getPortalSectorFromEmail } from "@/lib/portal-sector";
+import { getPortalSectorFromEmail, WRITE_SECTORS } from "@/lib/portal-sector";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { exchangeCodeForTokens, fetchAccountLabel, storeTokens } from "@/lib/onedrive";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const WRITE_SECTORS = new Set(["financeiro", "executivo"]);
 const STATE_COOKIE = "onedrive_oauth_state";
 
 export async function GET(req: Request) {

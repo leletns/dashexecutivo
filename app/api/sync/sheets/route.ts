@@ -8,14 +8,13 @@
 import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { getPortalSectorFromEmail } from "@/lib/portal-sector";
+import { getPortalSectorFromEmail, WRITE_SECTORS } from "@/lib/portal-sector";
 import { readSheetValues } from "@/lib/google-sheets";
 import { transformSheetRows, upsertLancamentos } from "@/lib/lancamentos-transform";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const WRITE_SECTORS = new Set(["financeiro", "executivo"]);
 
 // ─── GET — status do último sync ─────────────────────────────────────────────
 

@@ -28,6 +28,7 @@ const TABS_POR_SETOR: Record<PortalSector, string[]> = {
   executivo: ["contratos", "processos", "certidoes", "financeiro", "congresso", "associados", "institucional"],
   juridico: ["contratos", "processos", "certidoes"],
   financeiro: ["financeiro", "associados"],
+  tesouraria: ["financeiro", "associados"],
   contabil: ["financeiro"],
   administrativo: ["institucional", "certidoes"],
   eventos: ["congresso"],
