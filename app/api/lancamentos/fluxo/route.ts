@@ -176,7 +176,9 @@ export async function GET(req: Request) {
         resultado_realizado: receitaReal - despesaReal,
       }))
       .sort((a, b) => b.Receita - a.Receita)
-      .slice(0, 12);
+      // Mostra TODOS os eventos (antes limitava a 12, escondendo eventos reais);
+      // teto alto só como proteção contra ruído.
+      .slice(0, 60);
 
     // ── 4. Saldo por conta (caixa/banco) ──────────────────────────────────────
     // Saldo atual de cada conta — soma de tudo que já foi recebido/pago até hoje,
@@ -220,7 +222,7 @@ export async function GET(req: Request) {
         resultado: receita - despesa,
       }))
       .sort((a, b) => (b.Receita + b.Despesa) - (a.Receita + a.Despesa))
-      .slice(0, 12);
+      .slice(0, 40);
 
     // ── Diagnóstico: dados existem mas tudo deu zero (provável filtro/ano sem match) ─
     if (
