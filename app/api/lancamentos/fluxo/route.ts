@@ -140,14 +140,13 @@ export async function GET(req: Request) {
     }
 
     // ── 3. Por evento ─────────────────────────────────────────────────────────
-    // Total lançado (por vencimento, inclui a receber/a pagar) + REALIZADO
-    // (só Recebido/Pago) — pedido do financeiro: ver o histórico efetivado de
-    // cada plano/evento separado do projetado, já que despesas futuras entram
-    // lançadas mas receitas associativas só quando realizadas.
+    // Resultado ACUMULADO de cada evento (todo o ciclo de vida — NÃO é filtrado
+    // pelo período), para bater com as abas de evento da planilha (que são o
+    // P&L total do evento). Mostra o total lançado (inclui a receber/a pagar) +
+    // o REALIZADO (só Recebido/Pago), como o financeiro pediu.
     const eventoMap = new Map<string, { receita: number; despesa: number; receitaReal: number; despesaReal: number }>();
     for (const row of lancamentos) {
       if (!row.evento) continue;
-      if (!dentroPeriodo(row.data_vencimento)) continue;
 
       const tipo = tipoFluxo(row);
       if (!tipo) continue;

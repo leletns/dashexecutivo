@@ -2265,14 +2265,16 @@ function MargemTab({ margens, porEvento }: { margens: MargemEdicao[]; porEvento:
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   <Stat label="Receitas" value={ev.Receita} accent="emerald" />
                   <Stat label="Despesas" value={ev.Despesa} accent="rose" />
-                  <Stat
-                    label="Resultado"
-                    value={ev.resultado}
-                    accent={ev.resultado >= 0 ? "emerald" : "rose"}
-                  />
+                  <div className="col-span-2">
+                    <Stat
+                      label="Resultado"
+                      value={ev.resultado}
+                      accent={ev.resultado >= 0 ? "emerald" : "rose"}
+                    />
+                  </div>
                 </div>
 
                 {/* Efetivado (só Recebido/Pago) — separado do total lançado, que
@@ -2282,14 +2284,16 @@ function MargemTab({ margens, porEvento }: { margens: MargemEdicao[]; porEvento:
                     <div className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
                       Realizado (pago/recebido)
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 gap-2">
                       <Stat label="Receitas" value={ev.receita_realizada ?? 0} accent="emerald" />
                       <Stat label="Despesas" value={ev.despesa_realizada ?? 0} accent="rose" />
-                      <Stat
-                        label="Resultado"
-                        value={ev.resultado_realizado ?? 0}
-                        accent={(ev.resultado_realizado ?? 0) >= 0 ? "emerald" : "rose"}
-                      />
+                      <div className="col-span-2">
+                        <Stat
+                          label="Resultado"
+                          value={ev.resultado_realizado ?? 0}
+                          accent={(ev.resultado_realizado ?? 0) >= 0 ? "emerald" : "rose"}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2391,13 +2395,14 @@ function Stat({
       <div className="text-[10px] text-muted-foreground truncate">{label}</div>
       <div
         className={cn(
-          "text-sm font-semibold tabular-nums truncate",
+          "text-[13px] font-semibold tabular-nums leading-tight",
           accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
           accent === "rose" && "text-rose-600 dark:text-rose-400",
         )}
         title={formatCurrencyBRL(value)}
       >
-        {fmtCompact(value)}
+        {/* Valor EXATO (não compacto) — para conferência sem ambiguidade. */}
+        {formatCurrencyBRL(value)}
       </div>
     </div>
   );
