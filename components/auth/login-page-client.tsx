@@ -12,6 +12,8 @@ import {
   Sparkles,
   ArrowLeftRight,
   MessageCircle,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +43,7 @@ export function LoginPageClient({ callbackUrl, authError }: LoginPageClientProps
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(authError ?? null);
 
@@ -167,14 +170,32 @@ export function LoginPageClient({ callbackUrl, authError }: LoginPageClientProps
                   <div className="relative">
                     <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••••••"
-                      className="pl-8 h-10"
+                      className="pl-8 pr-10 h-10"
                       autoComplete="current-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                      aria-pressed={showPassword}
+                      title={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
+                  {showPassword && /(^\s|\s$)/.test(password) && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-snug">
+                      Atenção: há um espaço no começo ou no fim da senha (comum ao colar). O acesso ainda funciona, mas confira.
+                    </p>
+                  )}
                 </div>
 
                 {error && (

@@ -2,6 +2,9 @@ import { redirect } from "next/navigation";
 import { getPortalSession } from "@/lib/auth-server";
 import { LoginPageClient } from "@/components/auth/login-page-client";
 
+// Sempre renderizar a tela de login na hora (nunca cache estático).
+export const dynamic = "force-dynamic";
+
 export default async function HomePage({
   searchParams,
 }: {
