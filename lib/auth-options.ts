@@ -35,8 +35,8 @@ export const authOptions = {
       },
       async authorize(credentials) {
         const emailRaw = credentials?.email?.trim().toLowerCase();
-        const password = credentials?.password;
-        if (!emailRaw || typeof password !== "string" || !password) return null;
+        const passwordRaw = credentials?.password;
+        if (!emailRaw || typeof passwordRaw !== "string" || !passwordRaw) return null;
 
         const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
         const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY;
@@ -44,21 +44,38 @@ export const authOptions = {
         const supabaseUrl = rawUrl.replace(/\/(rest|auth)(\/.*)?$/, "").replace(/\/$/, "");
 
         const supabase = createClient(supabaseUrl, supabaseAnonKey);
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: emailRaw,
-          password,
-        });
-        if (error) {
-          console.error("[auth] supabase signIn error:", error.message, error.status);
-          return null;
-        }
-        if (!data.user) return null;
 
-        return {
-          id: emailRaw,
-          email: emailRaw,
-          name: displayNameFromEmail(emailRaw),
-        };
+        // Copiar/colar a senha quase sempre traz caracteres invisíveis grudados
+        // nas pontas (espaço, quebra de linha, NBSP, zero-width). Tentamos a
+        // senha exatamente como veio e, se o login falhar, tentamos uma versão
+        // com as pontas limpas — assim colar a senha nunca mais quebra o acesso.
+        const zeroWidth = "\\u200B-\\u200D\\uFEFF";
+        const cleaned = passwordRaw
+          .replace(new RegExp(`^[\\s${zeroWidth}]+`, "u"), "")
+          .replace(new RegExp(`[\\s${zeroWidth}]+$`, "u"), "");
+        const candidates =
+          cleaned && cleaned !== passwordRaw ? [passwordRaw, cleaned] : [passwordRaw];
+
+        let lastError: { message: string; status?: number } | null = null;
+        for (const password of candidates) {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: emailRaw,
+            password,
+          });
+          if (!error && data.user) {
+            return {
+              id: emailRaw,
+              email: emailRaw,
+              name: displayNameFromEmail(emailRaw),
+            };
+          }
+          lastError = error ?? lastError;
+        }
+
+        if (lastError) {
+          console.error("[auth] supabase signIn error:", lastError.message, lastError.status);
+        }
+        return null;
       },
     }),
   ],
