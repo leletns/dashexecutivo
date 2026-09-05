@@ -658,6 +658,7 @@ function KpiCard({
   trend?: "up" | "down";
   onDetalhes?: () => void;
 }) {
+  const [showExact, setShowExact] = React.useState(false);
   return (
     <motion.div whileHover={{ y: -2 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
       <Card
@@ -697,15 +698,18 @@ function KpiCard({
         <div className="flex items-end justify-between gap-1">
           <div
             className={cn(
-              "text-[22px] font-semibold tracking-tight tabular-nums leading-none truncate",
+              "font-semibold tracking-tight tabular-nums leading-none min-w-0",
+              showExact
+                ? "text-[15px] sm:text-[16px] break-words"
+                : "text-[22px] truncate",
               accent === "emerald" && "text-emerald-600 dark:text-emerald-400",
               accent === "rose" && "text-rose-600 dark:text-rose-400",
             )}
             title={formatCurrencyBRL(value)}
           >
-            <AnimatedNumber value={value} format="compact" />
+            {showExact ? formatCurrencyBRL(value) : <AnimatedNumber value={value} format="compact" />}
           </div>
-          {trend && (
+          {trend && !showExact && (
             <span className={cn("shrink-0 mb-0.5",
               trend === "up" ? "text-emerald-500" : "text-rose-500"
             )}>
@@ -717,14 +721,23 @@ function KpiCard({
           )}
         </div>
 
-        {onDetalhes && (
+        <div className="flex items-center justify-between gap-2 mt-0.5">
           <button
-            onClick={onDetalhes}
-            className="text-[10px] text-muted-foreground/55 hover:text-foreground transition-colors leading-none text-left mt-0.5"
+            onClick={() => setShowExact((v) => !v)}
+            className="text-[10px] font-medium text-muted-foreground/60 hover:text-foreground transition-colors leading-none text-left"
+            aria-pressed={showExact}
           >
-            Ver detalhes →
+            {showExact ? "Ocultar valor" : "Ver valor exato"}
           </button>
-        )}
+          {onDetalhes && (
+            <button
+              onClick={onDetalhes}
+              className="text-[10px] text-muted-foreground/55 hover:text-foreground transition-colors leading-none text-right shrink-0"
+            >
+              Ver detalhes →
+            </button>
+          )}
+        </div>
       </Card>
     </motion.div>
   );
