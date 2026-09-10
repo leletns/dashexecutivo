@@ -175,7 +175,11 @@ export function BapsDashboard({
   }, []);
 
   React.useEffect(() => {
-    if (!["financeiro", "contabil", "administrativo", "executivo"].includes(sector)) return;
+    // Precisa ser exatamente os setores que enxergam a zona "macro_financeiro"
+    // (showZone) — uma lista solta e duplicada aqui já causou um bug real: a
+    // Tesouraria via a seção e o seletor de período, mas os dados nunca
+    // carregavam porque o setor tinha ficado de fora desta checagem.
+    if (!showZone(sector, "macro_financeiro")) return;
     const load = () => {
       const ref = mesReferencia || todayBrasilia().slice(0, 7);
       const { from, to } = periodoRange(periodo, ref);
