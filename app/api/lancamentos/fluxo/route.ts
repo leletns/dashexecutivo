@@ -26,6 +26,7 @@ import { requirePortalSession } from "@/lib/auth-server";
 import { todayBrasilia } from "@/lib/timezone";
 import { getLancamentos } from "@/lib/lancamentos-sheet";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
+import { getSnapshotMeta } from "@/lib/base-snapshot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -273,6 +274,20 @@ export async function GET(req: Request) {
       }
     } catch {
       /* resumo é complementar */
+    }
+
+    // Sem Supabase (produção sem as chaves): usa o Saldo do Dia/Projetado do
+    // RETRATO embutido da base viva — assim o "Saldo em caixa" bate com a base
+    // (ex.: R$ 1.105.394,75) mesmo sem sincronização.
+    if (fonte === "snapshot" && (!saldoPlanilha || saldoPlanilha.saldo_dia === null)) {
+      const meta = getSnapshotMeta();
+      if (meta.saldo_dia !== null) {
+        saldoPlanilha = {
+          saldo_dia: meta.saldo_dia,
+          saldo_projetado: meta.saldo_projetado,
+          atualizado_em: meta.relatorio_em ?? meta.gerado_em ?? null,
+        };
+      }
     }
 
     // Rede de segurança: se a captura do "Saldo Projetado" falhar (ex.: o
