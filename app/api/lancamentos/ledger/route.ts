@@ -137,7 +137,7 @@ export async function GET(req: Request) {
         situacoes: [...situacoesSet].sort(),
       },
     } satisfies {
-      fonte: "planilha" | "supabase";
+      fonte: "planilha" | "supabase" | "snapshot";
       aviso: string | null;
       data: LancamentoRow[];
       total: number;

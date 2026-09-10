@@ -11,6 +11,7 @@ import { findHeaderRowIndex, buildColumnMap, parseDateBR, parseMoneyBR } from "@
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { isDropboxConfigured } from "@/lib/dropbox";
 import { isOneDriveConfigured } from "@/lib/onedrive";
+import { getSnapshotLancamentos } from "@/lib/base-snapshot";
 
 const CACHE_TTL_MS = 45_000;
 
@@ -317,21 +318,33 @@ function mergeOverrides(rows: LancamentoRow[], overrides: LancamentoOverride[]):
  * Quando Dropbox/OneDrive NÃO estão configurados, a planilha do Google vem
  * primeiro (continua sendo a fonte ativa nesse cenário antigo).
  */
-export async function getLancamentos(): Promise<{ rows: LancamentoRow[]; fonte: "planilha" | "supabase"; aviso: string | null }> {
+export async function getLancamentos(): Promise<{ rows: LancamentoRow[]; fonte: "planilha" | "supabase" | "snapshot"; aviso: string | null }> {
   const usaArmazenamentoEmNuvem = isDropboxConfigured() || isOneDriveConfigured();
 
   const lerSupabase = async (): Promise<LancamentoRow[]> =>
     getLancamentosFromSupabase().catch(() => [] as LancamentoRow[]);
+  const lerSnapshot = async (): Promise<LancamentoRow[]> => {
+    try {
+      return getSnapshotLancamentos();
+    } catch {
+      return [] as LancamentoRow[];
+    }
+  };
   const lerPlanilha = async (): Promise<LancamentoRow[]> =>
     getLancamentosFromSheet().then((r) => r ?? []).catch(() => [] as LancamentoRow[]);
 
-  // Fontes na ordem de preferência conforme o cenário configurado.
-  const fontes: Array<{ nome: "supabase" | "planilha"; ler: () => Promise<LancamentoRow[]> }> =
-    usaArmazenamentoEmNuvem
-      ? [{ nome: "supabase", ler: lerSupabase }, { nome: "planilha", ler: lerPlanilha }]
-      : [{ nome: "planilha", ler: lerPlanilha }, { nome: "supabase", ler: lerSupabase }];
+  // Ordem de preferência: Supabase (mais fresco, quando a sincronização roda) →
+  // RETRATO embutido da base viva (funciona sem nenhuma configuração externa) →
+  // planilha antiga do Google (último recurso). Assim, enquanto o Vercel estiver
+  // sem as chaves, o painel mostra a base atual (retrato) em vez da planilha
+  // defasada; quando as chaves voltarem, o Supabase assume sozinho.
+  const fontes: Array<{ nome: "supabase" | "snapshot" | "planilha"; ler: () => Promise<LancamentoRow[]> }> = [
+    { nome: "supabase", ler: lerSupabase },
+    { nome: "snapshot", ler: lerSnapshot },
+    { nome: "planilha", ler: lerPlanilha },
+  ];
 
-  let result: { rows: LancamentoRow[]; fonte: "planilha" | "supabase"; aviso: string | null } = {
+  let result: { rows: LancamentoRow[]; fonte: "planilha" | "supabase" | "snapshot"; aviso: string | null } = {
     rows: [],
     fonte: usaArmazenamentoEmNuvem ? "supabase" : "planilha",
     aviso: null,
@@ -340,15 +353,13 @@ export async function getLancamentos(): Promise<{ rows: LancamentoRow[]; fonte: 
   for (let i = 0; i < fontes.length; i++) {
     const rows = await fontes[i].ler();
     if (rows.length > 0) {
-      // Se a fonte preferida (índice 0) veio vazia e estamos usando a de
-      // reserva, avisamos — mas o painel já mostra dados em vez de zero.
-      const usandoReserva = i > 0;
       result = {
         rows,
         fonte: fontes[i].nome,
-        aviso: usandoReserva
-          ? "Mostrando a planilha anterior — a sincronização mais recente ainda não trouxe dados novos."
-          : null,
+        aviso:
+          fontes[i].nome === "planilha" && i > 0
+            ? "Mostrando a planilha anterior — a sincronização mais recente ainda não trouxe dados novos."
+            : null,
       };
       break;
     }
