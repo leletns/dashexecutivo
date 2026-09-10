@@ -2,18 +2,11 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthSecret } from "@/lib/auth-secret";
-
-// Credenciais PÚBLICAS do Supabase (a "anon key" é feita para ser pública —
-// ela já é enviada ao navegador em todo acesso e o RLS é quem protege os
-// dados). Servem de rede de segurança: se a variável de ambiente do Vercel
-// estiver ausente ou desatualizada, o login continua funcionando.
-const SUPABASE_URL_FALLBACK = "https://tckkdpwcsyicgiojkrlh.supabase.co";
-const SUPABASE_ANON_KEY_FALLBACK =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRja2tkcHdjc3lpY2dpb2prcmxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwODEwNzgsImV4cCI6MjA5MzY1NzA3OH0.FbZPYn6v2IfbJCpFC-VYig-a3FBILTvj-sO9jBQpKMo";
-
-function normalizeSupabaseUrl(u: string): string {
-  return u.replace(/\/(rest|auth)(\/.*)?$/, "").replace(/\/$/, "");
-}
+import {
+  SUPABASE_URL_FALLBACK,
+  SUPABASE_ANON_KEY_FALLBACK,
+  normalizeSupabaseUrl,
+} from "@/lib/supabase/public-config";
 
 function displayNameFromEmail(email: string): string {
   const local = email.split("@")[0] ?? "";
