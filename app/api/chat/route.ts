@@ -245,10 +245,24 @@ export async function POST(req: Request) {
     const contextText = `Contexto numérico atual do painel (BRL):\n${JSON.stringify(contextPayload, null, 2)}`;
     const system = `${buildSystemPrompt(body)}\n\n${contextText}`;
 
-    // Anthropic primeiro (se configurado); senão, Gemini Flash.
-    const reply = anthropicKey
-      ? await callAnthropic(anthropicKey, system, body.messages)
-      : await callGemini(geminiKey as string, system, body.messages);
+    // Gemini Flash primeiro (preferência do time); Anthropic como reserva
+    // automática se o Gemini falhar (ex.: chave ainda não configurada, sem
+    // cota) — e vice-versa. Só cai no aviso genérico se AMBOS falharem.
+    const attempts: Array<{ nome: string; chamar: () => Promise<string> }> = [];
+    if (geminiKey) attempts.push({ nome: "gemini", chamar: () => callGemini(geminiKey, system, body.messages) });
+    if (anthropicKey) attempts.push({ nome: "anthropic", chamar: () => callAnthropic(anthropicKey, system, body.messages) });
+
+    let reply = "";
+    const erros: string[] = [];
+    for (const { nome, chamar } of attempts) {
+      try {
+        reply = await chamar();
+        if (reply) break;
+      } catch (e: any) {
+        erros.push(`${nome}: ${e?.message ?? e}`);
+      }
+    }
+    if (!reply && erros.length > 0) throw new Error(erros.join(" | "));
 
     return NextResponse.json({ reply: reply || localFallback(body) });
   } catch (err: any) {
