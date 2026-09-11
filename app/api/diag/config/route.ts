@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server";
 import { requirePortalSession } from "@/lib/auth-server";
 import { getPortalSectorFromEmail, WRITE_SECTORS } from "@/lib/portal-sector";
-import { getLancamentos } from "@/lib/lancamentos-sheet";
+import { getLancamentos, getLancamentosOverrides } from "@/lib/lancamentos-sheet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,9 +53,33 @@ export async function GET() {
     aviso = `erro ao ler lançamentos: ${e?.message ?? e}`;
   }
 
+  // Lançamentos manuais/edições salvos direto no painel (fora da planilha) —
+  // podem explicar números que "não batem" mesmo com a base certa, se algum
+  // ficou desatualizado. Resumo só (sem dados sensíveis linha a linha).
+  let overrides: { total: number; porEvento: Array<{ evento: string; count: number; somaValor: number }> } = {
+    total: 0,
+    porEvento: [],
+  };
+  try {
+    const ovs = await getLancamentosOverrides();
+    overrides.total = ovs.length;
+    const map = new Map<string, { count: number; somaValor: number }>();
+    for (const ov of ovs) {
+      const ev = ov.evento ?? "(sem evento)";
+      const cur = map.get(ev) ?? { count: 0, somaValor: 0 };
+      cur.count += 1;
+      cur.somaValor += Number(ov.valor) || 0;
+      map.set(ev, cur);
+    }
+    overrides.porEvento = Array.from(map.entries()).map(([evento, v]) => ({ evento, ...v }));
+  } catch {
+    /* diagnóstico complementar */
+  }
+
   return NextResponse.json({
     env,
     dados: { fonte, totalRows, aviso },
+    overrides,
     diagnostico: {
       sync_pode_rodar:
         env.SUPABASE_SERVICE_ROLE_KEY &&
