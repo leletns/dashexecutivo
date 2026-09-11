@@ -165,28 +165,17 @@ export async function getLancamentosFromSupabase(): Promise<LancamentoRow[]> {
 
   // O Supabase/PostgREST limita CADA consulta a no máximo 1.000 linhas. Como a
   // base tem dezenas de milhares de lançamentos, sem paginar o painel só
-  // enxergava os primeiros 1.000 — totais errados e "sem dados". Buscamos
-  // primeiro só a CONTAGEM (1 consulta rápida) e depois todas as páginas de
-  // 1.000 EM PARALELO (lotes de 10 por vez) — sequencial (~500ms × 56
-  // páginas ≈ 28s) chegava a travar o primeiro carregamento da tela; em
-  // paralelo, o mesmo total de dados sai em ~2-3s.
+  // enxergava os primeiros 1.000 — totais errados e "sem dados". Busca as
+  // páginas de 1.000 EM PARALELO (lotes de 10 por vez), parando quando um
+  // lote traz alguma página incompleta — sequencial (~500ms × 56 páginas ≈
+  // 28s) chegava a travar o primeiro carregamento da tela; em paralelo, o
+  // mesmo total de dados sai em poucos segundos.
   const PAGE = 1000;
   const CONCORRENCIA = 10;
-
-  const { count, error: countError } = await sb
-    .from("portal_lancamentos")
-    .select("cod", { count: "exact", head: true });
-  if (countError) throw new Error(`Supabase: ${countError.message}`);
-
-  const total = count ?? 0;
-  const totalPaginas = Math.max(1, Math.ceil(total / PAGE));
   const data: any[] = [];
 
-  for (let inicio = 0; inicio < totalPaginas; inicio += CONCORRENCIA) {
-    const lote = Array.from(
-      { length: Math.min(CONCORRENCIA, totalPaginas - inicio) },
-      (_, i) => inicio + i,
-    );
+  for (let pagina = 0; ; pagina += CONCORRENCIA) {
+    const lote = Array.from({ length: CONCORRENCIA }, (_, i) => pagina + i);
     const paginas = await Promise.all(
       lote.map((p) =>
         sb
@@ -196,10 +185,16 @@ export async function getLancamentosFromSupabase(): Promise<LancamentoRow[]> {
           .range(p * PAGE, p * PAGE + PAGE - 1),
       ),
     );
+
+    let algumaIncompleta = false;
     for (const { data: page, error } of paginas) {
       if (error) throw new Error(`Supabase: ${error.message}`);
-      if (page) data.push(...page);
+      if (page && page.length > 0) data.push(...page);
+      if (!page || page.length < PAGE) algumaIncompleta = true;
     }
+    // Uma página com menos que PAGE linhas (ou vazia) marca o fim dos dados —
+    // como pedimos em ordem por `cod`, isso só acontece na última leva real.
+    if (algumaIncompleta) break;
   }
 
   const rows = (data ?? []).map((r: any) => ({
