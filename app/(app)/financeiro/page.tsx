@@ -16,12 +16,18 @@ export const metadata: Metadata = {
 // (como sempre fez) em vez de deixar o usuário olhando para uma tela em
 // branco por dezenas de segundos. Nunca pior que o comportamento antigo,
 // só melhor quando a busca é rápida.
-const ORCAMENTO_MS = 4000;
+//
+// O orçamento principal (KPIs do topo, o que mais importa) é mais generoso;
+// o secundário (aba Análise, dado de apoio) é bem curto — ele só reaproveita
+// o cache que a 1ª busca acabou de esquentar, então ou vem quase instantâneo
+// ou não vale a pena esperar (o total nunca deve passar de ~4s).
+const ORCAMENTO_PRINCIPAL_MS = 3000;
+const ORCAMENTO_SECUNDARIO_MS = 1000;
 
-async function comOrcamento<T>(promise: Promise<T>): Promise<T | undefined> {
+function comOrcamento<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
   return Promise.race([
     promise.catch(() => undefined),
-    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ORCAMENTO_MS)),
+    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms)),
   ]);
 }
 
@@ -30,13 +36,14 @@ export default async function FinanceiroPage() {
 
   // Sequencial (não Promise.all) de propósito: a 1ª chamada popula o cache de
   // 45s de lib/lancamentos-sheet.ts; a 2ª reaproveita esse cache e só roda a
-  // agregação em memória (rápida) — por isso só a 1ª tem o orçamento de tempo
-  // cheio; se ela não veio a tempo, nem tenta a 2ª (também não viria a tempo).
+  // agregação em memória (rápida) — por isso só a 1ª tem o orçamento cheio;
+  // se ela não veio a tempo, nem tenta a 2ª (também não viria a tempo).
   const initialFluxo: FluxoFinanceiroResult | undefined = await comOrcamento(
     computeFluxoFinanceiro(periodoParams(initialPeriodo)),
+    ORCAMENTO_PRINCIPAL_MS,
   );
   const initialFluxoTodoPeriodo: FluxoFinanceiroResult | undefined = initialFluxo
-    ? await comOrcamento(computeFluxoFinanceiro({}))
+    ? await comOrcamento(computeFluxoFinanceiro({}), ORCAMENTO_SECUNDARIO_MS)
     : undefined;
 
   return (
