@@ -39,6 +39,8 @@ export async function GET() {
     DROPBOX_APP_KEY: has(process.env.DROPBOX_APP_KEY),
     DROPBOX_APP_SECRET: has(process.env.DROPBOX_APP_SECRET),
     CRON_SECRET: has(process.env.CRON_SECRET),
+    ANTHROPIC_API_KEY: has(process.env.ANTHROPIC_API_KEY),
+    GEMINI_API_KEY: has(process.env.GEMINI_API_KEY),
   };
 
   let fonte: string | null = null;
