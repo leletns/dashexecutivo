@@ -8,6 +8,11 @@ export const dynamic = "force-dynamic";
 const MODEL = "claude-sonnet-4-6";
 const ANTHROPIC_VERSION = "2023-06-01";
 
+// Gemini Flash como provedor alternativo — usado quando não há chave da
+// Anthropic configurada. A chave é SECRETA (ligada à conta/cota do Google) e
+// vem só de variável de ambiente (GEMINI_API_KEY) — nunca embutida no código.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
 type DashboardCard = { key: string; label: string; value: number };
@@ -160,6 +165,59 @@ FORMATAÇÃO
 - Apenas a primeira letra em maiúscula em títulos e listas.`;
 }
 
+async function callAnthropic(apiKey: string, system: string, messages: ChatMessage[]): Promise<string> {
+  const client = new Anthropic({
+    apiKey,
+    defaultHeaders: { "anthropic-version": ANTHROPIC_VERSION },
+  });
+  const message = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1200,
+    system,
+    messages: messages.map((m) => ({
+      role: m.role,
+      content: [{ type: "text", text: m.content }],
+    })),
+  });
+  const textBlock = message.content.find((b) => b.type === "text");
+  return textBlock && "text" in textBlock ? textBlock.text : "";
+}
+
+/**
+ * Gemini Flash (Google) — provedor alternativo, usado quando não há chave da
+ * Anthropic configurada. A API do Gemini exige que o histórico comece com uma
+ * mensagem "user" — a saudação inicial do assistente (bolha fixa no cliente)
+ * entra como "assistant" antes de qualquer pergunta real, então descartamos
+ * mensagens de abertura que não sejam do usuário antes de montar a chamada.
+ */
+async function callGemini(apiKey: string, system: string, messages: ChatMessage[]): Promise<string> {
+  let trimmed = messages;
+  while (trimmed.length && trimmed[0].role !== "user") trimmed = trimmed.slice(1);
+  if (trimmed.length === 0) trimmed = messages.slice(-1);
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { role: "system", parts: [{ text: system }] },
+      contents: trimmed.map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      })),
+      generationConfig: { maxOutputTokens: 1200 },
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Gemini HTTP ${res.status}: ${detail.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const parts = data?.candidates?.[0]?.content?.parts;
+  const reply = Array.isArray(parts) ? parts.map((p: any) => p?.text ?? "").join("") : "";
+  return reply;
+}
+
 export async function POST(req: Request) {
   try {
     const portal = await requirePortalSession();
@@ -168,16 +226,12 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json()) as Body;
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
 
-    if (!apiKey) {
+    if (!anthropicKey && !geminiKey) {
       return NextResponse.json({ reply: localFallback(body) });
     }
-
-    const client = new Anthropic({
-      apiKey,
-      defaultHeaders: { "anthropic-version": ANTHROPIC_VERSION },
-    });
 
     const contextPayload = {
       modulo: body.context?.module ?? null,
@@ -187,23 +241,15 @@ export async function POST(req: Request) {
       serieMensalDashboard: body.context?.series ?? [],
       appState: body.context?.appState ?? null,
     };
-
     const contextText = `Contexto numérico atual do painel (BRL):\n${JSON.stringify(contextPayload, null, 2)}`;
+    const system = `${buildSystemPrompt(body)}\n\n${contextText}`;
 
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1200,
-      system: `${buildSystemPrompt(body)}\n\n${contextText}`,
-      messages: body.messages.map((m) => ({
-        role: m.role,
-        content: [{ type: "text", text: m.content }],
-      })),
-    });
+    // Anthropic primeiro (se configurado); senão, Gemini Flash.
+    const reply = anthropicKey
+      ? await callAnthropic(anthropicKey, system, body.messages)
+      : await callGemini(geminiKey as string, system, body.messages);
 
-    const textBlock = message.content.find((b) => b.type === "text");
-    const reply = textBlock && "text" in textBlock ? textBlock.text : "";
-
-    return NextResponse.json({ reply });
+    return NextResponse.json({ reply: reply || localFallback(body) });
   } catch (err: any) {
     return NextResponse.json(
       { reply: "Houve uma instabilidade na sincronização. Tente novamente em instantes." },
