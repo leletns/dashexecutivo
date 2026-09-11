@@ -20,6 +20,7 @@ export interface DropboxSyncResult {
   file_name: string;
   rows_read: number;
   rows_upserted: number;
+  rows_removed: number;
 }
 
 export class DropboxSyncError extends Error {
@@ -114,8 +115,28 @@ export async function runDropboxSync(
     }
 
     const totalUpserted = await upsertLancamentos(sb, records);
+
+    // Limpeza (mark-and-sweep): remove de portal_lancamentos qualquer linha
+    // que NÃO veio nesta sincronização — ou seja, o Miguel corrigiu/removeu
+    // esse lançamento na planilha, mas como o upsert só insere/atualiza (nunca
+    // apaga), a versão antiga ficava para sempre no banco, inflando os totais
+    // por evento (era exatamente por isso que o 5º Congresso não batia com a
+    // base: sobravam ~70 lançamentos antigos de despesa já corrigidos pelo
+    // Miguel). Todos os registros desta sincronização compartilham o mesmo
+    // `synced_at`; qualquer linha mais antiga que isso é lixo de uma versão
+    // anterior da planilha e pode ser removida com segurança.
+    let rowsRemoved = 0;
+    const syncedAt = records[0]?.synced_at;
+    if (syncedAt) {
+      const { count, error: deleteError } = await sb
+        .from("portal_lancamentos")
+        .delete({ count: "exact" })
+        .lt("synced_at", syncedAt);
+      if (!deleteError) rowsRemoved = count ?? 0;
+    }
+
     await updateLog("success", rowsRead, totalUpserted);
-    return { ok: true, file_name: file.name, rows_read: rowsRead, rows_upserted: totalUpserted };
+    return { ok: true, file_name: file.name, rows_read: rowsRead, rows_upserted: totalUpserted, rows_removed: rowsRemoved };
   } catch (err: any) {
     if (err instanceof DropboxSyncError) throw err;
     const partial = (err?.cause as { totalUpserted?: number } | undefined)?.totalUpserted ?? 0;
