@@ -114,18 +114,25 @@ type TabId = (typeof TABS)[number]["id"];
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function PortalFinanceiroTabs() {
+export function PortalFinanceiroTabs({
+  initialLancData,
+}: {
+  initialLancData?: { totais: LancTotaisAnalise | null; fluxo_mensal: FluxoMesAnalise[] };
+} = {}) {
   const { sector } = usePortalSession();
   const canEdit = sector === "financeiro" || sector === "executivo";
   const [activeTab, setActiveTab] = React.useState<TabId>("contas");
   const [mes, setMes] = React.useState(nowMes());
   const { data, loading, reload } = usePortalFinanceiro(mes);
 
-  // Lancamentos data from e-Gestor for Análise tab fallback calculations
+  // Lancamentos data from e-Gestor for Análise tab fallback calculations —
+  // se já veio pronta do servidor (initialLancData), pula a 1ª busca: a tela
+  // já nasce com o número certo, sem round-trip extra.
   const [lancData, setLancData] = React.useState<{
     totais: LancTotaisAnalise | null;
     fluxo_mensal: FluxoMesAnalise[];
-  }>({ totais: null, fluxo_mensal: [] });
+  }>(initialLancData ?? { totais: null, fluxo_mensal: [] });
+  const skipFirstLoadRef = React.useRef(!!initialLancData);
 
   React.useEffect(() => {
     const load = () => {
@@ -137,7 +144,11 @@ export function PortalFinanceiroTabs() {
         })
         .catch(() => {});
     };
-    load();
+    if (skipFirstLoadRef.current) {
+      skipFirstLoadRef.current = false;
+    } else {
+      load();
+    }
     window.addEventListener("portal:data-updated", load);
     return () => window.removeEventListener("portal:data-updated", load);
   }, []);
