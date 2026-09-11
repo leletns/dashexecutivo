@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { requirePortalSession } from "@/lib/auth-server";
+import { getPortalSectorFromEmail, WRITE_SECTORS } from "@/lib/portal-sector";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -251,8 +252,22 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ reply: reply || localFallback(body) });
   } catch (err: any) {
+    // Diagnóstico: setores de escrita recebem o motivo real do erro (nunca a
+    // chave em si) para depurar rápido; demais usuários veem só a mensagem
+    // genérica de sempre.
+    let debug: string | undefined;
+    try {
+      const portal = await requirePortalSession();
+      const sector = getPortalSectorFromEmail((portal as any)?.email ?? "");
+      if (WRITE_SECTORS.has(sector)) debug = String(err?.message ?? err).slice(0, 500);
+    } catch {
+      /* sem sessão — sem debug */
+    }
     return NextResponse.json(
-      { reply: "Houve uma instabilidade na sincronização. Tente novamente em instantes." },
+      {
+        reply: "Houve uma instabilidade na sincronização. Tente novamente em instantes.",
+        ...(debug ? { debug } : {}),
+      },
       { status: 200 },
     );
   }
