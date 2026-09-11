@@ -165,21 +165,41 @@ export async function getLancamentosFromSupabase(): Promise<LancamentoRow[]> {
 
   // O Supabase/PostgREST limita CADA consulta a no máximo 1.000 linhas. Como a
   // base tem dezenas de milhares de lançamentos, sem paginar o painel só
-  // enxergava os primeiros 1.000 — totais errados e "sem dados". Buscamos em
-  // páginas de 1.000 com .range() até esgotar.
+  // enxergava os primeiros 1.000 — totais errados e "sem dados". Buscamos
+  // primeiro só a CONTAGEM (1 consulta rápida) e depois todas as páginas de
+  // 1.000 EM PARALELO (lotes de 10 por vez) — sequencial (~500ms × 56
+  // páginas ≈ 28s) chegava a travar o primeiro carregamento da tela; em
+  // paralelo, o mesmo total de dados sai em ~2-3s.
   const PAGE = 1000;
-  const data: any[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const { data: page, error } = await sb
-      .from("portal_lancamentos")
-      .select(COLUNAS)
-      .order("cod", { ascending: true })
-      .range(offset, offset + PAGE - 1);
+  const CONCORRENCIA = 10;
 
-    if (error) throw new Error(`Supabase: ${error.message}`);
-    if (!page || page.length === 0) break;
-    data.push(...page);
-    if (page.length < PAGE) break;
+  const { count, error: countError } = await sb
+    .from("portal_lancamentos")
+    .select("cod", { count: "exact", head: true });
+  if (countError) throw new Error(`Supabase: ${countError.message}`);
+
+  const total = count ?? 0;
+  const totalPaginas = Math.max(1, Math.ceil(total / PAGE));
+  const data: any[] = [];
+
+  for (let inicio = 0; inicio < totalPaginas; inicio += CONCORRENCIA) {
+    const lote = Array.from(
+      { length: Math.min(CONCORRENCIA, totalPaginas - inicio) },
+      (_, i) => inicio + i,
+    );
+    const paginas = await Promise.all(
+      lote.map((p) =>
+        sb
+          .from("portal_lancamentos")
+          .select(COLUNAS)
+          .order("cod", { ascending: true })
+          .range(p * PAGE, p * PAGE + PAGE - 1),
+      ),
+    );
+    for (const { data: page, error } of paginas) {
+      if (error) throw new Error(`Supabase: ${error.message}`);
+      if (page) data.push(...page);
+    }
   }
 
   const rows = (data ?? []).map((r: any) => ({
