@@ -21,8 +21,8 @@ export const metadata: Metadata = {
 // o secundário (aba Análise, dado de apoio) é bem curto — ele só reaproveita
 // o cache que a 1ª busca acabou de esquentar, então ou vem quase instantâneo
 // ou não vale a pena esperar (o total nunca deve passar de ~4s).
-const ORCAMENTO_PRINCIPAL_MS = 3000;
-const ORCAMENTO_SECUNDARIO_MS = 1000;
+const ORCAMENTO_PRINCIPAL_MS = 6500;
+const ORCAMENTO_SECUNDARIO_MS = 1500;
 
 function comOrcamento<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
   return Promise.race([
