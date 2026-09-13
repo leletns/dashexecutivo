@@ -1,9 +1,9 @@
 {
-  "gerado_em": "2026-09-10T16:53:24.738Z",
-  "relatorio_em": "03/09/2026",
-  "saldo_dia": 1105394.75,
-  "saldo_projetado": 34048.68,
-  "total_registros": 56005,
+  "gerado_em": "2026-09-13T13:13:18.163Z",
+  "relatorio_em": "13/09/2026",
+  "saldo_dia": 909525.25,
+  "saldo_projetado": 102871.18,
+  "total_registros": 56079,
   "fonte": "dropbox-base-viva",
-  "source_hash": "74d92a1b8b7dfbac9ccf2c8286129db52896331da8b84be424d04478b43203b9"
+  "source_hash": "94472ffd275df36794021654cc4698b5a81d8c8ef9d4a1dc487ba6ce58074cf1"
 }
