@@ -1,0 +1,49 @@
+name: Sincronizar base BAPS (Dropbox → DASH)
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-base
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Baixa a planilha do Miguel e compara com a publicada
+        id: refresh
+        run: |
+          set -o pipefail
+          node scripts/refresh-snapshot.cjs | tee out.txt
+          if grep -q '^CHANGED' out.txt; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Confere tipos antes de publicar
+        if: steps.refresh.outputs.changed == 'true'
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Publica (commit em main → Vercel faz o deploy)
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/data/base-snapshot.b64.ts lib/data/base-snapshot-meta.json
+          git commit -m "chore: atualiza retrato da base viva (sync automático)" -m "$(cat out.txt)"
+          git push origin HEAD:main

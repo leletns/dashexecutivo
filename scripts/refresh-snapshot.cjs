@@ -25,7 +25,7 @@ const DROPBOX_FOLDER_LINK =
 const ROOT = path.resolve(__dirname, "..");
 const OUT_B64 = path.join(ROOT, "lib/data/base-snapshot.b64.ts");
 const OUT_META = path.join(ROOT, "lib/data/base-snapshot-meta.json");
-const SHEET = "personalizadoFinanceiro (13)";
+const SHEET_PREFERIDA = "personalizadoFinanceiro (13)";
 
 async function download(url) {
   const res = await fetch(url, { redirect: "follow" });
@@ -55,7 +55,27 @@ function money(s) {
   return neg ? -Math.abs(n) : n;
 }
 
+// Escolhe a aba do relatório: entre as "personalizadoFinanceiro*", a de
+// "gerado em" mais recente; empate → a aba preferida de sempre.
+function pickSheet(xlsxBuf) {
+  const names = XLSX.read(xlsxBuf, { type: "buffer", bookSheets: true }).SheetNames
+    .filter((n) => norm(n).startsWith("personalizadofinanceiro"));
+  if (!names.length) throw new Error("nenhuma aba personalizadoFinanceiro encontrada");
+  const wb = XLSX.read(xlsxBuf, { type: "buffer", sheets: names, sheetRows: 30 });
+  const dataDe = (n) => {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: "", raw: false });
+    for (const r of rows) for (const c of r) {
+      const m = String(c || "").match(/gerado em\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
+      if (m) { const y = m[3].length === 2 ? 2000 + +m[3] : +m[3]; return y * 10000 + +m[2] * 100 + +m[1]; }
+    }
+    return 0;
+  };
+  names.sort((a, b) => dataDe(b) - dataDe(a) || (b === SHEET_PREFERIDA) - (a === SHEET_PREFERIDA));
+  return names[0];
+}
+
 function build(xlsxBuf) {
+  const SHEET = pickSheet(xlsxBuf);
   const wb = XLSX.read(xlsxBuf, { type: "buffer", cellDates: true, sheets: [SHEET] });
   const ws = wb.Sheets[SHEET];
   if (!ws) throw new Error(`aba "${SHEET}" não encontrada`);
@@ -147,6 +167,9 @@ function build(xlsxBuf) {
   const zip = await download(DROPBOX_FOLDER_LINK);
   const xlsx = pickXlsx(zip);
   const { recs, saldoDia, saldoProj, relatorio } = build(xlsx);
+  // Trava de segurança: nunca publica uma base vazia/quebrada.
+  if (recs.length < 1000) throw new Error(`base suspeita: só ${recs.length} lançamentos`);
+  if (saldoDia == null) throw new Error("saldo do dia não encontrado na planilha");
   const json = JSON.stringify(recs);
   const sourceHash = crypto.createHash("sha256").update(json).digest("hex");
 
