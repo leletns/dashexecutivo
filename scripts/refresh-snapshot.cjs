@@ -55,15 +55,26 @@ function money(s) {
   return neg ? -Math.abs(n) : n;
 }
 
-// Escolhe a aba do relatório: entre as "personalizadoFinanceiro*", a de
-// "gerado em" mais recente; empate → a aba preferida de sempre.
+// Escolhe a aba do relatório TRATADO: entre as "personalizadoFinanceiro*" que
+// têm as colunas de classificação do Miguel (Evento + Situação), a de "gerado
+// em" mais recente; empate → a aba preferida de sempre. Abas com o export cru
+// do e-Gestor (sem Evento/Saldo do Dia) são ignoradas.
+function temCabecalhoTratado(rows) {
+  return rows.slice(0, 30).some((r) => {
+    const c = (r || []).map(norm);
+    return c.some((x) => x === "evento") && c.some((x) => x.includes("situac"));
+  });
+}
+
 function pickSheet(xlsxBuf) {
-  const names = XLSX.read(xlsxBuf, { type: "buffer", bookSheets: true }).SheetNames
+  const todas = XLSX.read(xlsxBuf, { type: "buffer", bookSheets: true }).SheetNames
     .filter((n) => norm(n).startsWith("personalizadofinanceiro"));
-  if (!names.length) throw new Error("nenhuma aba personalizadoFinanceiro encontrada");
-  const wb = XLSX.read(xlsxBuf, { type: "buffer", sheets: names, sheetRows: 30 });
+  const wb = XLSX.read(xlsxBuf, { type: "buffer", sheets: todas, sheetRows: 30 });
+  const linhas = (n) => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: "", raw: false });
+  const names = todas.filter((n) => temCabecalhoTratado(linhas(n)));
+  if (!names.length) throw new Error("nenhuma aba personalizadoFinanceiro com as colunas tratadas (Evento/Situação)");
   const dataDe = (n) => {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: "", raw: false });
+    const rows = linhas(n);
     for (const r of rows) for (const c of r) {
       const m = String(c || "").match(/gerado em\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
       if (m) { const y = m[3].length === 2 ? 2000 + +m[3] : +m[3]; return y * 10000 + +m[2] * 100 + +m[1]; }
@@ -74,8 +85,9 @@ function pickSheet(xlsxBuf) {
   return names[0];
 }
 
+let SHEET_USADA = null;
 function build(xlsxBuf) {
-  const SHEET = pickSheet(xlsxBuf);
+  const SHEET = (SHEET_USADA = pickSheet(xlsxBuf));
   const wb = XLSX.read(xlsxBuf, { type: "buffer", cellDates: true, sheets: [SHEET] });
   const ws = wb.Sheets[SHEET];
   if (!ws) throw new Error(`aba "${SHEET}" não encontrada`);
@@ -201,5 +213,5 @@ function build(xlsxBuf) {
     `export const SNAPSHOT_GZ_B64 =\n  "${b64}";\n`;
   fs.writeFileSync(OUT_B64, out);
   fs.writeFileSync(OUT_META, metaStr + "\n");
-  console.log("CHANGED", "registros=" + recs.length, "saldo_dia=" + saldoDia, "relatorio=" + relatorio);
+  console.log("CHANGED", "aba=" + JSON.stringify(SHEET_USADA), "registros=" + recs.length, "saldo_dia=" + saldoDia, "relatorio=" + relatorio);
 })().catch((e) => { console.error("ERRO", e && e.message ? e.message : e); process.exit(1); });
